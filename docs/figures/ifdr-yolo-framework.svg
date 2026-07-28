@@ -1,0 +1,101 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1500" viewBox="0 0 1200 1500">
+  <defs>
+    <linearGradient id="header" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#163A63"/>
+      <stop offset="100%" stop-color="#2F6B9A"/>
+    </linearGradient>
+    <linearGradient id="innovation" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FFF8EB"/>
+      <stop offset="100%" stop-color="#FFF1D2"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="5" stdDeviation="7" flood-color="#163A63" flood-opacity="0.14"/>
+    </filter>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0,0 L12,6 L0,12 Z" fill="#426581"/>
+    </marker>
+    <marker id="arrowOrange" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0,0 L12,6 L0,12 Z" fill="#E38B2C"/>
+    </marker>
+    <style>
+      .font { font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif; }
+      .title { font-size: 38px; font-weight: 700; fill: #FFFFFF; }
+      .subtitle { font-size: 22px; fill: #DCEAF6; }
+      .box-title { font-size: 27px; font-weight: 700; fill: #173A59; }
+      .box-text { font-size: 21px; fill: #3C5368; }
+      .small { font-size: 19px; fill: #3C5368; }
+      .innovation-title { font-size: 28px; font-weight: 700; fill: #9C5315; }
+      .innovation-text { font-size: 21px; fill: #74451D; }
+      .arrow { stroke: #426581; stroke-width: 5; fill: none; marker-end: url(#arrow); }
+      .arrow-orange { stroke: #E38B2C; stroke-width: 5; fill: none; marker-end: url(#arrowOrange); }
+      .dash { stroke-dasharray: 11 9; }
+    </style>
+  </defs>
+
+  <rect width="1200" height="1500" fill="#F5F8FB"/>
+  <rect x="0" y="0" width="1200" height="150" fill="url(#header)"/>
+  <text x="600" y="66" text-anchor="middle" class="font title">IFDR-YOLO 道路小目标检测框架</text>
+  <text x="600" y="112" text-anchor="middle" class="font subtitle">干预监督的因子化退化可靠性学习</text>
+
+  <!-- Input -->
+  <rect x="320" y="195" rx="22" ry="22" width="560" height="112" fill="#FFFFFF" stroke="#9DB7CA" stroke-width="3" filter="url(#shadow)"/>
+  <text x="600" y="240" text-anchor="middle" class="font box-title">道路场景输入图像</text>
+  <text x="600" y="276" text-anchor="middle" class="font box-text">KITTI / CityPersons / BDD100K</text>
+
+  <!-- Interventions -->
+  <rect x="90" y="365" rx="22" ry="22" width="1020" height="172" fill="#EAF3FA" stroke="#78A5C4" stroke-width="3" filter="url(#shadow)"/>
+  <text x="600" y="410" text-anchor="middle" class="font box-title">单因素可控干预生成器</text>
+  <rect x="135" y="442" rx="17" ry="17" width="205" height="62" fill="#FFFFFF" stroke="#8DB3CE" stroke-width="2"/>
+  <rect x="375" y="442" rx="17" ry="17" width="205" height="62" fill="#FFFFFF" stroke="#8DB3CE" stroke-width="2"/>
+  <rect x="615" y="442" rx="17" ry="17" width="205" height="62" fill="#FFFFFF" stroke="#8DB3CE" stroke-width="2"/>
+  <rect x="855" y="442" rx="17" ry="17" width="205" height="62" fill="#FFFFFF" stroke="#8DB3CE" stroke-width="2"/>
+  <text x="237" y="481" text-anchor="middle" class="font small">缩放 / 重采样</text>
+  <text x="477" y="481" text-anchor="middle" class="font small">混叠 / 模糊</text>
+  <text x="717" y="481" text-anchor="middle" class="font small">结构化遮挡</text>
+  <text x="957" y="481" text-anchor="middle" class="font small">边界扰动</text>
+
+  <!-- Backbone -->
+  <rect x="260" y="604" rx="22" ry="22" width="680" height="145" fill="#FFFFFF" stroke="#9DB7CA" stroke-width="3" filter="url(#shadow)"/>
+  <text x="600" y="651" text-anchor="middle" class="font box-title">YOLOv8m Backbone</text>
+  <text x="600" y="690" text-anchor="middle" class="font box-text">提取 P2、P3、P4、P5 多尺度特征</text>
+  <text x="600" y="721" text-anchor="middle" class="font small">高分辨率细节 + 中高层语义信息</text>
+
+  <!-- Innovation group -->
+  <rect x="65" y="813" rx="30" ry="30" width="1070" height="440" fill="url(#innovation)" stroke="#E49A46" stroke-width="4" filter="url(#shadow)"/>
+  <rect x="438" y="790" rx="18" ry="18" width="324" height="52" fill="#E38B2C"/>
+  <text x="600" y="824" text-anchor="middle" class="font" font-size="22" font-weight="700" fill="#FFFFFF">本文核心创新区域</text>
+
+  <!-- Posterior -->
+  <rect x="130" y="870" rx="22" ry="22" width="940" height="155" fill="#FFFFFF" stroke="#E3A156" stroke-width="3"/>
+  <text x="600" y="915" text-anchor="middle" class="font innovation-title">因子化局部退化后验</text>
+  <text x="600" y="957" text-anchor="middle" class="font innovation-text">分辨率充分度  ·  混叠噪声  ·  可见性遮挡  ·  边界不确定性</text>
+  <text x="600" y="995" text-anchor="middle" class="font small">被干预因素按已知强度变化，其他因素保持稳定</text>
+
+  <!-- Control branches -->
+  <rect x="125" y="1080" rx="22" ry="22" width="450" height="120" fill="#FFFDF8" stroke="#E3A156" stroke-width="3"/>
+  <rect x="625" y="1080" rx="22" ry="22" width="450" height="120" fill="#FFFDF8" stroke="#E3A156" stroke-width="3"/>
+  <text x="350" y="1124" text-anchor="middle" class="font innovation-title">尺度可靠性路由</text>
+  <text x="350" y="1164" text-anchor="middle" class="font innovation-text">按局部退化动态选择 P2–P5</text>
+  <text x="850" y="1124" text-anchor="middle" class="font innovation-title">退化校准定位</text>
+  <text x="850" y="1164" text-anchor="middle" class="font innovation-text">概率边界框 / 期望 IoU</text>
+
+  <!-- Output -->
+  <rect x="260" y="1320" rx="22" ry="22" width="680" height="112" fill="#173F63" stroke="#173F63" stroke-width="3" filter="url(#shadow)"/>
+  <text x="600" y="1365" text-anchor="middle" class="font" font-size="28" font-weight="700" fill="#FFFFFF">车辆 · 行人 · 骑行者检测结果</text>
+  <text x="600" y="1402" text-anchor="middle" class="font" font-size="20" fill="#DCEAF6">重点提升远距离、小尺寸与遮挡目标</text>
+
+  <!-- Arrows -->
+  <path d="M600 307 L600 365" class="arrow"/>
+  <path d="M600 537 L600 604" class="arrow"/>
+  <path d="M600 749 L600 870" class="arrow-orange"/>
+  <path d="M470 1025 C430 1045 390 1055 350 1080" class="arrow-orange"/>
+  <path d="M730 1025 C770 1045 810 1055 850 1080" class="arrow-orange"/>
+  <path d="M350 1200 C365 1265 470 1288 535 1320" class="arrow-orange"/>
+  <path d="M850 1200 C835 1265 730 1288 665 1320" class="arrow-orange"/>
+
+  <!-- Direct clean image branch note -->
+  <path d="M880 251 C1060 270 1100 620 940 670" class="arrow dash"/>
+  <text x="1065" y="456" text-anchor="middle" class="font small" transform="rotate(90 1065 456)">原图与干预视图配对训练</text>
+
+  <text x="600" y="1472" text-anchor="middle" class="font" font-size="19" fill="#5C6F80">核心思想：先判断局部退化，再决定信任哪个尺度以及如何定位。</text>
+</svg>
