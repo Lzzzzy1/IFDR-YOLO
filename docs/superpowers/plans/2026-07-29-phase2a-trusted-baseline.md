@@ -747,6 +747,9 @@ git commit -m "feat: add trusted baseline command line workflow"
 
 ### Task 9: Real local smoke and Phase 2A acceptance report
 
+Implementation status: Tasks 1-8 and Task 9 Steps 1-5 are complete on
+`feature/phase2a-trusted-baseline`; Task 9 Step 6 remains.
+
 **Files:**
 
 - Create: `docs/reports/phase2a-baseline-infrastructure-acceptance.md`
