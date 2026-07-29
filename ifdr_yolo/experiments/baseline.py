@@ -242,6 +242,7 @@ def _training_args(
     result["val"] = True
     result["save"] = True
     result["plots"] = True
+    result["pretrained"] = False
     if mode == "smoke":
         result.update(
             {

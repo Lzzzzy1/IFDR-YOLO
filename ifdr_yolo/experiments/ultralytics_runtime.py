@@ -148,13 +148,22 @@ class UltralyticsAdapter:
         run_dir: Path,
         args: Mapping[str, object],
     ) -> Path:
-        prepared_model.handle.train(
-            data=str(data_path),
-            project=str(run_dir.parent),
-            name=run_dir.name,
-            exist_ok=True,
+        handle = prepared_model.handle
+        trainer_class = handle._smart_load("trainer")
+        overrides = {
             **dict(args),
+            "data": str(data_path),
+            "project": str(run_dir.parent),
+            "name": run_dir.name,
+            "exist_ok": True,
+        }
+        trainer = trainer_class(
+            overrides=overrides,
+            _callbacks=handle.callbacks,
         )
+        trainer.model = handle.model
+        handle.trainer = trainer
+        trainer.train()
         best = run_dir / "weights" / "best.pt"
         if not best.is_file():
             raise FileNotFoundError(f"training did not create best weight: {best}")

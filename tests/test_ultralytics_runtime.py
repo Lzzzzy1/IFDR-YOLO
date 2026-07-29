@@ -21,16 +21,18 @@ class FakeYOLO:
     def __init__(self, source: str) -> None:
         self.source = source
         self.model = torch.nn.Linear(1, 1)
+        self.callbacks: dict[str, object] = {}
         self.train_kwargs: dict[str, object] | None = None
         self.predict_kwargs: dict[str, object] | None = None
         self.__class__.instances.append(self)
 
     def train(self, **kwargs: object) -> None:
-        self.train_kwargs = kwargs
-        run_dir = Path(str(kwargs["project"])) / str(kwargs["name"])
-        weights = run_dir / "weights"
-        weights.mkdir(parents=True)
-        (weights / "best.pt").write_bytes(b"best")
+        raise AssertionError("prepared training must bypass YOLO.train rebuild")
+
+    def _smart_load(self, name: str):
+        if name != "trainer":
+            raise AssertionError(f"unexpected component: {name}")
+        return FakeTrainer
 
     def predict(self, **kwargs: object) -> None:
         self.predict_kwargs = kwargs
@@ -38,9 +40,36 @@ class FakeYOLO:
         (output_dir / "labels").mkdir(parents=True)
 
 
+class FakeTrainer:
+    instances: list["FakeTrainer"] = []
+
+    def __init__(
+        self,
+        *,
+        overrides: dict[str, object],
+        _callbacks: dict[str, object],
+    ) -> None:
+        self.overrides = overrides
+        self.callbacks = _callbacks
+        self.model: object | None = None
+        self.__class__.instances.append(self)
+
+    def train(self) -> None:
+        if self.model is None:
+            raise AssertionError("prepared model was not attached to trainer")
+        run_dir = (
+            Path(str(self.overrides["project"]))
+            / str(self.overrides["name"])
+        )
+        weights = run_dir / "weights"
+        weights.mkdir(parents=True)
+        (weights / "best.pt").write_bytes(b"best")
+
+
 class UltralyticsRuntimeTest(unittest.TestCase):
     def setUp(self) -> None:
         FakeYOLO.instances.clear()
+        FakeTrainer.instances.clear()
 
     def test_bootstrap_sets_config_dir_before_import(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -115,11 +144,10 @@ class UltralyticsRuntimeTest(unittest.TestCase):
             )
 
             self.assertEqual(best, run_dir / "weights" / "best.pt")
-            instance = FakeYOLO.instances[-1]
-            assert instance.train_kwargs is not None
-            self.assertEqual(instance.source, str(model))
-            self.assertEqual(instance.train_kwargs["data"], str(data))
-            self.assertTrue(instance.train_kwargs["exist_ok"])
+            trainer = FakeTrainer.instances[-1]
+            self.assertIs(trainer.model, prepared.handle.model)
+            self.assertEqual(trainer.overrides["data"], str(data))
+            self.assertTrue(trainer.overrides["exist_ok"])
 
     def test_adapter_prepares_seeded_model_without_initialization(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

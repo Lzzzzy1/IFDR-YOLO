@@ -92,6 +92,11 @@ Head 采用官方 P2 计算图：
 同一个 KITTI 计算图，不依赖训练器二次覆盖分类头。YAML 同时记录官方
 AGPL-3.0 来源、上游版本和上游文件 SHA256：
 
+运行时必须把完成 306 项迁移的同一个底层 `torch.nn.Module` 直接交给
+版本锁定的 Ultralytics trainer。不能调用 YAML handle 的高层
+`YOLO.train()`，因为该路径会在 trainer 内重建模型并丢失内存中刚迁移的
+权重。
+
 ```text
 ba54363e9f283e8f60b0fa0843eb37115093338d6f9273ccd4f74f60639754f4
 ```

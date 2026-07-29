@@ -725,13 +725,18 @@ def prepare_model(
 ```
 
 Change `train()` to accept `prepared_model: PreparedModel` instead of
-`model_path`, and call `prepared_model.handle.train(...)`.
+`model_path`. Do not call `YOLO.train()` for a YAML-created handle: in the
+locked Ultralytics version that path constructs another model inside the
+trainer and would discard the transferred state. Construct the version-pinned
+trainer, assign `trainer.model = prepared_model.handle.model`, and then call
+`trainer.train()`.
 
 - [ ] **Step 4: Update the existing adapter train test**
 
 Prepare a `PreparedModel(handle=FakeYOLO(...), initialization=None)` and pass it
-to `adapter.train`. Assert no second model instance is created. Prediction
-continues loading `best.pt` normally.
+to `adapter.train`. Assert the trainer receives the exact same underlying
+`torch.nn.Module` object and `YOLO.train()` is not called. Prediction continues
+loading `best.pt` normally.
 
 - [ ] **Step 5: Run GREEN**
 
