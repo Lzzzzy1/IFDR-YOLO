@@ -15,6 +15,58 @@ Phase 1 数据与评测基础设施已于 2026-07-29 验收通过：
 
 详见 `docs/reports/phase1-acceptance.md`。
 
+## Phase 2A 可信 YOLOv8m 基线
+
+正式配置：
+
+```text
+configs/experiments/kitti_yolov8m_baseline_s17.yaml
+```
+
+训练前全量预检数据、split、权重、环境和 Git：
+
+```powershell
+& 'D:\ana\envs\yolo\python.exe' scripts/train_baseline.py `
+  --config configs/experiments/kitti_yolov8m_baseline_s17.yaml `
+  --mode dry-run
+```
+
+本地固定 16 train / 16 val 冒烟训练：
+
+```powershell
+& 'D:\ana\envs\yolo\python.exe' scripts/train_baseline.py `
+  --config configs/experiments/kitti_yolov8m_baseline_s17.yaml `
+  --mode smoke `
+  --device 0
+```
+
+AutoDL 正式 300 epoch 训练：
+
+```powershell
+& 'D:\ana\envs\yolo\python.exe' scripts/train_baseline.py `
+  --config configs/experiments/kitti_yolov8m_baseline_s17.yaml `
+  --mode full
+```
+
+正式模式使用官方 `yolov8m.pt`、640 输入、SGD、固定 300 epoch 和
+seed 17，不允许提前停止或自动降低 batch。运行目录不可覆盖，并至少保存：
+
+```text
+runs/<experiment_id>/
+├── config.input.yaml
+├── config.resolved.yaml
+├── data_manifest.json
+├── environment.json
+├── git_commit.txt
+├── git_status.json
+├── status.json
+├── predictions/labels/
+├── metrics_ap40.json
+└── weights/
+```
+
+只有 `status.json` 为 `complete` 且存在 `metrics_ap40.json` 的运行可以进入结果汇总。KITTI AP40 是论文主指标；Ultralytics mAP50 和 mAP50–95 仅作为工程辅助指标。
+
 ## 环境
 
 本机已验证：
