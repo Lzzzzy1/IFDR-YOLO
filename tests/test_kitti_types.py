@@ -31,6 +31,15 @@ class KittiTypesTest(unittest.TestCase):
             {"Car": 0, "Pedestrian": 1, "Cyclist": 2},
         )
 
+    def test_detection_rejects_non_finite_score(self) -> None:
+        with self.assertRaisesRegex(ValueError, "score.*finite"):
+            Detection(
+                "000001",
+                "Pedestrian",
+                float("nan"),
+                BoundingBox(0.0, 0.0, 10.0, 20.0),
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

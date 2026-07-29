@@ -71,3 +71,7 @@ class Detection:
     kind: str
     score: float
     bbox: BoundingBox
+
+    def __post_init__(self) -> None:
+        if not isfinite(self.score):
+            raise ValueError("detection score must be finite")

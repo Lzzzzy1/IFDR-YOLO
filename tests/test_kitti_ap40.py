@@ -76,6 +76,152 @@ class KittiAP40Test(unittest.TestCase):
         self.assertEqual(result.true_positives, 0)
         self.assertEqual(result.false_positives, 0)
 
+    def test_car_detection_matching_van_is_ignored(self) -> None:
+        box = BoundingBox(0, 0, 100, 100)
+        result = evaluate_class(
+            gt_by_image={"000001": (ground_truth("Van", box),)},
+            detections_by_image={
+                "000001": (Detection("000001", "Car", 0.9, box),)
+            },
+            class_name="Car",
+            difficulty=Difficulty.MODERATE,
+        )
+        self.assertEqual(result.true_positives, 0)
+        self.assertEqual(result.false_positives, 0)
+        self.assertEqual(result.ignored_detections, 1)
+
+    def test_pedestrian_detection_matching_person_sitting_is_ignored(self) -> None:
+        box = BoundingBox(0, 0, 50, 80)
+        result = evaluate_class(
+            gt_by_image={"000001": (ground_truth("Person_sitting", box),)},
+            detections_by_image={
+                "000001": (Detection("000001", "Pedestrian", 0.9, box),)
+            },
+            class_name="Pedestrian",
+            difficulty=Difficulty.MODERATE,
+        )
+        self.assertEqual(result.false_positives, 0)
+        self.assertEqual(result.ignored_detections, 1)
+
+    def test_detection_inside_dontcare_is_ignored(self) -> None:
+        dontcare = ground_truth("DontCare", BoundingBox(0, 0, 100, 100))
+        detection = Detection(
+            "000001",
+            "Pedestrian",
+            0.9,
+            BoundingBox(10, 10, 50, 80),
+        )
+        result = evaluate_class(
+            gt_by_image={"000001": (dontcare,)},
+            detections_by_image={"000001": (detection,)},
+            class_name="Pedestrian",
+            difficulty=Difficulty.MODERATE,
+        )
+        self.assertEqual(result.false_positives, 0)
+        self.assertEqual(result.ignored_detections, 1)
+
+    def test_detection_matching_difficulty_ignored_ground_truth_is_ignored(
+        self,
+    ) -> None:
+        box = BoundingBox(0, 0, 20, 20)
+        result = evaluate_class(
+            gt_by_image={"000001": (ground_truth("Pedestrian", box),)},
+            detections_by_image={
+                "000001": (Detection("000001", "Pedestrian", 0.9, box),)
+            },
+            class_name="Pedestrian",
+            difficulty=Difficulty.MODERATE,
+        )
+        self.assertEqual(result.num_valid_gt, 0)
+        self.assertEqual(result.false_positives, 0)
+        self.assertEqual(result.ignored_detections, 1)
+
+    def test_detection_below_difficulty_minimum_height_is_ignored(self) -> None:
+        detection = Detection(
+            "000001",
+            "Pedestrian",
+            0.9,
+            BoundingBox(0, 0, 20, 20),
+        )
+        result = evaluate_class(
+            gt_by_image={"000001": ()},
+            detections_by_image={"000001": (detection,)},
+            class_name="Pedestrian",
+            difficulty=Difficulty.MODERATE,
+        )
+        self.assertEqual(result.false_positives, 0)
+        self.assertEqual(result.ignored_detections, 1)
+
+    def test_ordinary_detection_without_ground_truth_is_false_positive(self) -> None:
+        detection = Detection(
+            "000001",
+            "Pedestrian",
+            0.9,
+            BoundingBox(0, 0, 30, 80),
+        )
+        result = evaluate_class(
+            gt_by_image={"000001": ()},
+            detections_by_image={"000001": (detection,)},
+            class_name="Pedestrian",
+            difficulty=Difficulty.MODERATE,
+        )
+        self.assertEqual(result.false_positives, 1)
+        self.assertEqual(result.ignored_detections, 0)
+
+    def test_duplicate_detection_is_false_positive(self) -> None:
+        box = BoundingBox(0, 0, 50, 80)
+        result = evaluate_class(
+            gt_by_image={"000001": (ground_truth("Pedestrian", box),)},
+            detections_by_image={
+                "000001": (
+                    Detection("000001", "Pedestrian", 0.9, box),
+                    Detection("000001", "Pedestrian", 0.8, box),
+                )
+            },
+            class_name="Pedestrian",
+            difficulty=Difficulty.MODERATE,
+        )
+        self.assertEqual(result.true_positives, 1)
+        self.assertEqual(result.false_positives, 1)
+
+    def test_high_score_false_positive_precedes_low_score_true_positive(
+        self,
+    ) -> None:
+        truth = BoundingBox(0, 0, 50, 80)
+        false_box = BoundingBox(100, 100, 150, 180)
+        result = evaluate_class(
+            gt_by_image={"000001": (ground_truth("Pedestrian", truth),)},
+            detections_by_image={
+                "000001": (
+                    Detection("000001", "Pedestrian", 0.2, truth),
+                    Detection("000001", "Pedestrian", 0.9, false_box),
+                )
+            },
+            class_name="Pedestrian",
+            difficulty=Difficulty.MODERATE,
+        )
+        self.assertEqual(result.scores, (0.9, 0.2))
+        self.assertAlmostEqual(result.ap40, 50.0)
+
+    def test_unknown_evaluation_class_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "unknown"):
+            evaluate_class({}, {}, "Truck", Difficulty.MODERATE)
+
+    def test_detection_image_id_must_match_mapping_key(self) -> None:
+        detection = Detection(
+            "000002",
+            "Pedestrian",
+            0.9,
+            BoundingBox(0, 0, 30, 80),
+        )
+        with self.assertRaisesRegex(ValueError, "image ID mismatch"):
+            evaluate_class(
+                gt_by_image={"000001": ()},
+                detections_by_image={"000001": (detection,)},
+                class_name="Pedestrian",
+                difficulty=Difficulty.MODERATE,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
