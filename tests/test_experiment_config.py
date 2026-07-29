@@ -110,6 +110,26 @@ class BaselineConfigTest(unittest.TestCase):
             self.assertEqual(config.initialization.max_layer, 15)
             self.assertEqual(config.initialization.expected_items, 306)
 
+    def test_repository_p2_config_is_a_controlled_baseline_derivative(
+        self,
+    ) -> None:
+        baseline = load_baseline_config(
+            ROOT / "configs/experiments/kitti_yolov8m_baseline_s17.yaml",
+            repository_root=ROOT,
+        )
+        p2 = load_baseline_config(
+            ROOT / "configs/experiments/kitti_yolov8m_p2_s17.yaml",
+            repository_root=ROOT,
+        )
+
+        self.assertEqual(p2.experiment.variant, "p2")
+        self.assertEqual(p2.paths.model, ROOT / "models/kitti-p2-m.yaml")
+        self.assertEqual(p2.training, baseline.training)
+        self.assertEqual(p2.prediction, baseline.prediction)
+        self.assertEqual(p2.paths.data, baseline.paths.data)
+        assert p2.initialization is not None
+        self.assertEqual(p2.initialization.expected_items, 306)
+
     def test_rejects_invalid_initialization_contract(self) -> None:
         cases = (
             ("strategy", "shape_only", "initialization.strategy"),

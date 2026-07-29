@@ -67,6 +67,38 @@ runs/<experiment_id>/
 
 只有 `status.json` 为 `complete` 且存在 `metrics_ap40.json` 的运行可以进入结果汇总。KITTI AP40 是论文主指标；Ultralytics mAP50 和 mAP50–95 仅作为工程辅助指标。
 
+## Phase 2B P2–P5 严格消融
+
+正式配置：
+
+```text
+configs/experiments/kitti_yolov8m_p2_s17.yaml
+```
+
+依次运行模型与数据预检、本地 16 train / 16 val 冒烟训练、AutoDL
+正式 300 epoch 训练：
+
+```powershell
+& 'D:\ana\envs\yolo\python.exe' scripts/train_baseline.py `
+  --config configs/experiments/kitti_yolov8m_p2_s17.yaml `
+  --mode dry-run `
+  --device 0
+
+& 'D:\ana\envs\yolo\python.exe' scripts/train_baseline.py `
+  --config configs/experiments/kitti_yolov8m_p2_s17.yaml `
+  --mode smoke `
+  --device 0
+
+& 'D:\ana\envs\yolo\python.exe' scripts/train_baseline.py `
+  --config configs/experiments/kitti_yolov8m_p2_s17.yaml `
+  --mode full
+```
+
+该实验仅把检测尺度从 P3–P5 改为 P2–P5，其训练与预测配置和
+seed 17 基线完全一致。模型结构、预训练权重及 306 项语义安全迁移均有
+固定哈希或清单审计。P2 是来自锁定上游拓扑的消融因素，不作为论文原创
+贡献；后续原创方法必须在相同实验协议下同时对比 baseline 与 P2。
+
 ## 环境
 
 本机已验证：
