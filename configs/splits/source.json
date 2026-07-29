@@ -1,0 +1,9 @@
+{
+  "name": "Chen common KITTI train/val split",
+  "train_count": 3712,
+  "train_sha256": "b6417a1d9b18c8fdb085128e633d28ff321b7674a6d1b3841b8f43d865b281cb",
+  "train_url": "https://raw.githubusercontent.com/traveller59/second.pytorch/master/second/data/ImageSets/train.txt",
+  "val_count": 3769,
+  "val_sha256": "657ac4bcc1e156e5b106a4ca18e1f88e012787ea1d2b5d0adeea97fee903fa86",
+  "val_url": "https://raw.githubusercontent.com/traveller59/second.pytorch/master/second/data/ImageSets/val.txt"
+}
