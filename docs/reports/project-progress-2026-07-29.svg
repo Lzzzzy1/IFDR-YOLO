@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="860" height="1040" viewBox="0 0 860 1040">
+  <defs>
+    <marker id="arrow-green" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#2f855a"/>
+    </marker>
+    <marker id="arrow-amber" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#b7791f"/>
+    </marker>
+    <style>
+      .title { font: 700 28px "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; fill: #1a202c; }
+      .subtitle { font: 400 15px "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; fill: #4a5568; }
+      .node-title { font: 700 20px "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; fill: #1a202c; }
+      .node-detail { font: 400 15px "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; fill: #2d3748; }
+      .badge { font: 700 14px "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; }
+      .legend { font: 400 14px "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; fill: #4a5568; }
+      .footer-title { font: 700 18px "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; fill: #1a202c; }
+      .footer { font: 400 15px "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; fill: #2d3748; }
+      .green-box { fill: #f0fff4; stroke: #2f855a; stroke-width: 2.5; }
+      .amber-box { fill: #fffaf0; stroke: #b7791f; stroke-width: 2.5; }
+      .gray-box { fill: #f7fafc; stroke: #718096; stroke-width: 2; }
+      .green-line { fill: none; stroke: #2f855a; stroke-width: 2.5; marker-end: url(#arrow-green); }
+      .amber-line { fill: none; stroke: #b7791f; stroke-width: 2.5; stroke-dasharray: 8 6; marker-end: url(#arrow-amber); }
+    </style>
+  </defs>
+
+  <rect width="860" height="1040" fill="#ffffff"/>
+  <text x="430" y="46" text-anchor="middle" class="title">按老师原始路线核查后的当前进度</text>
+  <text x="430" y="74" text-anchor="middle" class="subtitle">绿色＝已有代码、测试和运行证据　橙色＝尚未实现　灰色＝正式实验未开始</text>
+
+  <rect x="180" y="105" width="500" height="92" rx="10" class="green-box"/>
+  <text x="430" y="139" text-anchor="middle" class="node-title">KITTI 输入图像</text>
+  <text x="430" y="169" text-anchor="middle" class="node-detail">数据清洗、Chen 划分、标签转换、KITTI AP40：已完成</text>
+  <rect x="590" y="117" width="76" height="27" rx="13" fill="#c6f6d5"/>
+  <text x="628" y="136" text-anchor="middle" class="badge" fill="#276749">已完成</text>
+
+  <path d="M430 197 L430 237" class="green-line"/>
+
+  <rect x="180" y="245" width="500" height="92" rx="10" class="green-box"/>
+  <text x="430" y="279" text-anchor="middle" class="node-title">YOLOv8m 主干网络</text>
+  <text x="430" y="309" text-anchor="middle" class="node-detail">可信基线训练、预测与 AP40 评测链路：已完成</text>
+  <rect x="590" y="257" width="76" height="27" rx="13" fill="#c6f6d5"/>
+  <text x="628" y="276" text-anchor="middle" class="badge" fill="#276749">已完成</text>
+
+  <path d="M430 337 L430 377" class="green-line"/>
+
+  <rect x="180" y="385" width="500" height="105" rx="10" class="green-box"/>
+  <text x="430" y="419" text-anchor="middle" class="node-title">P2–P5 多尺度特征</text>
+  <text x="430" y="449" text-anchor="middle" class="node-detail">P2 小目标层、四尺度 Detect、306 项安全权重迁移：已完成</text>
+  <text x="430" y="475" text-anchor="middle" class="node-detail">结构固定：stride 4 / 8 / 16 / 32</text>
+  <rect x="590" y="397" width="76" height="27" rx="13" fill="#c6f6d5"/>
+  <text x="628" y="416" text-anchor="middle" class="badge" fill="#276749">已完成</text>
+
+  <path d="M430 490 L430 530" class="amber-line"/>
+  <rect x="323" y="503" width="214" height="27" rx="13" fill="#edf2f7"/>
+  <text x="430" y="522" text-anchor="middle" class="legend">当前模型仍使用标准 PAN-FPN</text>
+
+  <rect x="180" y="540" width="500" height="92" rx="10" class="amber-box"/>
+  <text x="430" y="574" text-anchor="middle" class="node-title">自适应双向特征融合</text>
+  <text x="430" y="604" text-anchor="middle" class="node-detail">尚未写代码、尚未训练验证——这是下一阶段</text>
+  <rect x="590" y="552" width="76" height="27" rx="13" fill="#feebc8"/>
+  <text x="628" y="571" text-anchor="middle" class="badge" fill="#975a16">未完成</text>
+
+  <path d="M350 632 C350 675 255 669 255 710" class="amber-line"/>
+  <path d="M510 632 C510 675 605 669 605 710" class="amber-line"/>
+
+  <rect x="80" y="718" width="350" height="92" rx="10" class="green-box"/>
+  <text x="255" y="752" text-anchor="middle" class="node-title">P2 小目标检测头</text>
+  <text x="255" y="782" text-anchor="middle" class="node-detail">检测头结构与前向通路：已完成</text>
+
+  <rect x="430" y="718" width="350" height="92" rx="10" class="green-box"/>
+  <text x="605" y="752" text-anchor="middle" class="node-title">P3–P5 检测头</text>
+  <text x="605" y="782" text-anchor="middle" class="node-detail">检测头结构与前向通路：已完成</text>
+
+  <path d="M255 810 C255 850 350 842 350 875" class="amber-line"/>
+  <path d="M605 810 C605 850 510 842 510 875" class="amber-line"/>
+
+  <rect x="180" y="883" width="500" height="92" rx="10" class="amber-box"/>
+  <text x="430" y="917" text-anchor="middle" class="node-title">改进 IoU 定位损失</text>
+  <text x="430" y="947" text-anchor="middle" class="node-detail">WIoU / Inner-IoU / 自研损失：尚未实现</text>
+  <rect x="590" y="895" width="76" height="27" rx="13" fill="#feebc8"/>
+  <text x="628" y="914" text-anchor="middle" class="badge" fill="#975a16">未完成</text>
+
+  <rect x="80" y="997" width="700" height="34" rx="8" class="gray-box"/>
+  <text x="430" y="1020" text-anchor="middle" class="footer-title">服务器 300 epoch：尚未开始　｜　论文精度结论：尚未产生</text>
+</svg>
