@@ -21,6 +21,7 @@ class FakeYOLO:
     def __init__(self, source: str) -> None:
         self.source = source
         self.model = torch.nn.Linear(1, 1)
+        self.overrides = {"model": source}
         self.callbacks: dict[str, object] = {}
         self.train_kwargs: dict[str, object] | None = None
         self.predict_kwargs: dict[str, object] | None = None
@@ -146,6 +147,7 @@ class UltralyticsRuntimeTest(unittest.TestCase):
             self.assertEqual(best, run_dir / "weights" / "best.pt")
             trainer = FakeTrainer.instances[-1]
             self.assertIs(trainer.model, prepared.handle.model)
+            self.assertEqual(trainer.overrides["model"], str(model))
             self.assertEqual(trainer.overrides["data"], str(data))
             self.assertTrue(trainer.overrides["exist_ok"])
 

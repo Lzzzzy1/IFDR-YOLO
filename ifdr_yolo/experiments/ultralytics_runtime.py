@@ -149,9 +149,15 @@ class UltralyticsAdapter:
         args: Mapping[str, object],
     ) -> Path:
         handle = prepared_model.handle
+        model_reference = handle.overrides.get("model")
+        if not isinstance(model_reference, (str, Path)):
+            raise RuntimeError(
+                "prepared YOLO handle does not expose a model reference"
+            )
         trainer_class = handle._smart_load("trainer")
         overrides = {
             **dict(args),
+            "model": str(model_reference),
             "data": str(data_path),
             "project": str(run_dir.parent),
             "name": run_dir.name,
