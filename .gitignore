@@ -20,5 +20,9 @@ runs/
 tmp/
 *.log
 
+# Generated datasets and evaluation caches
+data/processed/
+data/cache/
+
 # Isolated development worktrees
 .worktrees/
