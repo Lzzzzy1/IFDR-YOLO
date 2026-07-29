@@ -149,6 +149,21 @@ class UltralyticsAdapter:
         args: Mapping[str, object],
     ) -> Path:
         handle = prepared_model.handle
+        if prepared_model.initialization is None:
+            handle.train(
+                data=str(data_path),
+                project=str(run_dir.parent),
+                name=run_dir.name,
+                exist_ok=True,
+                **dict(args),
+            )
+            best = run_dir / "weights" / "best.pt"
+            if not best.is_file():
+                raise FileNotFoundError(
+                    f"training did not create best weight: {best}"
+                )
+            return best
+
         model_reference = handle.overrides.get("model")
         if not isinstance(model_reference, (str, Path)):
             raise RuntimeError(

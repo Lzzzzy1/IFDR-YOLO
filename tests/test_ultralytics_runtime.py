@@ -28,7 +28,11 @@ class FakeYOLO:
         self.__class__.instances.append(self)
 
     def train(self, **kwargs: object) -> None:
-        raise AssertionError("prepared training must bypass YOLO.train rebuild")
+        self.train_kwargs = kwargs
+        run_dir = Path(str(kwargs["project"])) / str(kwargs["name"])
+        weights = run_dir / "weights"
+        weights.mkdir(parents=True)
+        (weights / "best.pt").write_bytes(b"best")
 
     def _smart_load(self, name: str):
         if name != "trainer":
@@ -123,7 +127,7 @@ class UltralyticsRuntimeTest(unittest.TestCase):
                 require_cuda=True,
             )
 
-    def test_adapter_trains_into_owned_run_and_returns_best_weight(self) -> None:
+    def test_adapter_trains_initialized_model_with_prepared_trainer(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             model = root / "yolov8m.pt"
@@ -134,7 +138,7 @@ class UltralyticsRuntimeTest(unittest.TestCase):
             adapter = UltralyticsAdapter(yolo_factory=FakeYOLO)
             prepared = PreparedModel(
                 handle=FakeYOLO(str(model)),
-                initialization=None,
+                initialization={"transferred_items": 306},
             )
 
             best = adapter.train(
@@ -150,6 +154,32 @@ class UltralyticsRuntimeTest(unittest.TestCase):
             self.assertEqual(trainer.overrides["model"], str(model))
             self.assertEqual(trainer.overrides["data"], str(data))
             self.assertTrue(trainer.overrides["exist_ok"])
+
+    def test_adapter_trains_baseline_through_yolo_handle(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            model = root / "yolov8m.pt"
+            data = root / "data.yaml"
+            model.write_bytes(b"model")
+            data.write_text("names: [Car, Pedestrian, Cyclist]\n", encoding="utf-8")
+            run_dir = root / "runs" / "baseline"
+            handle = FakeYOLO(str(model))
+            adapter = UltralyticsAdapter(yolo_factory=FakeYOLO)
+            prepared = PreparedModel(handle=handle, initialization=None)
+
+            best = adapter.train(
+                prepared_model=prepared,
+                data_path=data,
+                run_dir=run_dir,
+                args={"epochs": 1, "device": "cpu"},
+            )
+
+            self.assertEqual(best, run_dir / "weights" / "best.pt")
+            self.assertIsNotNone(handle.train_kwargs)
+            assert handle.train_kwargs is not None
+            self.assertEqual(handle.train_kwargs["data"], str(data))
+            self.assertTrue(handle.train_kwargs["exist_ok"])
+            self.assertEqual(FakeTrainer.instances, [])
 
     def test_adapter_prepares_seeded_model_without_initialization(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
