@@ -619,7 +619,7 @@ def run_baseline(
 Mode changes:
 
 - dry-run: no run directory and no adapter train/predict calls;
-- smoke: smoke YAML, epoch 1, imgsz 320, batch 2, workers 0;
+- smoke: smoke YAML, epoch 1, imgsz 320, batch 2, workers 0, AMP off;
 - full: formal YAML values unchanged.
 
 - [ ] **Step 4: Write failing lifecycle and failure-state tests**

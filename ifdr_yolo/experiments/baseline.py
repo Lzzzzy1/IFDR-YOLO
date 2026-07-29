@@ -228,6 +228,7 @@ def _training_args(
                 "imgsz": 320,
                 "batch": 2,
                 "workers": 0,
+                "amp": False,
             }
         )
     return result
@@ -240,6 +241,8 @@ def _prediction_args(
     device: str,
 ) -> dict[str, object]:
     result = asdict(config.prediction)
+    if result.get("half") is False:
+        result.pop("half")
     result["device"] = device
     result["imgsz"] = 320 if mode == "smoke" else config.training.imgsz
     result["augment"] = False

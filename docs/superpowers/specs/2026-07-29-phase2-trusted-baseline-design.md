@@ -75,7 +75,7 @@ Ultralytics 仍会生成自身的 `args.yaml` 和 `results.csv`。项目同时�
 - `iou=0.7`；
 - `max_det=300`；
 - `augment=False`；
-- `half=False`；
+- 配置保留 `half=False`，调用框架时省略该已弃用参数，由 Ultralytics 默认使用 FP32；
 - 输出 Ultralytics YOLO 文本，包含置信度；
 - 每个 val ID 都必须有对应文件，允许内容为空；
 - 禁止用训练 YOLO 标签替代原始 KITTI GT。
@@ -218,6 +218,7 @@ Smoke 不改变正式数据和 split。它从固定 split 头部选择 16 个 tr
 - `imgsz=320`；
 - `batch=2`；
 - `workers=0`；
+- `amp=False`，避免仅用于链路验收的本地 smoke 触发联网模型自检；正式训练仍开启 AMP；
 - seed 17；
 - 本机优先 CUDA，显式要求 CPU 时使用 CPU；
 - 对 16 个 val ID 完成预测和 AP40。

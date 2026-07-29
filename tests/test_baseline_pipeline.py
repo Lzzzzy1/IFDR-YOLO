@@ -234,6 +234,8 @@ class BaselinePipelineTest(unittest.TestCase):
             self.assertEqual(resolved["training"]["batch"], 2)
             self.assertEqual(resolved["training"]["workers"], 0)
             self.assertEqual(resolved["training"]["device"], "cpu")
+            self.assertFalse(resolved["training"]["amp"])
+            self.assertNotIn("half", resolved["prediction"])
             image_paths = adapter.predict_calls[0]["image_paths"]
             assert isinstance(image_paths, tuple)
             self.assertTrue(
