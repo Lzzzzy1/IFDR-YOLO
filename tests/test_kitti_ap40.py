@@ -42,9 +42,13 @@ class KittiAP40Test(unittest.TestCase):
 
     def test_difficulty_height_threshold(self) -> None:
         short = ground_truth("Pedestrian", BoundingBox(0, 0, 20, 24))
-        tall = ground_truth("Pedestrian", BoundingBox(0, 0, 20, 25))
+        boundary = ground_truth("Pedestrian", BoundingBox(0, 0, 20, 25))
+        tall = ground_truth("Pedestrian", BoundingBox(0, 0, 20, 25.01))
         self.assertFalse(
             is_valid_ground_truth(short, "Pedestrian", Difficulty.MODERATE)
+        )
+        self.assertFalse(
+            is_valid_ground_truth(boundary, "Pedestrian", Difficulty.MODERATE)
         )
         self.assertTrue(
             is_valid_ground_truth(tall, "Pedestrian", Difficulty.MODERATE)
@@ -120,6 +124,23 @@ class KittiAP40Test(unittest.TestCase):
         self.assertEqual(result.false_positives, 0)
         self.assertEqual(result.ignored_detections, 1)
 
+    def test_dontcare_overlap_equal_to_threshold_does_not_suppress(self) -> None:
+        dontcare = ground_truth("DontCare", BoundingBox(0, 0, 50, 100))
+        detection = Detection(
+            "000001",
+            "Pedestrian",
+            0.9,
+            BoundingBox(0, 0, 100, 100),
+        )
+        result = evaluate_class(
+            gt_by_image={"000001": (dontcare,)},
+            detections_by_image={"000001": (detection,)},
+            class_name="Pedestrian",
+            difficulty=Difficulty.MODERATE,
+        )
+        self.assertEqual(result.false_positives, 1)
+        self.assertEqual(result.ignored_detections, 0)
+
     def test_detection_matching_difficulty_ignored_ground_truth_is_ignored(
         self,
     ) -> None:
@@ -182,6 +203,22 @@ class KittiAP40Test(unittest.TestCase):
             difficulty=Difficulty.MODERATE,
         )
         self.assertEqual(result.true_positives, 1)
+        self.assertEqual(result.false_positives, 1)
+
+    def test_iou_equal_to_class_threshold_is_not_a_match(self) -> None:
+        truth = BoundingBox(0, 0, 100, 100)
+        detection_box = BoundingBox(0, 0, 50, 100)
+        result = evaluate_class(
+            gt_by_image={"000001": (ground_truth("Pedestrian", truth),)},
+            detections_by_image={
+                "000001": (
+                    Detection("000001", "Pedestrian", 0.9, detection_box),
+                )
+            },
+            class_name="Pedestrian",
+            difficulty=Difficulty.MODERATE,
+        )
+        self.assertEqual(result.true_positives, 0)
         self.assertEqual(result.false_positives, 1)
 
     def test_high_score_false_positive_precedes_low_score_true_positive(

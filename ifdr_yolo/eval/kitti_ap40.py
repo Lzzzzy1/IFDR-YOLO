@@ -72,7 +72,7 @@ def is_valid_ground_truth(
         return False
     min_height, max_occlusion, max_truncation = DIFFICULTY_RULES[difficulty]
     return (
-        obj.bbox.height >= min_height
+        obj.bbox.height > min_height
         and obj.occluded <= max_occlusion
         and obj.truncated <= max_truncation
     )
@@ -201,7 +201,7 @@ def evaluate_class(
             if candidate_matches[index]:
                 continue
             overlap = box_iou(detection.bbox, obj.bbox)
-            if overlap >= best_iou:
+            if overlap > best_iou:
                 best_iou = overlap
                 best_index = index
         if best_index >= 0:
@@ -219,7 +219,7 @@ def evaluate_class(
             if ignored_matches[index]:
                 continue
             overlap = box_iou(detection.bbox, obj.bbox)
-            if overlap >= ignored_iou:
+            if overlap > ignored_iou:
                 ignored_iou = overlap
                 ignored_index = index
         if ignored_index >= 0:
@@ -229,7 +229,7 @@ def evaluate_class(
 
         overlaps_dontcare = any(
             _intersection_over_detection(detection.bbox, region.bbox)
-            >= threshold
+            > threshold
             for region in dontcare_regions.get(detection.image_id, ())
         )
         if overlaps_dontcare or detection.bbox.height < min_detection_height:

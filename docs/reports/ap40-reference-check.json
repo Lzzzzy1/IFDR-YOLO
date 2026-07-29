@@ -1,0 +1,374 @@
+{
+  "case_count": 45,
+  "cases": [
+    {
+      "absolute_difference": 0.0,
+      "class_name": "Car",
+      "difficulty": "easy",
+      "ours_ap40": 100.0,
+      "reference_ap40": 100.0,
+      "scenario": "perfect"
+    },
+    {
+      "absolute_difference": 0.0,
+      "class_name": "Car",
+      "difficulty": "moderate",
+      "ours_ap40": 100.0,
+      "reference_ap40": 100.0,
+      "scenario": "perfect"
+    },
+    {
+      "absolute_difference": 0.0,
+      "class_name": "Car",
+      "difficulty": "hard",
+      "ours_ap40": 100.0,
+      "reference_ap40": 100.0,
+      "scenario": "perfect"
+    },
+    {
+      "absolute_difference": 0.0,
+      "class_name": "Pedestrian",
+      "difficulty": "easy",
+      "ours_ap40": 100.0,
+      "reference_ap40": 100.0,
+      "scenario": "perfect"
+    },
+    {
+      "absolute_difference": 0.0,
+      "class_name": "Pedestrian",
+      "difficulty": "moderate",
+      "ours_ap40": 100.0,
+      "reference_ap40": 100.0,
+      "scenario": "perfect"
+    },
+    {
+      "absolute_difference": 0.0,
+      "class_name": "Pedestrian",
+      "difficulty": "hard",
+      "ours_ap40": 100.0,
+      "reference_ap40": 100.0,
+      "scenario": "perfect"
+    },
+    {
+      "absolute_difference": 0.0,
+      "class_name": "Cyclist",
+      "difficulty": "easy",
+      "ours_ap40": 100.0,
+      "reference_ap40": 100.0,
+      "scenario": "perfect"
+    },
+    {
+      "absolute_difference": 0.0,
+      "class_name": "Cyclist",
+      "difficulty": "moderate",
+      "ours_ap40": 100.0,
+      "reference_ap40": 100.0,
+      "scenario": "perfect"
+    },
+    {
+      "absolute_difference": 0.0,
+      "class_name": "Cyclist",
+      "difficulty": "hard",
+      "ours_ap40": 100.0,
+      "reference_ap40": 100.0,
+      "scenario": "perfect"
+    },
+    {
+      "absolute_difference": 0.0,
+      "class_name": "Car",
+      "difficulty": "easy",
+      "ours_ap40": 100.0,
+      "reference_ap40": 100.0,
+      "scenario": "duplicate"
+    },
+    {
+      "absolute_difference": 0.0,
+      "class_name": "Car",
+      "difficulty": "moderate",
+      "ours_ap40": 100.0,
+      "reference_ap40": 100.0,
+      "scenario": "duplicate"
+    },
+    {
+      "absolute_difference": 0.0,
+      "class_name": "Car",
+      "difficulty": "hard",
+      "ours_ap40": 100.0,
+      "reference_ap40": 100.0,
+      "scenario": "duplicate"
+    },
+    {
+      "absolute_difference": 0.0,
+      "class_name": "Pedestrian",
+      "difficulty": "easy",
+      "ours_ap40": 100.0,
+      "reference_ap40": 100.0,
+      "scenario": "duplicate"
+    },
+    {
+      "absolute_difference": 0.0,
+      "class_name": "Pedestrian",
+      "difficulty": "moderate",
+      "ours_ap40": 100.0,
+      "reference_ap40": 100.0,
+      "scenario": "duplicate"
+    },
+    {
+      "absolute_difference": 0.0,
+      "class_name": "Pedestrian",
+      "difficulty": "hard",
+      "ours_ap40": 100.0,
+      "reference_ap40": 100.0,
+      "scenario": "duplicate"
+    },
+    {
+      "absolute_difference": 0.0,
+      "class_name": "Cyclist",
+      "difficulty": "easy",
+      "ours_ap40": 100.0,
+      "reference_ap40": 100.0,
+      "scenario": "duplicate"
+    },
+    {
+      "absolute_difference": 0.0,
+      "class_name": "Cyclist",
+      "difficulty": "moderate",
+      "ours_ap40": 100.0,
+      "reference_ap40": 100.0,
+      "scenario": "duplicate"
+    },
+    {
+      "absolute_difference": 0.0,
+      "class_name": "Cyclist",
+      "difficulty": "hard",
+      "ours_ap40": 100.0,
+      "reference_ap40": 100.0,
+      "scenario": "duplicate"
+    },
+    {
+      "absolute_difference": 0.0,
+      "class_name": "Car",
+      "difficulty": "easy",
+      "ours_ap40": 50.0,
+      "reference_ap40": 50.0,
+      "scenario": "high_fp"
+    },
+    {
+      "absolute_difference": 0.0,
+      "class_name": "Car",
+      "difficulty": "moderate",
+      "ours_ap40": 50.0,
+      "reference_ap40": 50.0,
+      "scenario": "high_fp"
+    },
+    {
+      "absolute_difference": 0.0,
+      "class_name": "Car",
+      "difficulty": "hard",
+      "ours_ap40": 50.0,
+      "reference_ap40": 50.0,
+      "scenario": "high_fp"
+    },
+    {
+      "absolute_difference": 0.0,
+      "class_name": "Pedestrian",
+      "difficulty": "easy",
+      "ours_ap40": 50.0,
+      "reference_ap40": 50.0,
+      "scenario": "high_fp"
+    },
+    {
+      "absolute_difference": 0.0,
+      "class_name": "Pedestrian",
+      "difficulty": "moderate",
+      "ours_ap40": 50.0,
+      "reference_ap40": 50.0,
+      "scenario": "high_fp"
+    },
+    {
+      "absolute_difference": 0.0,
+      "class_name": "Pedestrian",
+      "difficulty": "hard",
+      "ours_ap40": 50.0,
+      "reference_ap40": 50.0,
+      "scenario": "high_fp"
+    },
+    {
+      "absolute_difference": 0.0,
+      "class_name": "Cyclist",
+      "difficulty": "easy",
+      "ours_ap40": 50.0,
+      "reference_ap40": 50.0,
+      "scenario": "high_fp"
+    },
+    {
+      "absolute_difference": 0.0,
+      "class_name": "Cyclist",
+      "difficulty": "moderate",
+      "ours_ap40": 50.0,
+      "reference_ap40": 50.0,
+      "scenario": "high_fp"
+    },
+    {
+      "absolute_difference": 0.0,
+      "class_name": "Cyclist",
+      "difficulty": "hard",
+      "ours_ap40": 50.0,
+      "reference_ap40": 50.0,
+      "scenario": "high_fp"
+    },
+    {
+      "absolute_difference": 0.0,
+      "class_name": "Car",
+      "difficulty": "easy",
+      "ours_ap40": 50.0,
+      "reference_ap40": 50.0,
+      "scenario": "half_missed"
+    },
+    {
+      "absolute_difference": 0.0,
+      "class_name": "Car",
+      "difficulty": "moderate",
+      "ours_ap40": 50.0,
+      "reference_ap40": 50.0,
+      "scenario": "half_missed"
+    },
+    {
+      "absolute_difference": 0.0,
+      "class_name": "Car",
+      "difficulty": "hard",
+      "ours_ap40": 50.0,
+      "reference_ap40": 50.0,
+      "scenario": "half_missed"
+    },
+    {
+      "absolute_difference": 0.0,
+      "class_name": "Pedestrian",
+      "difficulty": "easy",
+      "ours_ap40": 50.0,
+      "reference_ap40": 50.0,
+      "scenario": "half_missed"
+    },
+    {
+      "absolute_difference": 0.0,
+      "class_name": "Pedestrian",
+      "difficulty": "moderate",
+      "ours_ap40": 50.0,
+      "reference_ap40": 50.0,
+      "scenario": "half_missed"
+    },
+    {
+      "absolute_difference": 0.0,
+      "class_name": "Pedestrian",
+      "difficulty": "hard",
+      "ours_ap40": 50.0,
+      "reference_ap40": 50.0,
+      "scenario": "half_missed"
+    },
+    {
+      "absolute_difference": 0.0,
+      "class_name": "Cyclist",
+      "difficulty": "easy",
+      "ours_ap40": 50.0,
+      "reference_ap40": 50.0,
+      "scenario": "half_missed"
+    },
+    {
+      "absolute_difference": 0.0,
+      "class_name": "Cyclist",
+      "difficulty": "moderate",
+      "ours_ap40": 50.0,
+      "reference_ap40": 50.0,
+      "scenario": "half_missed"
+    },
+    {
+      "absolute_difference": 0.0,
+      "class_name": "Cyclist",
+      "difficulty": "hard",
+      "ours_ap40": 50.0,
+      "reference_ap40": 50.0,
+      "scenario": "half_missed"
+    },
+    {
+      "absolute_difference": 0.0,
+      "class_name": "Car",
+      "difficulty": "easy",
+      "ours_ap40": 100.0,
+      "reference_ap40": 100.0,
+      "scenario": "ignore"
+    },
+    {
+      "absolute_difference": 0.0,
+      "class_name": "Car",
+      "difficulty": "moderate",
+      "ours_ap40": 100.0,
+      "reference_ap40": 100.0,
+      "scenario": "ignore"
+    },
+    {
+      "absolute_difference": 0.0,
+      "class_name": "Car",
+      "difficulty": "hard",
+      "ours_ap40": 100.0,
+      "reference_ap40": 100.0,
+      "scenario": "ignore"
+    },
+    {
+      "absolute_difference": 0.0,
+      "class_name": "Pedestrian",
+      "difficulty": "easy",
+      "ours_ap40": 100.0,
+      "reference_ap40": 100.0,
+      "scenario": "ignore"
+    },
+    {
+      "absolute_difference": 0.0,
+      "class_name": "Pedestrian",
+      "difficulty": "moderate",
+      "ours_ap40": 100.0,
+      "reference_ap40": 100.0,
+      "scenario": "ignore"
+    },
+    {
+      "absolute_difference": 0.0,
+      "class_name": "Pedestrian",
+      "difficulty": "hard",
+      "ours_ap40": 100.0,
+      "reference_ap40": 100.0,
+      "scenario": "ignore"
+    },
+    {
+      "absolute_difference": 0.0,
+      "class_name": "Cyclist",
+      "difficulty": "easy",
+      "ours_ap40": 100.0,
+      "reference_ap40": 100.0,
+      "scenario": "ignore"
+    },
+    {
+      "absolute_difference": 0.0,
+      "class_name": "Cyclist",
+      "difficulty": "moderate",
+      "ours_ap40": 100.0,
+      "reference_ap40": 100.0,
+      "scenario": "ignore"
+    },
+    {
+      "absolute_difference": 0.0,
+      "class_name": "Cyclist",
+      "difficulty": "hard",
+      "ours_ap40": 100.0,
+      "reference_ap40": 100.0,
+      "scenario": "ignore"
+    }
+  ],
+  "controlled_image_count": 50,
+  "max_absolute_difference": 0.0,
+  "official_devkit_sha256": "ce0b76b69c0c5f89690a0d65b7302bbbdb962a0c7e8aba6efc7050d1b04b4cf1",
+  "official_devkit_url": "https://s3.eu-central-1.amazonaws.com/avg-kitti/devkit_object.zip",
+  "openpcdet_commit": "233f849829b6ac19afb8af8837a0246890908755",
+  "openpcdet_url": "https://github.com/open-mmlab/OpenPCDet/tree/233f849829b6ac19afb8af8837a0246890908755/pcdet/datasets/kitti/kitti_object_eval_python",
+  "reference_eval_sha256": "d9260a41f68083d685fc43fecac1c417b14a1bc53df4915a46b2924f3a6a3c64",
+  "reference_rotate_iou_sha256": "d9b2820b5be5d15ee7233147643134c5d73eff129c773aef4b59ce73a8ecd7f4",
+  "tolerance": 1e-06
+}
