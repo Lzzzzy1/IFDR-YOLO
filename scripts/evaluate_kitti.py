@@ -2,22 +2,16 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Sequence
-from dataclasses import asdict
-import json
 from pathlib import Path
 import sys
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from PIL import Image
-
 from ifdr_yolo.data.kitti_types import Difficulty, EVAL_CLASSES
-from ifdr_yolo.data.splits import load_ids, sha256_file
-from ifdr_yolo.eval.kitti_ap40 import evaluate_class
-from ifdr_yolo.eval.prediction_io import (
-    load_kitti_ground_truth,
-    load_yolo_predictions,
+from ifdr_yolo.eval.evaluate import (
+    evaluate_prediction_directory,
+    write_evaluation_json,
 )
 
 
@@ -47,46 +41,29 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    image_ids = load_ids(args.split)
-    image_sizes: dict[str, tuple[int, int]] = {}
-    for image_id in image_ids:
-        with Image.open(args.image_dir / f"{image_id}.png") as image:
-            image_sizes[image_id] = image.size
-
-    ground_truth = load_kitti_ground_truth(args.label_dir, image_ids)
-    predictions = load_yolo_predictions(args.prediction_dir, image_sizes)
-    class_payload: dict[str, dict[str, dict[str, object]]] = {}
-
+    payload = evaluate_prediction_directory(
+        prediction_dir=args.prediction_dir,
+        label_dir=args.label_dir,
+        image_dir=args.image_dir,
+        split_path=args.split,
+    )
+    classes = payload["classes"]
+    assert isinstance(classes, dict)
     print("class difficulty ap40 valid_gt tp fp ignored")
     for class_name in EVAL_CLASSES:
-        difficulty_payload: dict[str, dict[str, object]] = {}
+        class_metrics = classes[class_name]
+        assert isinstance(class_metrics, dict)
         for difficulty in Difficulty:
-            metrics = evaluate_class(
-                gt_by_image=ground_truth,
-                detections_by_image=predictions,
-                class_name=class_name,
-                difficulty=difficulty,
-            )
-            difficulty_payload[difficulty.value] = asdict(metrics)
+            metrics = class_metrics[difficulty.value]
+            assert isinstance(metrics, dict)
             print(
-                f"{class_name} {difficulty.value} {metrics.ap40:.4f} "
-                f"{metrics.num_valid_gt} {metrics.true_positives} "
-                f"{metrics.false_positives} {metrics.ignored_detections}"
+                f"{class_name} {difficulty.value} "
+                f"{float(metrics['ap40']):.4f} "
+                f"{metrics['num_valid_gt']} {metrics['true_positives']} "
+                f"{metrics['false_positives']} "
+                f"{metrics['ignored_detections']}"
             )
-        class_payload[class_name] = difficulty_payload
-
-    payload = {
-        "evaluator": "ifdr_yolo.kitti_ap40",
-        "split_sha256": sha256_file(args.split),
-        "split_count": len(image_ids),
-        "classes": class_payload,
-    }
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(
-        json.dumps(payload, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-        newline="\n",
-    )
+    write_evaluation_json(args.output, payload)
     return 0
 
 
