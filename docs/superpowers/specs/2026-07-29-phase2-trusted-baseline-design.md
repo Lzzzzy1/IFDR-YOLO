@@ -205,13 +205,14 @@ Split 保留两种不同用途的哈希，不允许直接互比：
 
 ## 8. Smoke 数据视图
 
-Smoke 不改变正式数据和 split。它从固定 split 头部选择 16 个 train ID 和 16 个 val ID，在 `tmp/smoke-kitti/` 写入：
+Smoke 不改变正式数据和 split。它从固定 split 头部选择 16 个 train ID 和 16 个 val ID，在 `tmp/smoke-kitti/` 建立隔离视图：
 
+- 选中图像和标签的临时副本；
 - 绝对图像路径列表；
 - 临时数据 YAML；
 - 选择 ID 与源 split SHA256。
 
-标签仍由图像路径中的 `images` → `labels` 规则指向 Phase 1 派生标签，不复制或改写标注。Smoke 参数固定为：
+临时视图继续保持 `images/<split>` 与 `labels/<split>` 对称结构。这样 Ultralytics 自动生成的标签缓存只会写入 `tmp`，不会污染 Phase 1 派生数据。预测使用临时验证图像目录作为 source，避免 Python 图片列表被框架重命名为 `image0` 等非 KITTI ID。临时副本不得回写正式数据。Smoke 参数固定为：
 
 - 1 epoch；
 - `imgsz=320`；

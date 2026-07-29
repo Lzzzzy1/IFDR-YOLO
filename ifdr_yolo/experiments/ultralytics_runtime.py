@@ -108,9 +108,21 @@ class UltralyticsAdapter:
         output_dir: Path,
         args: Mapping[str, object],
     ) -> Path:
+        if not image_paths:
+            raise ValueError("prediction requires at least one image path")
+        source_dir = image_paths[0].resolve().parent
+        expected_paths = {path.resolve() for path in image_paths}
+        if any(path.resolve().parent != source_dir for path in image_paths):
+            raise ValueError("prediction image paths must share one directory")
+        directory_paths = {path.resolve() for path in source_dir.glob("*.png")}
+        if directory_paths != expected_paths:
+            raise ValueError(
+                "prediction source directory must contain exactly the requested "
+                "PNG images"
+            )
         model = self._factory()(str(weights))
         model.predict(
-            source=[str(path) for path in image_paths],
+            source=str(source_dir),
             project=str(output_dir.parent),
             name=output_dir.name,
             exist_ok=True,

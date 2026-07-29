@@ -90,6 +90,17 @@ def make_pipeline_config(
             )
             image.parent.mkdir(parents=True, exist_ok=True)
             image.write_bytes(b"image")
+            label = (
+                config.paths.generated_data
+                / "labels"
+                / split
+                / f"{image_id}.txt"
+            )
+            label.parent.mkdir(parents=True, exist_ok=True)
+            label.write_text(
+                "0 0.5 0.5 0.2 0.2\n",
+                encoding="utf-8",
+            )
     source_path = root / "experiment.yaml"
     source_path.write_text("schema_version: 1\n", encoding="utf-8")
     return replace(
@@ -223,6 +234,11 @@ class BaselinePipelineTest(unittest.TestCase):
             self.assertEqual(resolved["training"]["batch"], 2)
             self.assertEqual(resolved["training"]["workers"], 0)
             self.assertEqual(resolved["training"]["device"], "cpu")
+            image_paths = adapter.predict_calls[0]["image_paths"]
+            assert isinstance(image_paths, tuple)
+            self.assertTrue(
+                image_paths[0].is_relative_to(root / "tmp" / "smoke-kitti")
+            )
 
     def test_training_failure_is_recorded_and_reraised(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

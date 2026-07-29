@@ -8,6 +8,8 @@ import tempfile
 
 import yaml
 
+from ifdr_yolo.data.splits import sha256_file
+
 
 @dataclass(frozen=True)
 class SmokeSelection:
@@ -47,16 +49,14 @@ def select_smoke_ids(
 
 
 def _paths_text(
-    generated_dir: Path,
+    output_dir: Path,
     split: str,
     image_ids: tuple[str, ...],
 ) -> str:
-    paths: list[str] = []
-    for image_id in image_ids:
-        path = (generated_dir / "images" / split / f"{image_id}.png").resolve()
-        if not path.is_file():
-            raise FileNotFoundError(f"smoke image does not exist: {path}")
-        paths.append(str(path))
+    paths = [
+        str((output_dir / "images" / split / f"{image_id}.png").resolve())
+        for image_id in image_ids
+    ]
     return "".join(f"{path}\n" for path in paths)
 
 
@@ -73,7 +73,7 @@ def _expected_files(
     train_list = output_dir / "train.txt"
     val_list = output_dir / "val.txt"
     data = {
-        "path": str(generated_dir),
+        "path": str(output_dir),
         "train": str(train_list),
         "val": str(val_list),
         "names": {
@@ -92,12 +92,12 @@ def _expected_files(
     }
     return {
         "train.txt": _paths_text(
-            generated_dir,
+            output_dir,
             "train",
             selection.train_ids,
         ),
         "val.txt": _paths_text(
-            generated_dir,
+            output_dir,
             "val",
             selection.val_ids,
         ),
@@ -111,7 +111,65 @@ def _expected_files(
     }
 
 
-def _verify_existing(output_dir: Path, expected: dict[str, str]) -> None:
+def _copy_selected_files(
+    *,
+    destination_root: Path,
+    generated_dir: Path,
+    selection: SmokeSelection,
+) -> None:
+    for split, image_ids in (
+        ("train", selection.train_ids),
+        ("val", selection.val_ids),
+    ):
+        for image_id in image_ids:
+            for kind, extension in (("images", ".png"), ("labels", ".txt")):
+                source = generated_dir / kind / split / f"{image_id}{extension}"
+                if not source.is_file():
+                    raise FileNotFoundError(
+                        f"smoke source file does not exist: {source}"
+                    )
+                destination = (
+                    destination_root / kind / split / f"{image_id}{extension}"
+                )
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, destination)
+
+
+def _verify_copied_files(
+    *,
+    output_dir: Path,
+    generated_dir: Path,
+    selection: SmokeSelection,
+) -> None:
+    for split, image_ids in (
+        ("train", selection.train_ids),
+        ("val", selection.val_ids),
+    ):
+        for image_id in image_ids:
+            for kind, extension in (("images", ".png"), ("labels", ".txt")):
+                source = generated_dir / kind / split / f"{image_id}{extension}"
+                destination = (
+                    output_dir / kind / split / f"{image_id}{extension}"
+                )
+                if not destination.is_file():
+                    raise FileExistsError(
+                        "smoke output already exists with different content: "
+                        f"{destination}"
+                    )
+                if sha256_file(source) != sha256_file(destination):
+                    raise FileExistsError(
+                        "smoke output already exists with different content: "
+                        f"{destination}"
+                    )
+
+
+def _verify_existing(
+    *,
+    output_dir: Path,
+    generated_dir: Path,
+    selection: SmokeSelection,
+    expected: dict[str, str],
+) -> None:
     if not output_dir.is_dir():
         raise FileExistsError(f"smoke output exists and is not a directory: {output_dir}")
     for name, content in expected.items():
@@ -120,6 +178,11 @@ def _verify_existing(output_dir: Path, expected: dict[str, str]) -> None:
             raise FileExistsError(
                 f"smoke output already exists with different content: {path}"
             )
+    _verify_copied_files(
+        output_dir=output_dir,
+        generated_dir=generated_dir,
+        selection=selection,
+    )
 
 
 def build_smoke_view(
@@ -142,7 +205,12 @@ def build_smoke_view(
         val_source_sha256=val_source_sha256,
     )
     if output_dir.exists():
-        _verify_existing(output_dir, expected)
+        _verify_existing(
+            output_dir=output_dir,
+            generated_dir=generated_dir,
+            selection=selection,
+            expected=expected,
+        )
     else:
         output_dir.parent.mkdir(parents=True, exist_ok=True)
         staging = Path(
@@ -152,6 +220,11 @@ def build_smoke_view(
             )
         )
         try:
+            _copy_selected_files(
+                destination_root=staging,
+                generated_dir=generated_dir,
+                selection=selection,
+            )
             for name, content in expected.items():
                 (staging / name).write_text(
                     content,

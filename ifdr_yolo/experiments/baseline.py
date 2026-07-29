@@ -345,6 +345,7 @@ def run_baseline(
         data_path = config.paths.data
         evaluation_split = config.paths.val_ids
         selected_val_ids = val_ids
+        prediction_image_dir = config.paths.generated_data / "images" / "val"
         if mode == "smoke":
             smoke_view = build_smoke_view(
                 output_dir=repository_root / "tmp" / "smoke-kitti",
@@ -360,6 +361,7 @@ def run_baseline(
             )
             data_path = smoke_view.data_yaml
             selected_val_ids = smoke_view.val_ids
+            prediction_image_dir = smoke_view.root / "images" / "val"
             evaluation_split = store.root / "evaluation_split.txt"
             _write_evaluation_split(evaluation_split, selected_val_ids)
         training_args = _training_args(
@@ -395,10 +397,7 @@ def run_baseline(
         stage = "evaluation"
         store.transition("evaluating")
         image_paths = tuple(
-            config.paths.generated_data
-            / "images"
-            / "val"
-            / f"{image_id}.png"
+            prediction_image_dir / f"{image_id}.png"
             for image_id in selected_val_ids
         )
         labels_dir = runtime.predict(

@@ -41,10 +41,16 @@ class SmokeDataTest(unittest.TestCase):
                 ("val", ("000101", "000102")),
             ):
                 image_dir = generated / "images" / split
+                label_dir = generated / "labels" / split
                 image_dir.mkdir(parents=True)
+                label_dir.mkdir(parents=True)
                 for image_id in image_ids:
                     Image.new("RGB", (20, 10)).save(
                         image_dir / f"{image_id}.png"
+                    )
+                    (label_dir / f"{image_id}.txt").write_text(
+                        "0 0.5 0.5 0.2 0.2\n",
+                        encoding="utf-8",
                     )
 
             view = build_smoke_view(
@@ -63,9 +69,15 @@ class SmokeDataTest(unittest.TestCase):
             self.assertEqual(
                 train_paths,
                 [
-                    str((generated / "images/train/000001.png").resolve()),
-                    str((generated / "images/train/000002.png").resolve()),
+                    str((view.root / "images/train/000001.png").resolve()),
+                    str((view.root / "images/train/000002.png").resolve()),
                 ],
+            )
+            self.assertTrue(
+                (view.root / "labels/train/000001.txt").is_file()
+            )
+            self.assertFalse(
+                (generated / "labels/train.cache").exists()
             )
             data = yaml.safe_load(view.data_yaml.read_text(encoding="utf-8"))
             self.assertEqual(Path(data["train"]), view.root / "train.txt")
@@ -91,10 +103,16 @@ class SmokeDataTest(unittest.TestCase):
                 ("val", ("000101", "000102")),
             ):
                 image_dir = generated / "images" / split
+                label_dir = generated / "labels" / split
                 image_dir.mkdir(parents=True)
+                label_dir.mkdir(parents=True)
                 for image_id in image_ids:
                     Image.new("RGB", (20, 10)).save(
                         image_dir / f"{image_id}.png"
+                    )
+                    (label_dir / f"{image_id}.txt").write_text(
+                        "0 0.5 0.5 0.2 0.2\n",
+                        encoding="utf-8",
                     )
             arguments = {
                 "output_dir": root / "smoke",

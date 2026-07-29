@@ -131,7 +131,7 @@ class UltralyticsRuntimeTest(unittest.TestCase):
             self.assertEqual(labels, output_dir / "labels")
             instance = FakeYOLO.instances[-1]
             assert instance.predict_kwargs is not None
-            self.assertEqual(instance.predict_kwargs["source"], [str(image)])
+            self.assertEqual(instance.predict_kwargs["source"], str(root))
             self.assertTrue(instance.predict_kwargs["save_txt"])
             self.assertTrue(instance.predict_kwargs["save_conf"])
 

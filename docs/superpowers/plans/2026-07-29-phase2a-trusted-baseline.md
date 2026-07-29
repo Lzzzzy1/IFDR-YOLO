@@ -381,6 +381,7 @@ Assert:
 
 - train/val text files contain absolute PNG paths;
 - YAML points to those lists and preserves class names;
+- selected images and labels are copied under the smoke root;
 - `manifest.json` records selected IDs and source split hashes;
 - repeated construction with identical content is idempotent;
 - differing content at the same path fails rather than overwrites.
@@ -418,7 +419,9 @@ def build_smoke_view(
     )
 ```
 
-Write YAML with PyYAML and UTF-8/LF. Do not copy or modify images/labels.
+Write YAML with PyYAML and UTF-8/LF. Copy only the selected 16/16 images and
+labels into `tmp/smoke-kitti` so Ultralytics label caches stay outside the
+formal generated dataset. Never modify the source files.
 
 - [ ] **Step 5: Run tests and commit**
 
