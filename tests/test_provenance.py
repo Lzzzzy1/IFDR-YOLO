@@ -2,6 +2,7 @@ from dataclasses import replace
 from hashlib import sha256
 import json
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 
@@ -137,9 +138,15 @@ class ProvenanceTest(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
 
         result = collect_git_provenance(root)
+        current_branch = subprocess.run(
+            ["git", "-C", str(root), "branch", "--show-current"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
 
         self.assertEqual(len(str(result["commit"])), 40)
-        self.assertEqual(result["branch"], "feature/phase2a-trusted-baseline")
+        self.assertEqual(result["branch"], current_branch)
         self.assertIsInstance(result["tracked_changes"], list)
         self.assertIsInstance(result["untracked_files"], list)
 
