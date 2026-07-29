@@ -1,1 +1,2 @@
 configs/splits/*.txt text eol=lf
+models/*.yaml text eol=lf
