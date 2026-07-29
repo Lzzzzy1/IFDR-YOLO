@@ -14,7 +14,7 @@ from ifdr_yolo.eval.evaluate import (
     evaluate_prediction_directory,
     write_evaluation_json,
 )
-from ifdr_yolo.experiments.config import BaselineConfig
+from ifdr_yolo.experiments.config import BaselineConfig, InitializationConfig
 from ifdr_yolo.experiments.provenance import (
     collect_git_provenance,
     verify_dataset,
@@ -28,6 +28,7 @@ from ifdr_yolo.experiments.run_store import (
 from ifdr_yolo.experiments.smoke_data import build_smoke_view
 from ifdr_yolo.experiments.ultralytics_runtime import (
     EXPECTED_ULTRALYTICS_VERSION,
+    PreparedModel,
     UltralyticsAdapter,
     bootstrap_ultralytics_config,
     validate_runtime,
@@ -40,10 +41,20 @@ Mode = Literal["dry-run", "smoke", "full"]
 class RuntimeAdapter(Protocol):
     def runtime_info(self) -> dict[str, object]: ...
 
-    def train(
+    def prepare_model(
         self,
         *,
         model_path: Path,
+        model_sha256: str,
+        initialization: InitializationConfig | None,
+        seed: int,
+        deterministic: bool,
+    ) -> PreparedModel: ...
+
+    def train(
+        self,
+        *,
+        prepared_model: PreparedModel,
         data_path: Path,
         run_dir: Path,
         args: Mapping[str, object],
@@ -115,6 +126,16 @@ def _preflight(
         config.paths.model_sha256,
         label="model",
     )
+    if config.initialization is not None:
+        _require_file(
+            config.initialization.pretrained,
+            "pretrained model",
+        )
+        services.verify_file_sha256(
+            config.initialization.pretrained,
+            config.initialization.pretrained_sha256,
+            label="pretrained model",
+        )
     dataset = services.verify_dataset(
         config,
         verify_all_hashes=True,
@@ -323,6 +344,13 @@ def run_baseline(
         device_override=device_override,
     )
     if mode == "dry-run":
+        runtime.prepare_model(
+            model_path=config.paths.model,
+            model_sha256=config.paths.model_sha256,
+            initialization=config.initialization,
+            seed=config.experiment.seed,
+            deterministic=config.training.deterministic,
+        )
         return BaselineResult(
             mode="dry-run",
             run_dir=None,
@@ -341,8 +369,22 @@ def run_baseline(
         git_sha=commit,
     )
     store = RunStore.create(repository_root / "runs" / run_id)
-    stage = "preparation"
+    stage = "initialization"
     try:
+        prepared = runtime.prepare_model(
+            model_path=config.paths.model,
+            model_sha256=config.paths.model_sha256,
+            initialization=config.initialization,
+            seed=config.experiment.seed,
+            deterministic=config.training.deterministic,
+        )
+        if prepared.initialization is not None:
+            atomic_write_json(
+                store.root / "initialization.json",
+                prepared.initialization,
+            )
+
+        stage = "preparation"
         train_ids = load_ids(config.paths.train_ids)
         val_ids = load_ids(config.paths.val_ids)
         data_path = config.paths.data
@@ -390,7 +432,7 @@ def run_baseline(
         stage = "training"
         store.transition("running")
         best = runtime.train(
-            model_path=config.paths.model,
+            prepared_model=prepared,
             data_path=data_path,
             run_dir=store.root,
             args=training_args,

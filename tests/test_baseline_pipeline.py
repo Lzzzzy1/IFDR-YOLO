@@ -13,12 +13,22 @@ from ifdr_yolo.experiments.baseline import (
     ensure_prediction_files,
     run_baseline,
 )
+from ifdr_yolo.experiments.config import InitializationConfig
+from ifdr_yolo.experiments.ultralytics_runtime import PreparedModel
 from tests.test_provenance import make_config
 
 
 class FakeAdapter:
-    def __init__(self, *, fail_training: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        fail_preparation: bool = False,
+        fail_training: bool = False,
+    ) -> None:
+        self.fail_preparation = fail_preparation
         self.fail_training = fail_training
+        self.prepare_calls: list[dict[str, object]] = []
+        self.prepared_models: list[PreparedModel] = []
         self.train_calls: list[dict[str, object]] = []
         self.predict_calls: list[dict[str, object]] = []
 
@@ -28,6 +38,20 @@ class FakeAdapter:
             "cuda_available": True,
             "cuda_device_count": 1,
         }
+
+    def prepare_model(self, **kwargs: object) -> PreparedModel:
+        self.prepare_calls.append(kwargs)
+        if self.fail_preparation:
+            raise RuntimeError("synthetic preparation failure")
+        payload = None
+        if kwargs["initialization"] is not None:
+            payload = {
+                "strategy": "semantic_prefix",
+                "transferred_items": 306,
+            }
+        prepared = PreparedModel(handle=object(), initialization=payload)
+        self.prepared_models.append(prepared)
+        return prepared
 
     def train(self, **kwargs: object) -> Path:
         self.train_calls.append(kwargs)
@@ -113,7 +137,11 @@ def make_pipeline_config(
     )
 
 
-def make_services(root: Path) -> BaselineServices:
+def make_services(
+    root: Path,
+    *,
+    verification_calls: list[tuple[Path, str, str]] | None = None,
+) -> BaselineServices:
     def verify_dataset(config, *, verify_all_hashes):
         return {
             "image_count": 2,
@@ -141,10 +169,15 @@ def make_services(root: Path) -> BaselineServices:
             raise AssertionError("prediction set is incomplete")
         return {"evaluator": "test", "split_count": len(ids), "classes": {}}
 
+    def verify_file(path, expected, label):
+        if verification_calls is not None:
+            verification_calls.append((path, expected, label))
+        return expected
+
     return BaselineServices(
         verify_dataset=verify_dataset,
         collect_git=collect_git,
-        verify_file_sha256=lambda path, expected, label: expected,
+        verify_file_sha256=verify_file,
         evaluate=evaluate,
         now=lambda: datetime(2026, 7, 29, 12, 0, tzinfo=timezone.utc),
     )
@@ -167,6 +200,7 @@ class BaselinePipelineTest(unittest.TestCase):
 
             self.assertEqual(result.mode, "dry-run")
             self.assertIsNone(result.run_dir)
+            self.assertEqual(len(adapter.prepare_calls), 1)
             self.assertEqual(adapter.train_calls, [])
             self.assertEqual(adapter.predict_calls, [])
 
@@ -204,6 +238,65 @@ class BaselinePipelineTest(unittest.TestCase):
             self.assertTrue((result.run_dir / "config.input.yaml").is_file())
             self.assertEqual(len(adapter.train_calls), 1)
             self.assertEqual(len(adapter.predict_calls), 1)
+            self.assertIs(
+                adapter.train_calls[0]["prepared_model"],
+                adapter.prepared_models[0],
+            )
+
+    def test_initialized_run_records_manifest_and_reuses_prepared_model(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = make_pipeline_config(root, train_count=16, val_count=16)
+            pretrained = root / "yolov8m.pt"
+            pretrained.write_bytes(b"pretrained")
+            initialization = InitializationConfig(
+                pretrained=pretrained,
+                pretrained_sha256=sha256_file(pretrained),
+                strategy="semantic_prefix",
+                max_layer=15,
+                expected_items=306,
+            )
+            config = replace(config, initialization=initialization)
+            adapter = FakeAdapter()
+            verification_calls: list[tuple[Path, str, str]] = []
+
+            result = run_baseline(
+                config,
+                mode="smoke",
+                adapter=adapter,
+                repository_root=root,
+                services=make_services(
+                    root,
+                    verification_calls=verification_calls,
+                ),
+                device_override="cpu",
+            )
+
+            self.assertIn(
+                (
+                    pretrained,
+                    initialization.pretrained_sha256,
+                    "pretrained model",
+                ),
+                verification_calls,
+            )
+            self.assertEqual(len(adapter.prepare_calls), 1)
+            prepare_call = adapter.prepare_calls[0]
+            self.assertEqual(prepare_call["seed"], 17)
+            self.assertTrue(prepare_call["deterministic"])
+            assert result.run_dir is not None
+            manifest = json.loads(
+                (result.run_dir / "initialization.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(manifest["transferred_items"], 306)
+            self.assertIs(
+                adapter.train_calls[0]["prepared_model"],
+                adapter.prepared_models[0],
+            )
 
     def test_smoke_resolved_config_records_effective_training_budget(
         self,
@@ -267,6 +360,33 @@ class BaselinePipelineTest(unittest.TestCase):
             )
             self.assertEqual(status["state"], "failed")
             self.assertEqual(status["stage"], "training")
+
+    def test_preparation_failure_is_recorded_and_reraised(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = make_pipeline_config(root)
+            adapter = FakeAdapter(fail_preparation=True)
+
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "synthetic preparation failure",
+            ):
+                run_baseline(
+                    config,
+                    mode="full",
+                    adapter=adapter,
+                    repository_root=root,
+                    services=make_services(root),
+                )
+
+            run_dirs = tuple((root / "runs").iterdir())
+            self.assertEqual(len(run_dirs), 1)
+            status = json.loads(
+                (run_dirs[0] / "status.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(status["state"], "failed")
+            self.assertEqual(status["stage"], "initialization")
+            self.assertEqual(status["error_type"], "RuntimeError")
 
     def test_prediction_completion_creates_empty_files(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
