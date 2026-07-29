@@ -10,7 +10,7 @@ Phase 1 数据与评测基础设施已于 2026-07-29 验收通过：
 - Chen common split：3712 train / 3769 val；
 - 按真实图像尺寸重建 YOLO 标签；
 - KITTI 2D AP40；
-- 63 个测试；
+- 64 个测试；
 - AP40 参考实现一致性最大差为 0。
 
 详见 `docs/reports/phase1-acceptance.md`。

@@ -3,6 +3,11 @@ import unittest
 
 
 class RepositorySafetyTest(unittest.TestCase):
+    def test_reproducibility_files_force_lf_line_endings(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        attributes = (root / ".gitattributes").read_text(encoding="utf-8")
+        self.assertIn("configs/splits/*.txt text eol=lf", attributes)
+
     def test_generated_data_is_git_ignored(self) -> None:
         root = Path(__file__).resolve().parents[1]
         ignore = (root / ".gitignore").read_text(encoding="utf-8")
