@@ -1,14 +1,26 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 import os
 from pathlib import Path
 from typing import Any
 
+from ifdr_yolo.experiments.config import InitializationConfig
 from ifdr_yolo.experiments.provenance import collect_environment
+from ifdr_yolo.models.initialization import (
+    apply_semantic_prefix_initialization,
+)
+from ifdr_yolo.models.p2 import inspect_p2_model
 
 
 EXPECTED_ULTRALYTICS_VERSION = "8.4.98"
+
+
+@dataclass(frozen=True)
+class PreparedModel:
+    handle: Any
+    initialization: dict[str, object] | None
 
 
 def bootstrap_ultralytics_config(repository_root: Path) -> Path:
@@ -63,13 +75,27 @@ def _load_yolo_factory() -> Callable[[str], Any]:
     return YOLO
 
 
+def _initialize_seed(seed: int, deterministic: bool) -> None:
+    from ultralytics.utils.torch_utils import init_seeds
+
+    init_seeds(seed, deterministic=deterministic)
+
+
 class UltralyticsAdapter:
     def __init__(
         self,
         *,
         yolo_factory: Callable[[str], Any] | None = None,
+        seed_initializer: Callable[[int, bool], None] | None = None,
+        model_initializer: Callable[..., Any] = (
+            apply_semantic_prefix_initialization
+        ),
+        p2_inspector: Callable[[Any], dict[str, object]] = inspect_p2_model,
     ) -> None:
         self._yolo_factory = yolo_factory
+        self._seed_initializer = seed_initializer
+        self._model_initializer = model_initializer
+        self._p2_inspector = p2_inspector
 
     def _factory(self) -> Callable[[str], Any]:
         if self._yolo_factory is None:
@@ -79,16 +105,50 @@ class UltralyticsAdapter:
     def runtime_info(self) -> dict[str, object]:
         return collect_environment()
 
-    def train(
+    def prepare_model(
         self,
         *,
         model_path: Path,
+        model_sha256: str,
+        initialization: InitializationConfig | None,
+        seed: int,
+        deterministic: bool,
+    ) -> PreparedModel:
+        initializer = self._seed_initializer or _initialize_seed
+        initializer(seed, deterministic)
+        handle = self._factory()(str(model_path))
+        payload = None
+        if initialization is not None:
+            source = self._factory()(str(initialization.pretrained))
+            report = self._model_initializer(
+                handle.model,
+                source.model,
+                max_layer=initialization.max_layer,
+                expected_items=initialization.expected_items,
+            )
+            structure = self._p2_inspector(handle.model)
+            payload = report.to_payload()
+            payload["architecture"] = str(model_path)
+            payload["architecture_sha256"] = model_sha256
+            payload["pretrained"] = str(initialization.pretrained)
+            payload["pretrained_sha256"] = (
+                initialization.pretrained_sha256
+            )
+            payload["ultralytics"] = EXPECTED_ULTRALYTICS_VERSION
+            payload["structure"] = structure
+            payload["seed"] = seed
+            payload["deterministic"] = deterministic
+        return PreparedModel(handle=handle, initialization=payload)
+
+    def train(
+        self,
+        *,
+        prepared_model: PreparedModel,
         data_path: Path,
         run_dir: Path,
         args: Mapping[str, object],
     ) -> Path:
-        model = self._factory()(str(model_path))
-        model.train(
+        prepared_model.handle.train(
             data=str(data_path),
             project=str(run_dir.parent),
             name=run_dir.name,
