@@ -279,9 +279,11 @@ class P2ModelTest(unittest.TestCase):
         self.model.train()
         with torch.no_grad():
             outputs = self.model(torch.zeros(1, 3, 320, 320))
-        self.assertEqual(len(outputs), 4)
+        self.assertEqual(set(outputs), {"boxes", "scores", "feats"})
+        features = outputs["feats"]
+        self.assertEqual(len(features), 4)
         self.assertEqual(
-            [tuple(output.shape[-2:]) for output in outputs],
+            [tuple(feature.shape[-2:]) for feature in features],
             [(80, 80), (40, 40), (20, 20), (10, 10)],
         )
 ```
