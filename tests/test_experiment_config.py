@@ -83,6 +83,10 @@ class BaselineConfigTest(unittest.TestCase):
         self.assertEqual(config.training.epochs, 300)
         self.assertEqual(config.paths.data, ROOT / "configs/data/kitti_v2.yaml")
         self.assertEqual(config.paths.model_sha256, MODEL_SHA256)
+        self.assertEqual(
+            config.source_path,
+            ROOT / "configs/experiments/kitti_yolov8m_baseline_s17.yaml",
+        )
 
     def test_rejects_unknown_training_key(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

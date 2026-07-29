@@ -61,6 +61,7 @@ class BaselineConfig:
     paths: PathsConfig
     training: TrainingConfig
     prediction: PredictionConfig
+    source_path: Path | None = None
 
 
 def _require_mapping(value: object, field: str) -> dict[str, Any]:
@@ -314,4 +315,5 @@ def load_baseline_config(
         paths=_parse_paths(mapping["paths"], root),
         training=_parse_training(mapping["training"]),
         prediction=_parse_prediction(mapping["prediction"]),
+        source_path=path.resolve(),
     )
