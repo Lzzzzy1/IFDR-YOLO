@@ -8,6 +8,7 @@ import unittest
 from PIL import Image
 
 from ifdr_yolo.data.build_dataset import build_dataset
+from ifdr_yolo.data.splits import sha256_file
 
 
 def write_kitti_label(
@@ -77,6 +78,15 @@ class DatasetBuilderTest(unittest.TestCase):
                 (output_dir / "manifest.json").read_text(encoding="utf-8")
             )
             self.assertEqual(manifest["image_count"], 2)
+            image_record = json.loads(
+                (output_dir / "metadata/images.jsonl")
+                .read_text(encoding="utf-8")
+                .splitlines()[0]
+            )
+            self.assertEqual(
+                image_record["source_label_sha256"],
+                sha256_file(label_dir / "000001.txt"),
+            )
 
     def test_rebuild_script_runs_directly_with_explicit_paths(self) -> None:
         repository_root = Path(__file__).resolve().parents[1]

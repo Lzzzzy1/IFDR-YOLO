@@ -158,6 +158,7 @@ def build_dataset(
                         "width": image_width,
                         "height": image_height,
                         "source_sha256": sha256_file(source_image),
+                        "source_label_sha256": sha256_file(source_label),
                     }
                 )
 
