@@ -88,6 +88,74 @@ class BaselineConfigTest(unittest.TestCase):
             ROOT / "configs/experiments/kitti_yolov8m_baseline_s17.yaml",
         )
 
+    def test_loads_complete_semantic_prefix_initialization(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            payload = valid_payload()
+            payload["initialization"] = {
+                "pretrained": "yolov8m.pt",
+                "pretrained_sha256": MODEL_SHA256,
+                "strategy": "semantic_prefix",
+                "max_layer": 15,
+                "expected_items": 306,
+            }
+            path = self.write_payload(directory, payload)
+
+            config = load_baseline_config(path, repository_root=ROOT)
+
+            assert config.initialization is not None
+            self.assertEqual(
+                config.initialization.pretrained,
+                ROOT / "yolov8m.pt",
+            )
+            self.assertEqual(config.initialization.max_layer, 15)
+            self.assertEqual(config.initialization.expected_items, 306)
+
+    def test_rejects_invalid_initialization_contract(self) -> None:
+        cases = (
+            ("strategy", "shape_only", "initialization.strategy"),
+            ("max_layer", -1, "initialization.max_layer"),
+            ("expected_items", 0, "initialization.expected_items"),
+            (
+                "pretrained_sha256",
+                "not-a-hash",
+                "initialization.pretrained_sha256",
+            ),
+        )
+        for field, value, message in cases:
+            with self.subTest(field=field):
+                with tempfile.TemporaryDirectory() as directory:
+                    payload = valid_payload()
+                    initialization = {
+                        "pretrained": "yolov8m.pt",
+                        "pretrained_sha256": MODEL_SHA256,
+                        "strategy": "semantic_prefix",
+                        "max_layer": 15,
+                        "expected_items": 306,
+                    }
+                    initialization[field] = value
+                    payload["initialization"] = initialization
+                    path = self.write_payload(directory, payload)
+
+                    with self.assertRaisesRegex(ValueError, message):
+                        load_baseline_config(path, repository_root=ROOT)
+
+    def test_rejects_incomplete_initialization_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            payload = valid_payload()
+            payload["initialization"] = {
+                "pretrained": "yolov8m.pt",
+                "pretrained_sha256": MODEL_SHA256,
+                "strategy": "semantic_prefix",
+                "max_layer": 15,
+            }
+            path = self.write_payload(directory, payload)
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "missing initialization fields",
+            ):
+                load_baseline_config(path, repository_root=ROOT)
+
     def test_rejects_unknown_training_key(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             payload = valid_payload()

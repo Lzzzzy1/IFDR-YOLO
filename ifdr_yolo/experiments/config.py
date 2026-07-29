@@ -55,12 +55,22 @@ class PredictionConfig:
 
 
 @dataclass(frozen=True)
+class InitializationConfig:
+    pretrained: Path
+    pretrained_sha256: str
+    strategy: str
+    max_layer: int
+    expected_items: int
+
+
+@dataclass(frozen=True)
 class BaselineConfig:
     schema_version: int
     experiment: ExperimentConfig
     paths: PathsConfig
     training: TrainingConfig
     prediction: PredictionConfig
+    initialization: InitializationConfig | None = None
     source_path: Path | None = None
 
 
@@ -77,9 +87,11 @@ def _require_fields(
     *,
     field: str,
     expected: set[str],
+    optional: set[str] | None = None,
 ) -> None:
+    optional = optional or set()
     missing = sorted(expected - set(mapping))
-    unknown = sorted(set(mapping) - expected)
+    unknown = sorted(set(mapping) - expected - optional)
     if missing:
         raise ValueError(f"missing {field} fields: {missing}")
     if unknown:
@@ -132,6 +144,15 @@ def _require_text(value: object, field: str) -> str:
     return value
 
 
+def _require_sha256(value: object, field: str) -> str:
+    result = _require_text(value, field).lower()
+    if len(result) != 64 or any(
+        character not in "0123456789abcdef" for character in result
+    ):
+        raise ValueError(f"{field} must be 64 hexadecimal characters")
+    return result
+
+
 def _resolve_path(value: object, field: str, root: Path) -> Path:
     text = _require_text(value, field)
     path = Path(text)
@@ -165,14 +186,10 @@ def _parse_paths(value: object, root: Path) -> PathsConfig:
         "val_ids",
     }
     _require_fields(mapping, field="paths", expected=expected)
-    model_sha256 = _require_text(
+    model_sha256 = _require_sha256(
         mapping["model_sha256"],
         "paths.model_sha256",
-    ).lower()
-    if len(model_sha256) != 64 or any(
-        character not in "0123456789abcdef" for character in model_sha256
-    ):
-        raise ValueError("paths.model_sha256 must be 64 hexadecimal characters")
+    )
     return PathsConfig(
         model=_resolve_path(mapping["model"], "paths.model", root),
         model_sha256=model_sha256,
@@ -286,6 +303,48 @@ def _parse_prediction(value: object) -> PredictionConfig:
     )
 
 
+def _parse_initialization(
+    value: object,
+    root: Path,
+) -> InitializationConfig:
+    mapping = _require_mapping(value, "initialization")
+    expected = {
+        "pretrained",
+        "pretrained_sha256",
+        "strategy",
+        "max_layer",
+        "expected_items",
+    }
+    _require_fields(mapping, field="initialization", expected=expected)
+    strategy = _require_text(mapping["strategy"], "initialization.strategy")
+    if strategy != "semantic_prefix":
+        raise ValueError(
+            "initialization.strategy must be 'semantic_prefix'"
+        )
+    return InitializationConfig(
+        pretrained=_resolve_path(
+            mapping["pretrained"],
+            "initialization.pretrained",
+            root,
+        ),
+        pretrained_sha256=_require_sha256(
+            mapping["pretrained_sha256"],
+            "initialization.pretrained_sha256",
+        ),
+        strategy=strategy,
+        max_layer=_require_int(
+            mapping["max_layer"],
+            "initialization.max_layer",
+            minimum=0,
+        ),
+        expected_items=_require_int(
+            mapping["expected_items"],
+            "initialization.expected_items",
+            minimum=1,
+        ),
+    )
+
+
 def load_baseline_config(
     path: Path,
     *,
@@ -300,7 +359,12 @@ def load_baseline_config(
         "training",
         "prediction",
     }
-    _require_fields(mapping, field="top-level", expected=expected)
+    _require_fields(
+        mapping,
+        field="top-level",
+        expected=expected,
+        optional={"initialization"},
+    )
     schema_version = _require_int(
         mapping["schema_version"],
         "schema_version",
@@ -315,5 +379,10 @@ def load_baseline_config(
         paths=_parse_paths(mapping["paths"], root),
         training=_parse_training(mapping["training"]),
         prediction=_parse_prediction(mapping["prediction"]),
+        initialization=(
+            _parse_initialization(mapping["initialization"], root)
+            if "initialization" in mapping
+            else None
+        ),
         source_path=path.resolve(),
     )
