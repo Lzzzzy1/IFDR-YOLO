@@ -7,6 +7,7 @@ from ultralytics.models.yolo.detect import DetectionTrainer
 from ultralytics.utils import DEFAULT_CFG, RANK
 
 from ifdr_yolo.data.ifdr_dataset import build_ifdr_dataset
+from ifdr_yolo.data.interventions.sampler import SamplingPolicy
 from ifdr_yolo.models.ifdr_model import IFDRDetectionModel
 
 
@@ -75,18 +76,22 @@ class IFDRDetectionTrainer(DetectionTrainer):
         _callbacks: dict | None = None,
         *,
         fusion_schedule: FusionSchedule | None = None,
-        intervention_seed: int = 17,
+        intervention_seed: int | None = None,
+        intervention_policy: SamplingPolicy | None = None,
     ) -> None:
-        if (
-            isinstance(intervention_seed, bool)
-            or not isinstance(intervention_seed, int)
-            or intervention_seed < 0
-        ):
-            raise ValueError("intervention_seed must be a non-negative integer")
         self.fusion_schedule = fusion_schedule or FusionSchedule()
         self.fusion_schedule_value = 0.0
         self.intervention_seed = intervention_seed
+        self.intervention_policy = intervention_policy or SamplingPolicy()
         super().__init__(cfg=cfg, overrides=overrides, _callbacks=_callbacks)
+        if self.intervention_seed is None:
+            self.intervention_seed = int(self.args.seed)
+        if (
+            isinstance(self.intervention_seed, bool)
+            or not isinstance(self.intervention_seed, int)
+            or self.intervention_seed < 0
+        ):
+            raise ValueError("intervention_seed must be a non-negative integer")
         self.add_callback("on_train_epoch_start", apply_fusion_schedule)
 
     def get_model(
@@ -125,4 +130,9 @@ class IFDRDetectionTrainer(DetectionTrainer):
             stride=stride,
             intervention_seed=self.intervention_seed,
             interventions_enabled=mode == "train",
+            intervention_policy=getattr(
+                self,
+                "intervention_policy",
+                None,
+            ),
         )

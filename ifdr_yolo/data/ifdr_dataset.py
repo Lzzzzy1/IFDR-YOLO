@@ -290,6 +290,7 @@ def build_ifdr_dataset(
     stride: int,
     intervention_seed: int,
     interventions_enabled: bool,
+    intervention_policy: SamplingPolicy | None = None,
 ) -> IFDRYOLODataset:
     """Build an IFDR dataset using the locked Ultralytics 8.4.98 contract."""
 
@@ -314,4 +315,5 @@ def build_ifdr_dataset(
         fraction=fraction,
         intervention_seed=intervention_seed,
         interventions_enabled=interventions_enabled,
+        intervention_policy=intervention_policy,
     )

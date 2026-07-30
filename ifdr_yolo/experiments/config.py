@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from pathlib import Path
 from typing import Any
 
@@ -74,6 +75,51 @@ class BaselineConfig:
     source_path: Path | None = None
 
 
+@dataclass(frozen=True)
+class IFDRScheduleConfig:
+    frozen_epochs: int
+    ramp_epochs: int
+
+
+@dataclass(frozen=True)
+class IFDRInterventionConfig:
+    base_seed: int
+    identity_probability: float
+    sampling_probability: float
+    visibility_probability: float
+    minimum_strength: float
+    maximum_strength: float
+
+
+@dataclass(frozen=True)
+class IFDRLossConfig:
+    dcli_beta: float
+    uncertainty_calibration_gain: float
+    factor_supervision_gain: float
+    factor_weights: tuple[float, float]
+    dfl_entropy_weight: float
+
+
+@dataclass(frozen=True)
+class IFDRMethodConfig:
+    reliability_channels: int
+    schedule: IFDRScheduleConfig
+    intervention: IFDRInterventionConfig
+    loss: IFDRLossConfig
+
+
+@dataclass(frozen=True)
+class IFDRConfig:
+    schema_version: int
+    experiment: ExperimentConfig
+    paths: PathsConfig
+    initialization: InitializationConfig
+    method: IFDRMethodConfig
+    training: TrainingConfig
+    prediction: PredictionConfig
+    source_path: Path | None = None
+
+
 def _require_mapping(value: object, field: str) -> dict[str, Any]:
     if not isinstance(value, dict) or not all(
         isinstance(key, str) for key in value
@@ -122,6 +168,8 @@ def _require_float(
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ValueError(f"{field} must be numeric")
     result = float(value)
+    if not math.isfinite(result):
+        raise ValueError(f"{field} must be finite")
     if minimum is not None:
         invalid = result < minimum if minimum_inclusive else result <= minimum
         if invalid:
@@ -384,5 +432,199 @@ def load_baseline_config(
             if "initialization" in mapping
             else None
         ),
+        source_path=path.resolve(),
+    )
+
+
+def _parse_ifdr_schedule(value: object) -> IFDRScheduleConfig:
+    mapping = _require_mapping(value, "ifdr.schedule")
+    _require_fields(
+        mapping,
+        field="ifdr.schedule",
+        expected={"frozen_epochs", "ramp_epochs"},
+    )
+    return IFDRScheduleConfig(
+        frozen_epochs=_require_int(
+            mapping["frozen_epochs"],
+            "ifdr.schedule.frozen_epochs",
+            minimum=0,
+        ),
+        ramp_epochs=_require_int(
+            mapping["ramp_epochs"],
+            "ifdr.schedule.ramp_epochs",
+            minimum=1,
+        ),
+    )
+
+
+def _parse_ifdr_intervention(value: object) -> IFDRInterventionConfig:
+    mapping = _require_mapping(value, "ifdr.intervention")
+    fields = {
+        "base_seed",
+        "identity_probability",
+        "sampling_probability",
+        "visibility_probability",
+        "minimum_strength",
+        "maximum_strength",
+    }
+    _require_fields(mapping, field="ifdr.intervention", expected=fields)
+    probabilities = tuple(
+        _require_float(
+            mapping[field],
+            f"ifdr.intervention.{field}",
+            minimum=0.0,
+            maximum=1.0,
+        )
+        for field in (
+            "identity_probability",
+            "sampling_probability",
+            "visibility_probability",
+        )
+    )
+    if not math.isclose(sum(probabilities), 1.0, abs_tol=1e-12):
+        raise ValueError("IFDR intervention probabilities must sum to one")
+    minimum_strength = _require_float(
+        mapping["minimum_strength"],
+        "ifdr.intervention.minimum_strength",
+        minimum=0.0,
+        maximum=1.0,
+    )
+    maximum_strength = _require_float(
+        mapping["maximum_strength"],
+        "ifdr.intervention.maximum_strength",
+        minimum=0.0,
+        maximum=1.0,
+    )
+    if minimum_strength > maximum_strength:
+        raise ValueError("IFDR intervention strength bounds are inverted")
+    return IFDRInterventionConfig(
+        base_seed=_require_int(
+            mapping["base_seed"],
+            "ifdr.intervention.base_seed",
+            minimum=0,
+        ),
+        identity_probability=probabilities[0],
+        sampling_probability=probabilities[1],
+        visibility_probability=probabilities[2],
+        minimum_strength=minimum_strength,
+        maximum_strength=maximum_strength,
+    )
+
+
+def _parse_ifdr_loss(value: object) -> IFDRLossConfig:
+    mapping = _require_mapping(value, "ifdr.loss")
+    fields = {
+        "dcli_beta",
+        "uncertainty_calibration_gain",
+        "factor_supervision_gain",
+        "factor_weights",
+        "dfl_entropy_weight",
+    }
+    _require_fields(mapping, field="ifdr.loss", expected=fields)
+    raw_weights = mapping["factor_weights"]
+    if not isinstance(raw_weights, (list, tuple)) or len(raw_weights) != 2:
+        raise ValueError("ifdr.loss.factor_weights must contain two values")
+    factor_weights = tuple(
+        _require_float(
+            value,
+            f"ifdr.loss.factor_weights[{index}]",
+            minimum=0.0,
+        )
+        for index, value in enumerate(raw_weights)
+    )
+    entropy_weight = _require_float(
+        mapping["dfl_entropy_weight"],
+        "ifdr.loss.dfl_entropy_weight",
+        minimum=0.0,
+    )
+    if sum(factor_weights) + entropy_weight <= 0.0:
+        raise ValueError("at least one IFDR uncertainty weight must be positive")
+    return IFDRLossConfig(
+        dcli_beta=_require_float(
+            mapping["dcli_beta"],
+            "ifdr.loss.dcli_beta",
+            minimum=0.0,
+            maximum=1.0,
+        ),
+        uncertainty_calibration_gain=_require_float(
+            mapping["uncertainty_calibration_gain"],
+            "ifdr.loss.uncertainty_calibration_gain",
+            minimum=0.0,
+            maximum=1.0,
+        ),
+        factor_supervision_gain=_require_float(
+            mapping["factor_supervision_gain"],
+            "ifdr.loss.factor_supervision_gain",
+            minimum=0.0,
+            maximum=1.0,
+        ),
+        factor_weights=(factor_weights[0], factor_weights[1]),
+        dfl_entropy_weight=entropy_weight,
+    )
+
+
+def _parse_ifdr_method(value: object) -> IFDRMethodConfig:
+    mapping = _require_mapping(value, "ifdr")
+    _require_fields(
+        mapping,
+        field="ifdr",
+        expected={
+            "reliability_channels",
+            "schedule",
+            "intervention",
+            "loss",
+        },
+    )
+    return IFDRMethodConfig(
+        reliability_channels=_require_int(
+            mapping["reliability_channels"],
+            "ifdr.reliability_channels",
+            minimum=1,
+        ),
+        schedule=_parse_ifdr_schedule(mapping["schedule"]),
+        intervention=_parse_ifdr_intervention(mapping["intervention"]),
+        loss=_parse_ifdr_loss(mapping["loss"]),
+    )
+
+
+def load_ifdr_config(
+    path: Path,
+    *,
+    repository_root: Path,
+) -> IFDRConfig:
+    payload = yaml.safe_load(path.read_text(encoding="utf-8"))
+    mapping = _require_mapping(payload, "IFDR config root")
+    expected = {
+        "schema_version",
+        "experiment",
+        "paths",
+        "initialization",
+        "ifdr",
+        "training",
+        "prediction",
+    }
+    _require_fields(mapping, field="top-level", expected=expected)
+    schema_version = _require_int(
+        mapping["schema_version"],
+        "schema_version",
+        minimum=1,
+    )
+    if schema_version != 1:
+        raise ValueError(f"unsupported schema_version: {schema_version}")
+    root = repository_root.resolve()
+    experiment = _parse_experiment(mapping["experiment"])
+    if experiment.variant != "ifdr":
+        raise ValueError("IFDR experiment.variant must be 'ifdr'")
+    return IFDRConfig(
+        schema_version=schema_version,
+        experiment=experiment,
+        paths=_parse_paths(mapping["paths"], root),
+        initialization=_parse_initialization(
+            mapping["initialization"],
+            root,
+        ),
+        method=_parse_ifdr_method(mapping["ifdr"]),
+        training=_parse_training(mapping["training"]),
+        prediction=_parse_prediction(mapping["prediction"]),
         source_path=path.resolve(),
     )
