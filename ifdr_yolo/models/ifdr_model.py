@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import torch
+
 from ultralytics.nn.modules import Concat
 from ultralytics.nn.tasks import DetectionModel
 
@@ -100,12 +102,25 @@ class IFDRDetectionModel(DetectionModel):
         verbose: bool = True,
         *,
         reliability_channels: int = 32,
+        dcli_beta: float = 0.5,
+        uncertainty_calibration_gain: float = 0.1,
+        uncertainty_factor_weights: tuple[float, float] = (1.0, 1.0),
+        dfl_entropy_weight: float = 1.0,
         fusion_specs: tuple[
             FusionNodeSpec,
             ...,
         ] = DEFAULT_P2_FUSION_SPECS,
     ) -> None:
+        self.dcli_beta = dcli_beta
+        self.uncertainty_calibration_gain = uncertainty_calibration_gain
+        self.uncertainty_factor_weights = uncertainty_factor_weights
+        self.dfl_entropy_weight = dfl_entropy_weight
         super().__init__(cfg=cfg, ch=ch, nc=nc, verbose=verbose)
+        self.register_buffer(
+            "_ifdr_schedule",
+            torch.tensor(0.0),
+            persistent=False,
+        )
         self._fusion_node_indices = install_reliability_fusion(
             self,
             specs=fusion_specs,
@@ -121,6 +136,11 @@ class IFDRDetectionModel(DetectionModel):
             layer = self.model[index]
             assert isinstance(layer, ReliabilityGatedConcat)
             layer.set_schedule(value)
+        self._ifdr_schedule.fill_(float(value))
+
+    @property
+    def ifdr_schedule(self) -> float:
+        return float(self._ifdr_schedule)
 
     def consume_reliability_context(
         self,
@@ -131,3 +151,14 @@ class IFDRDetectionModel(DetectionModel):
             assert isinstance(layer, ReliabilityGatedConcat)
             contexts[index] = layer.consume_context()
         return contexts
+
+    def init_criterion(self):
+        from ifdr_yolo.losses.ifdr_detection import IFDRDetectionLoss
+
+        return IFDRDetectionLoss(
+            self,
+            beta=self.dcli_beta,
+            calibration_gain=self.uncertainty_calibration_gain,
+            factor_weights=self.uncertainty_factor_weights,
+            entropy_weight=self.dfl_entropy_weight,
+        )

@@ -107,6 +107,7 @@ class IFDRDetectionModelTest(unittest.TestCase):
                 float(self.ifdr.model[index]._schedule),
                 0.75,
             )
+        self.assertAlmostEqual(self.ifdr.ifdr_schedule, 0.75)
 
     def test_rejects_non_concat_fusion_node(self) -> None:
         from ultralytics.nn.tasks import DetectionModel
