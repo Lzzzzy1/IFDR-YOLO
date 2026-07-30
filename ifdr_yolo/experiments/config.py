@@ -82,6 +82,14 @@ class IFDRScheduleConfig:
 
 
 @dataclass(frozen=True)
+class IFDRComponentsConfig:
+    fusion_gate: bool
+    dcli: bool
+    factor_supervision: bool
+    interventions: bool
+
+
+@dataclass(frozen=True)
 class IFDRInterventionConfig:
     base_seed: int
     identity_probability: float
@@ -103,6 +111,7 @@ class IFDRLossConfig:
 @dataclass(frozen=True)
 class IFDRMethodConfig:
     reliability_channels: int
+    components: IFDRComponentsConfig
     schedule: IFDRScheduleConfig
     intervention: IFDRInterventionConfig
     loss: IFDRLossConfig
@@ -457,6 +466,32 @@ def _parse_ifdr_schedule(value: object) -> IFDRScheduleConfig:
     )
 
 
+def _parse_ifdr_components(value: object) -> IFDRComponentsConfig:
+    mapping = _require_mapping(value, "ifdr.components")
+    fields = {
+        "fusion_gate",
+        "dcli",
+        "factor_supervision",
+        "interventions",
+    }
+    _require_fields(mapping, field="ifdr.components", expected=fields)
+    return IFDRComponentsConfig(
+        fusion_gate=_require_bool(
+            mapping["fusion_gate"],
+            "ifdr.components.fusion_gate",
+        ),
+        dcli=_require_bool(mapping["dcli"], "ifdr.components.dcli"),
+        factor_supervision=_require_bool(
+            mapping["factor_supervision"],
+            "ifdr.components.factor_supervision",
+        ),
+        interventions=_require_bool(
+            mapping["interventions"],
+            "ifdr.components.interventions",
+        ),
+    )
+
+
 def _parse_ifdr_intervention(value: object) -> IFDRInterventionConfig:
     mapping = _require_mapping(value, "ifdr.intervention")
     fields = {
@@ -570,6 +605,7 @@ def _parse_ifdr_method(value: object) -> IFDRMethodConfig:
         field="ifdr",
         expected={
             "reliability_channels",
+            "components",
             "schedule",
             "intervention",
             "loss",
@@ -581,6 +617,7 @@ def _parse_ifdr_method(value: object) -> IFDRMethodConfig:
             "ifdr.reliability_channels",
             minimum=1,
         ),
+        components=_parse_ifdr_components(mapping["components"]),
         schedule=_parse_ifdr_schedule(mapping["schedule"]),
         intervention=_parse_ifdr_intervention(mapping["intervention"]),
         loss=_parse_ifdr_loss(mapping["loss"]),
@@ -613,8 +650,13 @@ def load_ifdr_config(
         raise ValueError(f"unsupported schema_version: {schema_version}")
     root = repository_root.resolve()
     experiment = _parse_experiment(mapping["experiment"])
-    if experiment.variant != "ifdr":
-        raise ValueError("IFDR experiment.variant must be 'ifdr'")
+    if not (
+        experiment.variant == "ifdr"
+        or experiment.variant.startswith("ifdr-")
+    ):
+        raise ValueError(
+            "IFDR experiment.variant must be 'ifdr' or start with 'ifdr-'"
+        )
     return IFDRConfig(
         schema_version=schema_version,
         experiment=experiment,

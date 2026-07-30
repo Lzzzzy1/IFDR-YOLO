@@ -46,6 +46,44 @@ class FusionScheduleTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             FusionSchedule().value_at(-1)
 
+    def test_component_switches_produce_independent_epoch_schedules(self) -> None:
+        from ifdr_yolo.experiments.ifdr_trainer import (
+            IFDRComponentSwitches,
+            FusionSchedule,
+            apply_fusion_schedule,
+        )
+
+        class Recorder:
+            values = None
+
+            def set_component_schedules(self, **values) -> None:
+                self.values = values
+
+        model = Recorder()
+        trainer = SimpleNamespace(
+            epoch=14,
+            model=model,
+            fusion_schedule=FusionSchedule(),
+            component_switches=IFDRComponentSwitches(
+                fusion_gate=False,
+                dcli=True,
+                factor_supervision=False,
+                interventions=True,
+            ),
+            fusion_schedule_value=None,
+        )
+
+        apply_fusion_schedule(trainer)
+
+        self.assertEqual(
+            model.values,
+            {
+                "fusion": 0.0,
+                "dcli": 1.0,
+                "factor_supervision": 0.0,
+            },
+        )
+
 
 class IFDRDetectionTrainerTest(unittest.TestCase):
     @classmethod
@@ -152,6 +190,32 @@ class IFDRDetectionTrainerTest(unittest.TestCase):
         self.assertIs(validation, sentinel)
         self.assertTrue(builder.call_args_list[0].kwargs["interventions_enabled"])
         self.assertFalse(builder.call_args_list[1].kwargs["interventions_enabled"])
+
+    def test_component_switch_can_disable_training_interventions(self) -> None:
+        from ifdr_yolo.experiments.ifdr_trainer import (
+            IFDRComponentSwitches,
+            IFDRDetectionTrainer,
+        )
+
+        trainer = object.__new__(IFDRDetectionTrainer)
+        trainer.model = SimpleNamespace(stride=torch.tensor([4, 8, 16, 32]))
+        trainer.args = SimpleNamespace()
+        trainer.data = {"nc": 3}
+        trainer.intervention_seed = 17
+        trainer.component_switches = IFDRComponentSwitches(
+            fusion_gate=True,
+            dcli=True,
+            factor_supervision=True,
+            interventions=False,
+        )
+
+        with patch(
+            "ifdr_yolo.experiments.ifdr_trainer.build_ifdr_dataset",
+            return_value=object(),
+        ) as builder:
+            trainer.build_dataset("train.txt", mode="train", batch=8)
+
+        self.assertFalse(builder.call_args.kwargs["interventions_enabled"])
 
 
 if __name__ == "__main__":

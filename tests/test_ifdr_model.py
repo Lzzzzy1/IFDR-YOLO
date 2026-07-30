@@ -119,6 +119,19 @@ class IFDRDetectionModelTest(unittest.TestCase):
             )
         self.assertAlmostEqual(self.ifdr.ifdr_schedule, 0.75)
 
+    def test_component_schedules_can_disable_fusion_without_disabling_loss(self) -> None:
+        self.ifdr.set_component_schedules(
+            fusion=0.0,
+            dcli=0.7,
+            factor_supervision=0.4,
+        )
+
+        for index in self.ifdr.fusion_node_indices:
+            self.assertEqual(float(self.ifdr.model[index]._schedule), 0.0)
+        self.assertEqual(self.ifdr.fusion_schedule, 0.0)
+        self.assertAlmostEqual(self.ifdr.dcli_schedule, 0.7)
+        self.assertAlmostEqual(self.ifdr.factor_supervision_schedule, 0.4)
+
     def test_rejects_non_concat_fusion_node(self) -> None:
         from ultralytics.nn.tasks import DetectionModel
 

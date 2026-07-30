@@ -296,7 +296,7 @@ class IFDRDetectionLoss(v8DetectionLoss):
             factor_weights=self.factor_weights,
             entropy_weight=self.entropy_weight,
         )
-        self.bbox_loss.set_schedule(model.ifdr_schedule)
+        self.bbox_loss.set_schedule(model.dcli_schedule)
         self.bbox_loss.set_uncertainty(uncertainty)
         try:
             assignments, loss, _ = super().get_assigned_targets_and_loss(
@@ -307,7 +307,7 @@ class IFDRDetectionLoss(v8DetectionLoss):
                 (
                     factor_loss
                     * self.factor_supervision_gain
-                    * model.ifdr_schedule,
+                    * model.factor_supervision_schedule,
                     factor_loss * 0.0,
                     factor_loss * 0.0,
                 )

@@ -129,6 +129,14 @@ class IFDRRuntimeAdapter:
                 "deterministic": deterministic,
                 "fusion_nodes": [11, 14, 17, 20, 23, 26],
                 "shared_factor_estimator": True,
+                "components": {
+                    "fusion_gate": method.components.fusion_gate,
+                    "dcli": method.components.dcli,
+                    "factor_supervision": (
+                        method.components.factor_supervision
+                    ),
+                    "interventions": method.components.interventions,
+                },
             }
         )
         return PreparedModel(
@@ -152,7 +160,10 @@ class IFDRRuntimeAdapter:
             raise ValueError("prepared model is not an IFDR handle")
         method = self.config.method
         intervention = method.intervention
-        from ifdr_yolo.experiments.ifdr_trainer import FusionSchedule
+        from ifdr_yolo.experiments.ifdr_trainer import (
+            IFDRComponentSwitches,
+            FusionSchedule,
+        )
 
         trainer = self._trainer()(
             overrides={
@@ -166,6 +177,14 @@ class IFDRRuntimeAdapter:
             fusion_schedule=FusionSchedule(
                 frozen_epochs=method.schedule.frozen_epochs,
                 ramp_epochs=method.schedule.ramp_epochs,
+            ),
+            component_switches=IFDRComponentSwitches(
+                fusion_gate=method.components.fusion_gate,
+                dcli=method.components.dcli,
+                factor_supervision=(
+                    method.components.factor_supervision
+                ),
+                interventions=method.components.interventions,
             ),
             intervention_seed=intervention.base_seed,
             intervention_policy=SamplingPolicy(

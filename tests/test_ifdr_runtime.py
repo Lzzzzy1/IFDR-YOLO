@@ -94,6 +94,15 @@ class IFDRRuntimeAdapterTest(unittest.TestCase):
             prepared.initialization["transferred_items"],
             306,
         )
+        self.assertEqual(
+            prepared.initialization["components"],
+            {
+                "fusion_gate": True,
+                "dcli": True,
+                "factor_supervision": True,
+                "interventions": True,
+            },
+        )
 
     def test_train_attaches_prepared_model_and_locked_method_controls(self) -> None:
         from ifdr_yolo.experiments.ifdr_runtime import (
@@ -138,6 +147,11 @@ class IFDRRuntimeAdapterTest(unittest.TestCase):
                 ].visibility_probability,
                 0.4,
             )
+            switches = trainer.kwargs["component_switches"]
+            self.assertTrue(switches.fusion_gate)
+            self.assertTrue(switches.dcli)
+            self.assertTrue(switches.factor_supervision)
+            self.assertTrue(switches.interventions)
 
 
 if __name__ == "__main__":

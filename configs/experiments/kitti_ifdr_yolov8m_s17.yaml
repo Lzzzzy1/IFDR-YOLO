@@ -21,6 +21,11 @@ initialization:
   expected_items: 306
 ifdr:
   reliability_channels: 32
+  components:
+    fusion_gate: true
+    dcli: true
+    factor_supervision: true
+    interventions: true
   schedule:
     frozen_epochs: 5
     ramp_epochs: 10

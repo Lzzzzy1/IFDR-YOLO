@@ -22,6 +22,10 @@ class IFDRConfigTest(unittest.TestCase):
         self.assertEqual(config.method.intervention.base_seed, 17)
         self.assertAlmostEqual(config.method.loss.dcli_beta, 0.5)
         self.assertEqual(config.method.loss.factor_weights, (1.0, 1.0))
+        self.assertTrue(config.method.components.fusion_gate)
+        self.assertTrue(config.method.components.dcli)
+        self.assertTrue(config.method.components.factor_supervision)
+        self.assertTrue(config.method.components.interventions)
 
     def test_rejects_unknown_or_invalid_method_fields(self) -> None:
         from ifdr_yolo.experiments.config import load_ifdr_config
@@ -32,6 +36,14 @@ class IFDRConfigTest(unittest.TestCase):
             path = Path(directory) / "invalid.yaml"
             path.write_text(yaml.safe_dump(payload), encoding="utf-8")
             with self.assertRaises(ValueError):
+                load_ifdr_config(path, repository_root=ROOT)
+
+        payload = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
+        payload["ifdr"]["components"]["fusion_gate"] = "yes"
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "invalid-components.yaml"
+            path.write_text(yaml.safe_dump(payload), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "fusion_gate"):
                 load_ifdr_config(path, repository_root=ROOT)
 
         payload = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))

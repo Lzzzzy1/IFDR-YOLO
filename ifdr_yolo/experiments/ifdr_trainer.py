@@ -38,6 +38,24 @@ class FusionSchedule:
         return min(1.0, progress)
 
 
+@dataclass(frozen=True)
+class IFDRComponentSwitches:
+    fusion_gate: bool = True
+    dcli: bool = True
+    factor_supervision: bool = True
+    interventions: bool = True
+
+    def __post_init__(self) -> None:
+        for field in (
+            "fusion_gate",
+            "dcli",
+            "factor_supervision",
+            "interventions",
+        ):
+            if not isinstance(getattr(self, field), bool):
+                raise ValueError(f"{field} must be a boolean")
+
+
 def _unwrap_training_model(model: object) -> object:
     while hasattr(model, "module"):
         model = getattr(model, "module")
@@ -53,10 +71,27 @@ def apply_fusion_schedule(trainer: object) -> float:
         raise RuntimeError("trainer does not define a valid fusion schedule")
     value = schedule.value_at(epoch)
     model = _unwrap_training_model(getattr(trainer, "model", None))
-    setter = getattr(model, "set_reliability_schedule", None)
-    if not callable(setter):
+    switches = getattr(
+        trainer,
+        "component_switches",
+        IFDRComponentSwitches(),
+    )
+    if not isinstance(switches, IFDRComponentSwitches):
+        raise RuntimeError("trainer component switches are invalid")
+    component_setter = getattr(model, "set_component_schedules", None)
+    legacy_setter = getattr(model, "set_reliability_schedule", None)
+    if callable(component_setter):
+        component_setter(
+            fusion=value if switches.fusion_gate else 0.0,
+            dcli=value if switches.dcli else 0.0,
+            factor_supervision=(
+                value if switches.factor_supervision else 0.0
+            ),
+        )
+    elif callable(legacy_setter):
+        legacy_setter(value)
+    else:
         raise RuntimeError("training model does not support reliability gating")
-    setter(value)
     train_loader = getattr(trainer, "train_loader", None)
     dataset = getattr(train_loader, "dataset", None)
     epoch_setter = getattr(dataset, "set_epoch", None)
@@ -76,10 +111,14 @@ class IFDRDetectionTrainer(DetectionTrainer):
         _callbacks: dict | None = None,
         *,
         fusion_schedule: FusionSchedule | None = None,
+        component_switches: IFDRComponentSwitches | None = None,
         intervention_seed: int | None = None,
         intervention_policy: SamplingPolicy | None = None,
     ) -> None:
         self.fusion_schedule = fusion_schedule or FusionSchedule()
+        self.component_switches = (
+            component_switches or IFDRComponentSwitches()
+        )
         self.fusion_schedule_value = 0.0
         self.intervention_seed = intervention_seed
         self.intervention_policy = intervention_policy or SamplingPolicy()
@@ -120,6 +159,11 @@ class IFDRDetectionTrainer(DetectionTrainer):
     ):
         model = _unwrap_training_model(self.model)
         stride = max(int(model.stride.max()), 32)
+        component_switches = getattr(
+            self,
+            "component_switches",
+            IFDRComponentSwitches(),
+        )
         return build_ifdr_dataset(
             self.args,
             img_path,
@@ -129,7 +173,10 @@ class IFDRDetectionTrainer(DetectionTrainer):
             rect=mode == "val",
             stride=stride,
             intervention_seed=self.intervention_seed,
-            interventions_enabled=mode == "train",
+            interventions_enabled=(
+                mode == "train"
+                and component_switches.interventions
+            ),
             intervention_policy=getattr(
                 self,
                 "intervention_policy",

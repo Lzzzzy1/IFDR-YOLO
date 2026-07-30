@@ -208,6 +208,38 @@ class IFDRDetectionLossIntegrationTest(unittest.TestCase):
             )
         )
 
+    def test_factor_supervision_remains_active_when_gate_and_dcli_are_off(
+        self,
+    ) -> None:
+        from ultralytics.utils import DEFAULT_CFG
+
+        from ifdr_yolo.models.ifdr_model import IFDRDetectionModel
+
+        torch.manual_seed(61)
+        model = IFDRDetectionModel(str(MODEL_PATH), nc=3, verbose=False)
+        model.args = DEFAULT_CFG
+        model.set_component_schedules(
+            fusion=0.0,
+            dcli=0.0,
+            factor_supervision=1.0,
+        )
+        model.train()
+        batch = {
+            "img": torch.randn(1, 3, 128, 128),
+            "batch_idx": torch.tensor([0.0]),
+            "cls": torch.tensor([[0.0]]),
+            "bboxes": torch.tensor([[0.5, 0.5, 0.25, 0.25]]),
+            "ifdr_factor_target": torch.ones(1, 2, 128, 128),
+            "ifdr_factor_weight": torch.ones(1, 2, 128, 128),
+        }
+
+        total, _ = model.loss(batch)
+        total.sum().backward()
+
+        gradient = model.model[17].factor_head.weight.grad
+        self.assertIsNotNone(gradient)
+        self.assertGreater(float(gradient.abs().sum()), 0.0)
+
 
 if __name__ == "__main__":
     unittest.main()

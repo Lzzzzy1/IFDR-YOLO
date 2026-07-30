@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 
 import torch
 
@@ -122,7 +123,17 @@ class IFDRDetectionModel(DetectionModel):
         self.factor_supervision_gain = factor_supervision_gain
         super().__init__(cfg=cfg, ch=ch, nc=nc, verbose=verbose)
         self.register_buffer(
-            "_ifdr_schedule",
+            "_fusion_schedule",
+            torch.tensor(0.0),
+            persistent=False,
+        )
+        self.register_buffer(
+            "_dcli_schedule",
+            torch.tensor(0.0),
+            persistent=False,
+        )
+        self.register_buffer(
+            "_factor_supervision_schedule",
             torch.tensor(0.0),
             persistent=False,
         )
@@ -137,15 +148,59 @@ class IFDRDetectionModel(DetectionModel):
         return self._fusion_node_indices
 
     def set_reliability_schedule(self, value: float) -> None:
+        self.set_component_schedules(
+            fusion=value,
+            dcli=value,
+            factor_supervision=value,
+        )
+
+    def set_component_schedules(
+        self,
+        *,
+        fusion: float,
+        dcli: float,
+        factor_supervision: float,
+    ) -> None:
+        values = {
+            "fusion": fusion,
+            "dcli": dcli,
+            "factor_supervision": factor_supervision,
+        }
+        for name, value in values.items():
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(float(value))
+                or not 0.0 <= float(value) <= 1.0
+            ):
+                raise ValueError(
+                    f"{name} schedule must be finite and within [0, 1]"
+                )
         for index in self._fusion_node_indices:
             layer = self.model[index]
             assert isinstance(layer, ReliabilityGatedConcat)
-            layer.set_schedule(value)
-        self._ifdr_schedule.fill_(float(value))
+            layer.set_schedule(fusion)
+        self._fusion_schedule.fill_(float(fusion))
+        self._dcli_schedule.fill_(float(dcli))
+        self._factor_supervision_schedule.fill_(
+            float(factor_supervision)
+        )
 
     @property
     def ifdr_schedule(self) -> float:
-        return float(self._ifdr_schedule)
+        return self.dcli_schedule
+
+    @property
+    def fusion_schedule(self) -> float:
+        return float(self._fusion_schedule)
+
+    @property
+    def dcli_schedule(self) -> float:
+        return float(self._dcli_schedule)
+
+    @property
+    def factor_supervision_schedule(self) -> float:
+        return float(self._factor_supervision_schedule)
 
     def consume_reliability_context(
         self,
