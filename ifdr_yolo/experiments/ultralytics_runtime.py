@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, MutableMapping
 from dataclasses import dataclass
 import os
 from pathlib import Path
@@ -23,10 +23,15 @@ class PreparedModel:
     initialization: dict[str, object] | None
 
 
-def bootstrap_ultralytics_config(repository_root: Path) -> Path:
+def bootstrap_ultralytics_config(
+    repository_root: Path,
+    *,
+    environ: MutableMapping[str, str] | None = None,
+) -> Path:
     config_dir = (repository_root.resolve() / "tmp" / "yolo-config").resolve()
     config_dir.mkdir(parents=True, exist_ok=True)
-    os.environ["YOLO_CONFIG_DIR"] = str(config_dir)
+    environment = os.environ if environ is None else environ
+    environment["YOLO_CONFIG_DIR"] = str(config_dir)
     return config_dir
 
 

@@ -9,6 +9,7 @@ from ultralytics.nn.tasks import DetectionModel
 
 from ifdr_yolo.models.gated_fusion import (
     ReliabilityContext,
+    ReliabilityEstimator,
     ReliabilityGatedConcat,
 )
 
@@ -67,6 +68,7 @@ def install_reliability_fusion(
     if len(set(indexes)) != len(indexes):
         raise ValueError("fusion node indices must be unique")
     layer_count = len(model.model)
+    shared_estimator = ReliabilityEstimator(reliability_channels)
     for spec in specs:
         if spec.index >= layer_count:
             raise ValueError(
@@ -87,6 +89,7 @@ def install_reliability_fusion(
         replacement = ReliabilityGatedConcat(
             input_channels=spec.input_channels,
             reliability_channels=reliability_channels,
+            reliability_estimator=shared_estimator,
         )
         _copy_graph_attributes(original, replacement)
         model.model[spec.index] = replacement

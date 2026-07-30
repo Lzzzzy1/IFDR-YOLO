@@ -21,36 +21,16 @@ def _positive_channels(value: object, field: str) -> int:
     return value
 
 
-class ReliabilityGatedConcat(nn.Module):
-    def __init__(
-        self,
-        *,
-        input_channels: tuple[int, int],
-        reliability_channels: int = 32,
-    ) -> None:
+class ReliabilityEstimator(nn.Module):
+    """Cross-scale estimator that gives both factors one shared meaning."""
+
+    def __init__(self, reliability_channels: int = 32) -> None:
         super().__init__()
-        if (
-            not isinstance(input_channels, tuple)
-            or len(input_channels) != 2
-        ):
-            raise ValueError("input_channels must contain exactly two values")
-        self.input_channels = tuple(
-            _positive_channels(value, f"input_channels[{index}]")
-            for index, value in enumerate(input_channels)
-        )
         channels = _positive_channels(
             reliability_channels,
             "reliability_channels",
         )
         self.reliability_channels = channels
-        self.projections = nn.ModuleList(
-            nn.Sequential(
-                nn.Conv2d(input_channel, channels, 1, bias=False),
-                nn.GroupNorm(1, channels),
-                nn.SiLU(),
-            )
-            for input_channel in self.input_channels
-        )
         combined = channels * 2
         self.shared_core = nn.Sequential(
             nn.Conv2d(
@@ -68,6 +48,53 @@ class ReliabilityGatedConcat(nn.Module):
             nn.SiLU(),
         )
         self.factor_head = nn.Conv2d(channels, 2, 1)
+
+    def forward(self, projected: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        reliability = self.shared_core(projected)
+        return reliability, self.factor_head(reliability).sigmoid()
+
+
+class ReliabilityGatedConcat(nn.Module):
+    def __init__(
+        self,
+        *,
+        input_channels: tuple[int, int],
+        reliability_channels: int = 32,
+        reliability_estimator: ReliabilityEstimator | None = None,
+    ) -> None:
+        super().__init__()
+        if (
+            not isinstance(input_channels, tuple)
+            or len(input_channels) != 2
+        ):
+            raise ValueError("input_channels must contain exactly two values")
+        self.input_channels = tuple(
+            _positive_channels(value, f"input_channels[{index}]")
+            for index, value in enumerate(input_channels)
+        )
+        channels = _positive_channels(
+            reliability_channels,
+            "reliability_channels",
+        )
+        self.reliability_channels = channels
+        if reliability_estimator is None:
+            reliability_estimator = ReliabilityEstimator(channels)
+        if (
+            not isinstance(reliability_estimator, ReliabilityEstimator)
+            or reliability_estimator.reliability_channels != channels
+        ):
+            raise ValueError(
+                "reliability_estimator must match reliability_channels"
+            )
+        self.reliability_estimator = reliability_estimator
+        self.projections = nn.ModuleList(
+            nn.Sequential(
+                nn.Conv2d(input_channel, channels, 1, bias=False),
+                nn.GroupNorm(1, channels),
+                nn.SiLU(),
+            )
+            for input_channel in self.input_channels
+        )
         self.router = nn.Conv2d(channels + 2, 2, 1)
         self.gate_logit = nn.Parameter(torch.tensor(0.0))
         self.register_buffer(
@@ -76,6 +103,14 @@ class ReliabilityGatedConcat(nn.Module):
             persistent=True,
         )
         self._context: ReliabilityContext | None = None
+
+    @property
+    def shared_core(self) -> nn.Module:
+        return self.reliability_estimator.shared_core
+
+    @property
+    def factor_head(self) -> nn.Module:
+        return self.reliability_estimator.factor_head
 
     def set_schedule(self, value: float) -> None:
         if (
@@ -126,8 +161,7 @@ class ReliabilityGatedConcat(nn.Module):
             ),
             dim=1,
         )
-        reliability = self.shared_core(projected)
-        factors = self.factor_head(reliability).sigmoid()
+        reliability, factors = self.reliability_estimator(projected)
         branch_weights = self.router(
             torch.cat((reliability, factors), dim=1)
         ).softmax(dim=1)

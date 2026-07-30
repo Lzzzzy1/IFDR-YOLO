@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -79,11 +78,12 @@ class UltralyticsRuntimeTest(unittest.TestCase):
     def test_bootstrap_sets_config_dir_before_import(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
+            environment: dict[str, str] = {}
 
-            path = bootstrap_ultralytics_config(root)
+            path = bootstrap_ultralytics_config(root, environ=environment)
 
             self.assertEqual(
-                os.environ["YOLO_CONFIG_DIR"],
+                environment["YOLO_CONFIG_DIR"],
                 str(root / "tmp" / "yolo-config"),
             )
             self.assertTrue(path.is_dir())

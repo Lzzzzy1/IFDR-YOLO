@@ -14,7 +14,10 @@ from ifdr_yolo.experiments.baseline import (
     run_baseline,
 )
 from ifdr_yolo.experiments.config import InitializationConfig
-from ifdr_yolo.experiments.ultralytics_runtime import PreparedModel
+from ifdr_yolo.experiments.ultralytics_runtime import (
+    PreparedModel,
+    bootstrap_ultralytics_config,
+)
 from tests.test_provenance import make_config
 
 
@@ -184,6 +187,9 @@ def make_services(
 
 
 class BaselinePipelineTest(unittest.TestCase):
+    def tearDown(self) -> None:
+        bootstrap_ultralytics_config(Path(__file__).resolve().parents[1])
+
     def test_dry_run_never_calls_train_or_predict(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

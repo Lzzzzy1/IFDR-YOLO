@@ -56,6 +56,16 @@ class IFDRDetectionModelTest(unittest.TestCase):
             )
         )
 
+    def test_six_scales_share_one_factor_semantics_estimator(self) -> None:
+        estimators = [
+            self.ifdr.model[index].reliability_estimator
+            for index in self.ifdr.fusion_node_indices
+        ]
+
+        self.assertTrue(
+            all(estimator is estimators[0] for estimator in estimators[1:])
+        )
+
     def test_zero_schedule_matches_original_p2_forward_exactly(self) -> None:
         self.ifdr.set_reliability_schedule(0.0)
         self.baseline.train()
