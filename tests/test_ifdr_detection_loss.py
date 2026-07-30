@@ -139,6 +139,36 @@ class PyramidFactorAlignmentTest(unittest.TestCase):
             torch.equal(flattened[:, 21:], torch.ones(1, 1, 2))
         )
 
+    def test_multiscale_supervision_is_zero_at_target_and_has_gradients(self) -> None:
+        from ifdr_yolo.losses.ifdr_detection import (
+            multiscale_factor_supervision,
+        )
+        from ifdr_yolo.models.gated_fusion import ReliabilityContext
+
+        target = torch.zeros(1, 2, 16, 16)
+        target[:, 0] = 0.25
+        target[:, 1] = 0.75
+        weight = torch.ones_like(target)
+        contexts = {}
+        for node, size in zip((11, 14, 17, 20, 23, 26), (4, 8, 16, 8, 4, 2)):
+            factors = torch.zeros(1, 2, size, size, requires_grad=True)
+            factors.data[:, 0] = 0.25
+            factors.data[:, 1] = 0.75
+            contexts[node] = ReliabilityContext(
+                factors=factors,
+                branch_weights=torch.full_like(factors, 0.5),
+                gate_strength=1.0,
+            )
+
+        exact = multiscale_factor_supervision(contexts, target, weight)
+        contexts[17].factors.data[:, 0] = 0.9
+        mismatch = multiscale_factor_supervision(contexts, target, weight)
+        mismatch.backward()
+
+        self.assertEqual(float(exact), 0.0)
+        self.assertGreater(float(mismatch), 0.0)
+        self.assertIsNotNone(contexts[17].factors.grad)
+
 
 class IFDRDetectionLossIntegrationTest(unittest.TestCase):
     def test_real_model_uses_dcli_and_backpropagates_to_factor_heads(self) -> None:
@@ -157,6 +187,8 @@ class IFDRDetectionLossIntegrationTest(unittest.TestCase):
             "batch_idx": torch.tensor([0.0]),
             "cls": torch.tensor([[0.0]]),
             "bboxes": torch.tensor([[0.5, 0.5, 0.25, 0.25]]),
+            "ifdr_factor_target": torch.zeros(1, 2, 128, 128),
+            "ifdr_factor_weight": torch.ones(1, 2, 128, 128),
         }
 
         total, components = model.loss(batch)

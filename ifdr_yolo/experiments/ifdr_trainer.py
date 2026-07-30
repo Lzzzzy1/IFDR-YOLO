@@ -6,6 +6,7 @@ from typing import Any
 from ultralytics.models.yolo.detect import DetectionTrainer
 from ultralytics.utils import DEFAULT_CFG, RANK
 
+from ifdr_yolo.data.ifdr_dataset import build_ifdr_dataset
 from ifdr_yolo.models.ifdr_model import IFDRDetectionModel
 
 
@@ -55,6 +56,11 @@ def apply_fusion_schedule(trainer: object) -> float:
     if not callable(setter):
         raise RuntimeError("training model does not support reliability gating")
     setter(value)
+    train_loader = getattr(trainer, "train_loader", None)
+    dataset = getattr(train_loader, "dataset", None)
+    epoch_setter = getattr(dataset, "set_epoch", None)
+    if callable(epoch_setter):
+        epoch_setter(epoch)
     setattr(trainer, "fusion_schedule_value", value)
     return value
 
@@ -69,9 +75,17 @@ class IFDRDetectionTrainer(DetectionTrainer):
         _callbacks: dict | None = None,
         *,
         fusion_schedule: FusionSchedule | None = None,
+        intervention_seed: int = 17,
     ) -> None:
+        if (
+            isinstance(intervention_seed, bool)
+            or not isinstance(intervention_seed, int)
+            or intervention_seed < 0
+        ):
+            raise ValueError("intervention_seed must be a non-negative integer")
         self.fusion_schedule = fusion_schedule or FusionSchedule()
         self.fusion_schedule_value = 0.0
+        self.intervention_seed = intervention_seed
         super().__init__(cfg=cfg, overrides=overrides, _callbacks=_callbacks)
         self.add_callback("on_train_epoch_start", apply_fusion_schedule)
 
@@ -92,3 +106,23 @@ class IFDRDetectionTrainer(DetectionTrainer):
         if weights:
             model.load(weights)
         return model
+
+    def build_dataset(
+        self,
+        img_path: str,
+        mode: str = "train",
+        batch: int | None = None,
+    ):
+        model = _unwrap_training_model(self.model)
+        stride = max(int(model.stride.max()), 32)
+        return build_ifdr_dataset(
+            self.args,
+            img_path,
+            batch,
+            self.data,
+            mode=mode,
+            rect=mode == "val",
+            stride=stride,
+            intervention_seed=self.intervention_seed,
+            interventions_enabled=mode == "train",
+        )

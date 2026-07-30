@@ -1,6 +1,9 @@
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
+
+import torch
 
 from ifdr_yolo.experiments.ultralytics_runtime import (
     bootstrap_ultralytics_config,
@@ -83,9 +86,12 @@ class IFDRDetectionTrainerTest(unittest.TestCase):
                 self.values.append(value)
 
         model = ScheduleRecorder()
+        dataset = SimpleNamespace(values=[])
+        dataset.set_epoch = dataset.values.append
         trainer = SimpleNamespace(
             epoch=9,
             model=model,
+            train_loader=SimpleNamespace(dataset=dataset),
             fusion_schedule=FusionSchedule(
                 frozen_epochs=5,
                 ramp_epochs=10,
@@ -97,6 +103,7 @@ class IFDRDetectionTrainerTest(unittest.TestCase):
 
         self.assertAlmostEqual(value, 0.5)
         self.assertEqual(model.values, [0.5])
+        self.assertEqual(dataset.values, [9])
         self.assertAlmostEqual(trainer.fusion_schedule_value, 0.5)
 
     def test_epoch_callback_accepts_wrapped_model(self) -> None:
@@ -123,6 +130,28 @@ class IFDRDetectionTrainerTest(unittest.TestCase):
         apply_fusion_schedule(trainer)
 
         self.assertAlmostEqual(model.value, 0.1)
+
+    def test_build_dataset_uses_ifdr_dataset_for_train_and_validation(self) -> None:
+        from ifdr_yolo.experiments.ifdr_trainer import IFDRDetectionTrainer
+
+        trainer = object.__new__(IFDRDetectionTrainer)
+        trainer.model = SimpleNamespace(stride=torch.tensor([4, 8, 16, 32]))
+        trainer.args = SimpleNamespace()
+        trainer.data = {"nc": 3}
+        trainer.intervention_seed = 17
+        sentinel = object()
+
+        with patch(
+            "ifdr_yolo.experiments.ifdr_trainer.build_ifdr_dataset",
+            return_value=sentinel,
+        ) as builder:
+            train = trainer.build_dataset("train.txt", mode="train", batch=8)
+            validation = trainer.build_dataset("val.txt", mode="val", batch=8)
+
+        self.assertIs(train, sentinel)
+        self.assertIs(validation, sentinel)
+        self.assertTrue(builder.call_args_list[0].kwargs["interventions_enabled"])
+        self.assertFalse(builder.call_args_list[1].kwargs["interventions_enabled"])
 
 
 if __name__ == "__main__":

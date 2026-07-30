@@ -20,6 +20,7 @@ from ifdr_yolo.models.gated_fusion import ReliabilityContext
 
 
 FINAL_PYRAMID_CONTEXT_NODES = (17, 20, 23, 26)
+ALL_FUSION_CONTEXT_NODES = (11, 14, 17, 20, 23, 26)
 
 
 def _bounded_scalar(value: object, field: str) -> float:
@@ -68,6 +69,59 @@ def flatten_pyramid_factors(
             factors.permute(0, 2, 3, 1).reshape(factors.shape[0], -1, 2)
         )
     return torch.cat(flattened, dim=1)
+
+
+def multiscale_factor_supervision(
+    contexts: Mapping[int, ReliabilityContext],
+    target: torch.Tensor,
+    weight: torch.Tensor,
+    *,
+    node_indices: tuple[int, ...] = ALL_FUSION_CONTEXT_NODES,
+) -> torch.Tensor:
+    """Supervise factor semantics at every bidirectional fusion node."""
+
+    if (
+        not isinstance(target, torch.Tensor)
+        or not isinstance(weight, torch.Tensor)
+        or target.ndim != 4
+        or target.shape[1] != 2
+        or target.shape != weight.shape
+        or not target.is_floating_point()
+        or not weight.is_floating_point()
+    ):
+        raise ValueError(
+            "factor target and weight must be matching [batch, 2, h, w] tensors"
+        )
+    if torch.any(weight < 0.0) or not torch.isfinite(weight).all():
+        raise ValueError("factor weights must be finite and non-negative")
+    node_losses: list[torch.Tensor] = []
+    for node_index in node_indices:
+        if node_index not in contexts:
+            raise ValueError(f"missing reliability context for node {node_index}")
+        factors = contexts[node_index].factors
+        if factors.shape[:2] != target.shape[:2]:
+            raise ValueError(
+                f"factor batch/channels at node {node_index} do not match target"
+            )
+        size = factors.shape[-2:]
+        scaled_target = F.interpolate(target, size=size, mode="area")
+        scaled_weight = F.interpolate(weight, size=size, mode="area")
+        numerator = (
+            F.smooth_l1_loss(
+                factors,
+                scaled_target,
+                reduction="none",
+            )
+            * scaled_weight
+        ).sum()
+        denominator = scaled_weight.sum()
+        node_loss = torch.where(
+            denominator > 0,
+            numerator / denominator.clamp_min(1e-12),
+            factors.sum() * 0.0,
+        )
+        node_losses.append(node_loss)
+    return torch.stack(node_losses).mean()
 
 
 class DCLIBboxLoss(BboxLoss):
@@ -193,11 +247,16 @@ class IFDRDetectionLoss(v8DetectionLoss):
         calibration_gain: float = 0.1,
         factor_weights: tuple[float, float] = (1.0, 1.0),
         entropy_weight: float = 1.0,
+        factor_supervision_gain: float = 0.2,
     ) -> None:
         super().__init__(model)
         self._model_ref = weakref.ref(model)
         self.factor_weights = factor_weights
         self.entropy_weight = entropy_weight
+        self.factor_supervision_gain = _bounded_scalar(
+            factor_supervision_gain,
+            "factor_supervision_gain",
+        )
         self.bbox_loss = DCLIBboxLoss(
             self.reg_max,
             beta=beta,
@@ -213,6 +272,18 @@ class IFDRDetectionLoss(v8DetectionLoss):
         if model is None:
             raise RuntimeError("IFDR model is no longer available")
         contexts = model.consume_reliability_context()
+        factor_target = batch.get("ifdr_factor_target")
+        factor_weight = batch.get("ifdr_factor_weight")
+        if not isinstance(factor_target, torch.Tensor) or not isinstance(
+            factor_weight,
+            torch.Tensor,
+        ):
+            raise RuntimeError("batch is missing IFDR factor supervision")
+        factor_loss = multiscale_factor_supervision(
+            contexts,
+            factor_target,
+            factor_weight,
+        )
         factors = flatten_pyramid_factors(contexts, preds["feats"])
         pred_distri = preds["boxes"].permute(0, 2, 1).contiguous()
         dfl_entropy = normalized_dfl_entropy(
@@ -228,6 +299,20 @@ class IFDRDetectionLoss(v8DetectionLoss):
         self.bbox_loss.set_schedule(model.ifdr_schedule)
         self.bbox_loss.set_uncertainty(uncertainty)
         try:
-            return super().get_assigned_targets_and_loss(preds, batch)
+            assignments, loss, _ = super().get_assigned_targets_and_loss(
+                preds,
+                batch,
+            )
+            auxiliary = torch.stack(
+                (
+                    factor_loss
+                    * self.factor_supervision_gain
+                    * model.ifdr_schedule,
+                    factor_loss * 0.0,
+                    factor_loss * 0.0,
+                )
+            )
+            loss = loss + auxiliary
+            return assignments, loss, loss.detach()
         finally:
             self.bbox_loss.discard_uncertainty()

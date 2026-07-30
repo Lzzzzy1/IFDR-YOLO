@@ -106,6 +106,7 @@ class IFDRDetectionModel(DetectionModel):
         uncertainty_calibration_gain: float = 0.1,
         uncertainty_factor_weights: tuple[float, float] = (1.0, 1.0),
         dfl_entropy_weight: float = 1.0,
+        factor_supervision_gain: float = 0.2,
         fusion_specs: tuple[
             FusionNodeSpec,
             ...,
@@ -115,6 +116,7 @@ class IFDRDetectionModel(DetectionModel):
         self.uncertainty_calibration_gain = uncertainty_calibration_gain
         self.uncertainty_factor_weights = uncertainty_factor_weights
         self.dfl_entropy_weight = dfl_entropy_weight
+        self.factor_supervision_gain = factor_supervision_gain
         super().__init__(cfg=cfg, ch=ch, nc=nc, verbose=verbose)
         self.register_buffer(
             "_ifdr_schedule",
@@ -161,4 +163,5 @@ class IFDRDetectionModel(DetectionModel):
             calibration_gain=self.uncertainty_calibration_gain,
             factor_weights=self.uncertainty_factor_weights,
             entropy_weight=self.dfl_entropy_weight,
+            factor_supervision_gain=self.factor_supervision_gain,
         )
