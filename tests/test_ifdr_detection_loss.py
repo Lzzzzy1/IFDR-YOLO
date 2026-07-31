@@ -104,6 +104,28 @@ class DCLIBboxLossTest(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             dcli(*self._inputs())
 
+    def test_ciou_promotes_half_precision_geometry_to_avoid_overflow(
+        self,
+    ) -> None:
+        from ifdr_yolo.losses.ifdr_detection import stable_ciou
+
+        predicted = torch.tensor(
+            [[0.0, 0.0, 1.0, 1.0]],
+            dtype=torch.float16,
+            requires_grad=True,
+        )
+        target = torch.tensor(
+            [[150.0, 150.0, 160.0, 160.0]],
+            dtype=torch.float16,
+        )
+
+        overlap = stable_ciou(predicted, target)
+        overlap.sum().backward()
+
+        self.assertEqual(overlap.dtype, torch.float32)
+        self.assertTrue(torch.isfinite(overlap).all())
+        self.assertTrue(torch.isfinite(predicted.grad).all())
+
 
 class PyramidFactorAlignmentTest(unittest.TestCase):
     def test_flattens_factors_in_detect_anchor_order(self) -> None:

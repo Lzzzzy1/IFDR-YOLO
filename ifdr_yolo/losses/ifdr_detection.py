@@ -23,6 +23,48 @@ FINAL_PYRAMID_CONTEXT_NODES = (17, 20, 23, 26)
 ALL_FUSION_CONTEXT_NODES = (11, 14, 17, 20, 23, 26)
 
 
+def stable_ciou(
+    predicted_boxes: torch.Tensor,
+    target_boxes: torch.Tensor,
+) -> torch.Tensor:
+    """Compute CIoU in at least FP32 to prevent P2 geometry overflow."""
+
+    if (
+        not isinstance(predicted_boxes, torch.Tensor)
+        or not isinstance(target_boxes, torch.Tensor)
+        or predicted_boxes.shape != target_boxes.shape
+        or predicted_boxes.ndim < 2
+        or predicted_boxes.shape[-1] != 4
+        or not predicted_boxes.is_floating_point()
+        or not target_boxes.is_floating_point()
+    ):
+        raise ValueError(
+            "predicted_boxes and target_boxes must be matching [..., 4] "
+            "floating tensors"
+        )
+    if not (
+        torch.isfinite(predicted_boxes).all()
+        and torch.isfinite(target_boxes).all()
+    ):
+        raise ValueError("CIoU box coordinates must contain finite values")
+    dtype = (
+        torch.float64
+        if torch.float64 in (predicted_boxes.dtype, target_boxes.dtype)
+        else torch.float32
+    )
+    overlap = bbox_iou(
+        predicted_boxes.to(dtype=dtype),
+        target_boxes.to(dtype=dtype),
+        xywh=False,
+        CIoU=True,
+    )
+    if not torch.isfinite(overlap).all():
+        raise FloatingPointError(
+            "CIoU remained non-finite after FP32 geometry promotion"
+        )
+    return overlap
+
+
 def _bounded_scalar(value: object, field: str) -> float:
     if (
         isinstance(value, bool)
@@ -180,11 +222,9 @@ class DCLIBboxLoss(BboxLoss):
             raise ValueError("uncertainty must align with foreground anchors")
 
         weight = target_scores.sum(-1)[fg_mask].unsqueeze(-1)
-        iou = bbox_iou(
+        iou = stable_ciou(
             pred_bboxes[fg_mask],
             target_bboxes[fg_mask],
-            xywh=False,
-            CIoU=True,
         )
         localization_error = 1.0 - iou
         foreground_uncertainty = uncertainty[fg_mask].unsqueeze(-1)
