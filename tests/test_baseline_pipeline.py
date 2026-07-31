@@ -10,6 +10,7 @@ import yaml
 from ifdr_yolo.data.splits import sha256_file
 from ifdr_yolo.experiments.baseline import (
     BaselineServices,
+    _training_args,
     ensure_prediction_files,
     run_baseline,
 )
@@ -187,6 +188,16 @@ def make_services(
 
 
 class BaselinePipelineTest(unittest.TestCase):
+    def test_full_training_keeps_independent_ten_epoch_checkpoints(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            config = make_config(Path(directory))
+
+            args = _training_args(config, mode="full", device="0")
+
+        self.assertEqual(args["save_period"], 10)
+
     def tearDown(self) -> None:
         bootstrap_ultralytics_config(Path(__file__).resolve().parents[1])
 

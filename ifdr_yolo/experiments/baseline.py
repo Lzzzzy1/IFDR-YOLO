@@ -243,6 +243,7 @@ def _training_args(
     result["save"] = True
     result["plots"] = True
     result["pretrained"] = False
+    result["save_period"] = 10 if mode == "full" else -1
     if mode == "smoke":
         result.update(
             {
