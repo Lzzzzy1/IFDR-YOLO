@@ -29,7 +29,7 @@ class FakeTrainer:
     def train(self) -> None:
         run_dir = Path(self.kwargs["overrides"]["save_dir"])
         with (run_dir / "results.csv").open("a", encoding="utf-8") as output:
-            for epoch in range(296, 300):
+            for epoch in range(297, 301):
                 output.write(f"{epoch},0.5\n")
 
 
@@ -59,7 +59,7 @@ class IFDRRecoveryTest(unittest.TestCase):
             )
             (run_dir / "results.csv").write_text(
                 "epoch,metrics/mAP50-95(B)\n"
-                + "".join(f"{epoch},0.4\n" for epoch in range(296)),
+                + "".join(f"{epoch},0.4\n" for epoch in range(1, 297)),
                 encoding="utf-8",
             )
             split = root / "val.txt"

@@ -74,9 +74,12 @@ def _completed_epochs(path: Path) -> int:
         ):
             raise ValueError("run results contain non-finite or invalid epochs")
         epochs.append(int(epoch_value))
-    if epochs != list(range(epochs[-1] + 1)):
-        raise ValueError("run results epochs must be contiguous from zero")
-    return epochs[-1] + 1
+    first_epoch = epochs[0]
+    if first_epoch not in (0, 1):
+        raise ValueError("run results epochs must start at zero or one")
+    if epochs != list(range(first_epoch, first_epoch + len(epochs))):
+        raise ValueError("run results epochs must be contiguous")
+    return len(epochs)
 
 
 def _prediction_args(config: IFDRConfig, device: str) -> dict[str, object]:
