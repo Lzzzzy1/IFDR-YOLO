@@ -1,4 +1,6 @@
 from pathlib import Path
+import subprocess
+import sys
 import unittest
 
 from ifdr_yolo.experiments.config import load_ifdr_config
@@ -9,6 +11,21 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class MechanismScreenTest(unittest.TestCase):
+    def test_script_can_be_invoked_directly(self) -> None:
+        completed = subprocess.run(
+            (
+                sys.executable,
+                str(ROOT / "scripts" / "run_mechanism_screen.py"),
+                "--help",
+            ),
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
     def test_declares_locked_two_by_two_causal_matrix(self) -> None:
         self.assertEqual(
             tuple(spec.key for spec in SPECS),
