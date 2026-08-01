@@ -12,6 +12,7 @@ from ifdr_yolo.models.gated_fusion import (
     ReliabilityContext,
     ReliabilityEstimator,
     ReliabilityGatedConcat,
+    ResidualFactorAdapter,
 )
 
 
@@ -62,6 +63,7 @@ def install_reliability_fusion(
     *,
     specs: tuple[FusionNodeSpec, ...] = DEFAULT_P2_FUSION_SPECS,
     reliability_channels: int = 32,
+    semantic_protection: bool = False,
 ) -> tuple[int, ...]:
     if not specs:
         raise ValueError("at least one fusion node is required")
@@ -91,6 +93,7 @@ def install_reliability_fusion(
             input_channels=spec.input_channels,
             reliability_channels=reliability_channels,
             reliability_estimator=shared_estimator,
+            semantic_protection=semantic_protection,
         )
         _copy_graph_attributes(original, replacement)
         model.model[spec.index] = replacement
@@ -111,6 +114,8 @@ class IFDRDetectionModel(DetectionModel):
         uncertainty_factor_weights: tuple[float, float] = (1.0, 1.0),
         dfl_entropy_weight: float = 1.0,
         factor_supervision_gain: float = 0.2,
+        semantic_protection: bool = False,
+        counterfactual_gain: float = 0.0,
         fusion_specs: tuple[
             FusionNodeSpec,
             ...,
@@ -121,6 +126,10 @@ class IFDRDetectionModel(DetectionModel):
         self.uncertainty_factor_weights = uncertainty_factor_weights
         self.dfl_entropy_weight = dfl_entropy_weight
         self.factor_supervision_gain = factor_supervision_gain
+        self.counterfactual_gain = counterfactual_gain
+        if not isinstance(semantic_protection, bool):
+            raise ValueError("semantic_protection must be a boolean")
+        self.semantic_protection = semantic_protection
         super().__init__(cfg=cfg, ch=ch, nc=nc, verbose=verbose)
         self.register_buffer(
             "_fusion_schedule",
@@ -141,6 +150,12 @@ class IFDRDetectionModel(DetectionModel):
             self,
             specs=fusion_specs,
             reliability_channels=reliability_channels,
+            semantic_protection=semantic_protection,
+        )
+        self.localization_adapter = (
+            ResidualFactorAdapter()
+            if semantic_protection
+            else None
         )
 
     @property
@@ -212,6 +227,14 @@ class IFDRDetectionModel(DetectionModel):
             contexts[index] = layer.consume_context()
         return contexts
 
+    def adapt_localization_factors(
+        self,
+        factors: torch.Tensor,
+    ) -> torch.Tensor:
+        if self.localization_adapter is None:
+            return factors
+        return self.localization_adapter(factors.detach())
+
     def init_criterion(self):
         from ifdr_yolo.losses.ifdr_detection import IFDRDetectionLoss
 
@@ -222,4 +245,5 @@ class IFDRDetectionModel(DetectionModel):
             factor_weights=self.uncertainty_factor_weights,
             entropy_weight=self.dfl_entropy_weight,
             factor_supervision_gain=self.factor_supervision_gain,
+            counterfactual_gain=self.counterfactual_gain,
         )

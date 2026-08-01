@@ -136,3 +136,53 @@ After training:
 - Days 6–7: statistical consolidation, missing ablations, and result freeze.
 
 No new generic attention, backbone replacement, or unrelated dataset expansion is allowed before the conflict-aware mechanism passes its selection rule.
+
+## Approved Interventional Semantic Protection Extension
+
+The protected-anchor candidate is promoted from a generic adapter idea to a
+testable interventional mechanism.
+
+### Counterfactual Pair
+
+For every geometrically augmented training sample, retain the clean augmented
+view and create one intervention view from the same pixels. The pair therefore
+differs only by the recorded sampling or visibility intervention. Dense targets
+describe the expected factor delta inside the intervened support. The
+non-intervened factor has a zero-delta target on the same support, which tests
+factor selectivity instead of merely detecting that an image changed.
+
+The counterfactual objective compares factor predictions from the intervention
+and clean views at all six fusion nodes. It is inactive for validation,
+disabled interventions, identity interventions, and samples without objects.
+
+### Protected Semantic Anchor
+
+The shared reliability core and factor head form the semantic anchor. When
+protection is enabled, fusion routing consumes a detached anchor through a
+node-specific residual adapter. Localization consumes detached factor maps
+through a shared residual factor adapter. Detection and DCLI calibration may
+train their adapters, but cannot rewrite the anchor. Absolute factor
+supervision and counterfactual factor-delta supervision remain the only losses
+that update anchor semantics.
+
+Both adapters are zero-residual at initialization, so enabling protection does
+not change the initial forward meaning of the existing semantic factors. The
+legacy unprotected path remains available for controlled ablations.
+
+### Causal Claims and Required Evidence
+
+The paper may claim that semantic protection resolves negative transfer only
+if all of the following hold:
+
+- gradients from routed detection and localization calibration are absent from
+  the protected anchor but present in their task adapters;
+- factor and counterfactual losses still update the anchor;
+- predicted sampling deltas respond selectively to sampling interventions and
+  predicted visibility deltas respond selectively to visibility interventions;
+- the protected full model closes the gap to the stronger single-module
+  conditions under the existing Track-B selection rule.
+
+The method is not described as generic gradient surgery, a new IoU family, or
+the first degradation-aware detector. Its scoped contribution is asymmetric
+protection of intervention-supervised degradation semantics shared by
+multi-scale fusion and localization calibration.

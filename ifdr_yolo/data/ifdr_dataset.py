@@ -23,6 +23,9 @@ from ifdr_yolo.data.interventions.transforms import apply_intervention
 
 FACTOR_TARGET_KEY = "ifdr_factor_target"
 FACTOR_WEIGHT_KEY = "ifdr_factor_weight"
+COUNTERFACTUAL_IMAGE_KEY = "ifdr_counterfactual_img"
+COUNTERFACTUAL_DELTA_KEY = "ifdr_counterfactual_delta"
+COUNTERFACTUAL_WEIGHT_KEY = "ifdr_counterfactual_weight"
 
 
 def _epoch_value(value: object) -> int:
@@ -129,14 +132,18 @@ class IFDRInterventionTransform:
         base_seed: int,
         epoch_state: SharedEpoch,
         enabled: bool,
+        counterfactual_enabled: bool = True,
         policy: SamplingPolicy | None = None,
     ) -> None:
         if not isinstance(epoch_state, SharedEpoch):
             raise ValueError("epoch_state must be SharedEpoch")
         if not isinstance(enabled, bool):
             raise ValueError("enabled must be a boolean")
+        if not isinstance(counterfactual_enabled, bool):
+            raise ValueError("counterfactual_enabled must be a boolean")
         self.epoch_state = epoch_state
         self.enabled = enabled
+        self.counterfactual_enabled = counterfactual_enabled
         self.sampler = DeterministicInterventionSampler(
             base_seed=base_seed,
             policy=policy,
@@ -150,6 +157,36 @@ class IFDRInterventionTransform:
             torch.zeros(shape, dtype=torch.float32),
         )
 
+    def _counterfactual_image(self, image: np.ndarray) -> torch.Tensor:
+        rgb_chw = np.ascontiguousarray(
+            image[:, :, ::-1].transpose(2, 0, 1)
+        )
+        return torch.from_numpy(rgb_chw)
+
+    def _empty_counterfactual(self, image: np.ndarray) -> tuple[torch.Tensor, ...]:
+        delta, weight = self._empty_maps(image)
+        return self._counterfactual_image(image), delta, weight
+
+    def _set_empty_supervision(
+        self,
+        labels: dict[str, Any],
+        image: np.ndarray,
+        *,
+        spec: str,
+    ) -> dict[str, Any]:
+        target, factor_weight = self._empty_maps(image)
+        counterfactual, delta, counterfactual_weight = (
+            self._empty_counterfactual(image)
+        )
+        labels[FACTOR_TARGET_KEY] = target
+        labels[FACTOR_WEIGHT_KEY] = factor_weight
+        if self.counterfactual_enabled:
+            labels[COUNTERFACTUAL_IMAGE_KEY] = counterfactual
+            labels[COUNTERFACTUAL_DELTA_KEY] = delta
+            labels[COUNTERFACTUAL_WEIGHT_KEY] = counterfactual_weight
+        labels["ifdr_spec"] = spec
+        return labels
+
     def __call__(self, labels: dict[str, Any]) -> dict[str, Any]:
         image = labels.get("img")
         if (
@@ -160,19 +197,19 @@ class IFDRInterventionTransform:
         ):
             raise ValueError("IFDR transform requires a uint8 HWC image")
         if not self.enabled:
-            target, weight = self._empty_maps(image)
-            labels[FACTOR_TARGET_KEY] = target
-            labels[FACTOR_WEIGHT_KEY] = weight
-            labels["ifdr_spec"] = "disabled"
-            return labels
+            return self._set_empty_supervision(
+                labels,
+                image,
+                spec="disabled",
+            )
 
         boxes = _normalized_xyxy(labels)
         if len(boxes) == 0:
-            target, weight = self._empty_maps(image)
-            labels[FACTOR_TARGET_KEY] = target
-            labels[FACTOR_WEIGHT_KEY] = weight
-            labels["ifdr_spec"] = "no_objects"
-            return labels
+            return self._set_empty_supervision(
+                labels,
+                image,
+                spec="no_objects",
+            )
 
         epoch = self.epoch_state.get()
         image_id = Path(str(labels.get("im_file", "unknown"))).stem
@@ -216,6 +253,7 @@ class IFDRInterventionTransform:
             natural_sampling=natural_sampling,
             natural_occlusion=0.0,
         )
+        clean_image = image.copy()
         applied = apply_intervention(image, spec, target)
         labels["img"] = applied.image
         labels[FACTOR_TARGET_KEY] = torch.from_numpy(
@@ -230,6 +268,31 @@ class IFDRInterventionTransform:
                 axis=0,
             )
         )
+        counterfactual_delta = torch.zeros_like(labels[FACTOR_TARGET_KEY])
+        counterfactual_weight = torch.zeros_like(labels[FACTOR_WEIGHT_KEY])
+        if spec.strength > 0.0:
+            support = torch.from_numpy(
+                np.maximum(
+                    applied.sampling_weight,
+                    applied.visibility_weight,
+                )
+            )
+            counterfactual_weight[0] = support
+            counterfactual_weight[1] = support
+            sampling_base = natural_sampling
+            visibility_base = 0.0
+            counterfactual_delta[0][support > 0] = (
+                target.sampling - sampling_base
+            )
+            counterfactual_delta[1][support > 0] = (
+                target.visibility - visibility_base
+            )
+        if self.counterfactual_enabled:
+            labels[COUNTERFACTUAL_IMAGE_KEY] = self._counterfactual_image(
+                clean_image
+            )
+            labels[COUNTERFACTUAL_DELTA_KEY] = counterfactual_delta
+            labels[COUNTERFACTUAL_WEIGHT_KEY] = counterfactual_weight
         labels["ifdr_spec"] = json.dumps(
             spec.to_payload(),
             sort_keys=True,
@@ -242,6 +305,17 @@ def collate_ifdr_batch(batch: list[dict[str, Any]]) -> dict[str, Any]:
     collated = YOLODataset.collate_fn(batch)
     for key in (FACTOR_TARGET_KEY, FACTOR_WEIGHT_KEY):
         values = collated.get(key)
+        if not isinstance(values, tuple):
+            raise RuntimeError(f"{key} was not preserved by collation")
+        collated[key] = torch.stack(values, dim=0)
+    for key in (
+        COUNTERFACTUAL_IMAGE_KEY,
+        COUNTERFACTUAL_DELTA_KEY,
+        COUNTERFACTUAL_WEIGHT_KEY,
+    ):
+        values = collated.get(key)
+        if values is None:
+            continue
         if not isinstance(values, tuple):
             raise RuntimeError(f"{key} was not preserved by collation")
         collated[key] = torch.stack(values, dim=0)
@@ -258,6 +332,7 @@ class IFDRYOLODataset(YOLODataset):
         *args,
         intervention_seed: int,
         interventions_enabled: bool,
+        counterfactual_enabled: bool = False,
         intervention_policy: SamplingPolicy | None = None,
         **kwargs,
     ) -> None:
@@ -266,6 +341,7 @@ class IFDRYOLODataset(YOLODataset):
             base_seed=intervention_seed,
             epoch_state=self.epoch_state,
             enabled=interventions_enabled,
+            counterfactual_enabled=counterfactual_enabled,
             policy=intervention_policy,
         )
         super().__init__(*args, **kwargs)
@@ -290,6 +366,7 @@ def build_ifdr_dataset(
     stride: int,
     intervention_seed: int,
     interventions_enabled: bool,
+    counterfactual_enabled: bool = False,
     intervention_policy: SamplingPolicy | None = None,
 ) -> IFDRYOLODataset:
     """Build an IFDR dataset using the locked Ultralytics 8.4.98 contract."""
@@ -315,5 +392,6 @@ def build_ifdr_dataset(
         fraction=fraction,
         intervention_seed=intervention_seed,
         interventions_enabled=interventions_enabled,
+        counterfactual_enabled=counterfactual_enabled,
         intervention_policy=intervention_policy,
     )

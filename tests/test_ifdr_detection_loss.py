@@ -187,9 +187,81 @@ class PyramidFactorAlignmentTest(unittest.TestCase):
         mismatch = multiscale_factor_supervision(contexts, target, weight)
         mismatch.backward()
 
-        self.assertEqual(float(exact), 0.0)
-        self.assertGreater(float(mismatch), 0.0)
+        self.assertEqual(float(exact.detach()), 0.0)
+        self.assertGreater(float(mismatch.detach()), 0.0)
         self.assertIsNotNone(contexts[17].factors.grad)
+
+    def test_counterfactual_delta_is_selective_and_updates_both_views(
+        self,
+    ) -> None:
+        from ifdr_yolo.losses.ifdr_detection import (
+            multiscale_counterfactual_consistency,
+        )
+        from ifdr_yolo.models.gated_fusion import ReliabilityContext
+
+        delta_target = torch.zeros(1, 2, 16, 16)
+        delta_target[:, 0] = 0.2
+        weight = torch.ones_like(delta_target)
+        clean_contexts = {}
+        intervention_contexts = {}
+        for node, size in zip(
+            (11, 14, 17, 20, 23, 26),
+            (4, 8, 16, 8, 4, 2),
+        ):
+            clean = torch.empty(
+                1,
+                2,
+                size,
+                size,
+            ).fill_(0.3)
+            clean[:, 1] = 0.4
+            clean.requires_grad_(True)
+            intervention = clean.detach().clone()
+            intervention[:, 0] += 0.2
+            intervention.requires_grad_(True)
+            clean_contexts[node] = ReliabilityContext(
+                factors=clean,
+                branch_weights=torch.full_like(clean, 0.5),
+                gate_strength=1.0,
+            )
+            intervention_contexts[node] = ReliabilityContext(
+                factors=intervention,
+                branch_weights=torch.full_like(intervention, 0.5),
+                gate_strength=1.0,
+            )
+
+        exact = multiscale_counterfactual_consistency(
+            intervention_contexts,
+            clean_contexts,
+            delta_target,
+            weight,
+        )
+        intervention_contexts[17].factors.data[:, 1] = 0.8
+        mismatch = multiscale_counterfactual_consistency(
+            intervention_contexts,
+            clean_contexts,
+            delta_target,
+            weight,
+        )
+        mismatch.backward()
+
+        self.assertLess(float(exact.detach()), 1e-12)
+        self.assertGreater(float(mismatch.detach()), 0.0)
+        self.assertIsNotNone(intervention_contexts[17].factors.grad)
+        self.assertIsNotNone(clean_contexts[17].factors.grad)
+
+    def test_counterfactual_delta_rejects_missing_scale(self) -> None:
+        from ifdr_yolo.losses.ifdr_detection import (
+            multiscale_counterfactual_consistency,
+        )
+
+        with self.assertRaisesRegex(ValueError, "missing.*node 11"):
+            multiscale_counterfactual_consistency(
+                {},
+                {},
+                torch.zeros(1, 2, 4, 4),
+                torch.ones(1, 2, 4, 4),
+            )
 
 
 class IFDRDetectionLossIntegrationTest(unittest.TestCase):
@@ -217,7 +289,7 @@ class IFDRDetectionLossIntegrationTest(unittest.TestCase):
         total.sum().backward()
 
         self.assertIsInstance(model.criterion, IFDRDetectionLoss)
-        self.assertEqual(components.shape, (3,))
+        self.assertEqual(components.shape, (5,))
         self.assertTrue(torch.isfinite(total).all())
         factor_gradients = [
             model.model[index].factor_head.weight.grad
@@ -261,6 +333,87 @@ class IFDRDetectionLossIntegrationTest(unittest.TestCase):
         gradient = model.model[17].factor_head.weight.grad
         self.assertIsNotNone(gradient)
         self.assertGreater(float(gradient.abs().sum()), 0.0)
+
+    def test_protected_counterfactual_loss_runs_second_view(self) -> None:
+        from ultralytics.utils import DEFAULT_CFG
+
+        from ifdr_yolo.models.ifdr_model import IFDRDetectionModel
+
+        torch.manual_seed(67)
+        model = IFDRDetectionModel(
+            str(MODEL_PATH),
+            nc=3,
+            verbose=False,
+            semantic_protection=True,
+            counterfactual_gain=0.2,
+        )
+        model.args = DEFAULT_CFG
+        model.set_reliability_schedule(1.0)
+        model.train()
+        image = torch.randn(1, 3, 128, 128)
+        batch = {
+            "img": image,
+            "batch_idx": torch.tensor([0.0]),
+            "cls": torch.tensor([[0.0]]),
+            "bboxes": torch.tensor([[0.5, 0.5, 0.25, 0.25]]),
+            "ifdr_factor_target": torch.zeros(1, 2, 128, 128),
+            "ifdr_factor_weight": torch.ones(1, 2, 128, 128),
+            "ifdr_counterfactual_img": image.clone(),
+            "ifdr_counterfactual_delta": torch.zeros(1, 2, 128, 128),
+            "ifdr_counterfactual_weight": torch.ones(1, 2, 128, 128),
+        }
+
+        total, components = model.loss(batch)
+        total.sum().backward()
+
+        self.assertTrue(torch.isfinite(total).all())
+        self.assertEqual(components.shape, (5,))
+        self.assertGreater(float(components[3]), 0.0)
+        self.assertLess(float(components[4].abs()), 1e-12)
+        self.assertTrue(
+            any(
+                parameter.grad is not None
+                for parameter in model.localization_adapter.parameters()
+            )
+        )
+
+    def test_frozen_factor_schedule_skips_counterfactual_forward(self) -> None:
+        from ultralytics.utils import DEFAULT_CFG
+
+        from ifdr_yolo.models.ifdr_model import IFDRDetectionModel
+
+        model = IFDRDetectionModel(
+            str(MODEL_PATH),
+            nc=3,
+            verbose=False,
+            semantic_protection=True,
+            counterfactual_gain=0.2,
+        )
+        model.args = DEFAULT_CFG
+        model.set_component_schedules(
+            fusion=0.0,
+            dcli=0.0,
+            factor_supervision=0.0,
+        )
+        model.train()
+        batch = {
+            "img": torch.randn(1, 3, 128, 128),
+            "batch_idx": torch.tensor([0.0]),
+            "cls": torch.tensor([[0.0]]),
+            "bboxes": torch.tensor([[0.5, 0.5, 0.25, 0.25]]),
+            "ifdr_factor_target": torch.zeros(1, 2, 128, 128),
+            "ifdr_factor_weight": torch.ones(1, 2, 128, 128),
+            "ifdr_counterfactual_img": torch.zeros(1, 3, 128),
+            "ifdr_counterfactual_delta": torch.zeros(1, 2, 128, 128),
+            "ifdr_counterfactual_weight": torch.ones(1, 2, 128, 128),
+        }
+
+        total, components = model.loss(batch)
+
+        self.assertTrue(torch.isfinite(total).all())
+        self.assertEqual(components.shape, (5,))
+        self.assertEqual(float(components[3]), 0.0)
+        self.assertEqual(float(components[4]), 0.0)
 
 
 if __name__ == "__main__":

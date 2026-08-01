@@ -5,6 +5,7 @@ import torch
 from ifdr_yolo.models.gated_fusion import (
     ReliabilityContext,
     ReliabilityGatedConcat,
+    ResidualFactorAdapter,
 )
 
 
@@ -116,6 +117,84 @@ class ReliabilityGatedConcatTest(unittest.TestCase):
 
         self.assertFalse(
             any("context" in name for name in module.state_dict())
+        )
+
+    def test_protected_detection_gradient_updates_adapter_not_anchor(self) -> None:
+        module = ReliabilityGatedConcat(
+            input_channels=(8, 12),
+            reliability_channels=4,
+            semantic_protection=True,
+        )
+        module.set_schedule(1.0)
+        output = module(self.inputs())
+        module.consume_context()
+
+        output.square().mean().backward()
+
+        anchor_gradients = [
+            parameter.grad
+            for parameter in module.reliability_estimator.parameters()
+        ]
+        adapter_gradients = [
+            parameter.grad
+            for parameter in module.fusion_adapter.parameters()
+        ]
+        self.assertTrue(all(gradient is None for gradient in anchor_gradients))
+        self.assertTrue(
+            any(
+                gradient is not None and torch.count_nonzero(gradient) > 0
+                for gradient in adapter_gradients
+            )
+        )
+
+    def test_protected_factor_supervision_still_updates_anchor(self) -> None:
+        module = ReliabilityGatedConcat(
+            input_channels=(8, 12),
+            reliability_channels=4,
+            semantic_protection=True,
+        )
+        module(self.inputs())
+        context = module.consume_context()
+
+        context.factors.mean().backward()
+
+        anchor_gradients = [
+            parameter.grad
+            for parameter in module.reliability_estimator.parameters()
+        ]
+        self.assertTrue(
+            any(
+                gradient is not None and torch.count_nonzero(gradient) > 0
+                for gradient in anchor_gradients
+            )
+        )
+        self.assertTrue(
+            all(
+                parameter.grad is None
+                for parameter in module.fusion_adapter.parameters()
+            )
+        )
+
+
+class ResidualFactorAdapterTest(unittest.TestCase):
+    def test_initially_preserves_factors_and_blocks_input_gradient(self) -> None:
+        adapter = ResidualFactorAdapter(hidden_channels=4)
+        factors = torch.tensor(
+            [[[0.2, 0.7], [0.6, 0.1]]],
+            requires_grad=True,
+        )
+
+        adapted = adapter(factors.detach())
+        self.assertTrue(torch.equal(adapted, factors.detach()))
+        adapted.square().mean().backward()
+
+        self.assertIsNone(factors.grad)
+        self.assertTrue(
+            any(
+                parameter.grad is not None
+                and torch.count_nonzero(parameter.grad) > 0
+                for parameter in adapter.parameters()
+            )
         )
 
 

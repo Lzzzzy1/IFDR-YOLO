@@ -16,6 +16,11 @@ from ifdr_yolo.losses.dcli import (
     derive_localization_uncertainty,
     normalized_dfl_entropy,
 )
+from ifdr_yolo.data.ifdr_dataset import (
+    COUNTERFACTUAL_DELTA_KEY,
+    COUNTERFACTUAL_IMAGE_KEY,
+    COUNTERFACTUAL_WEIGHT_KEY,
+)
 from ifdr_yolo.models.gated_fusion import ReliabilityContext
 
 
@@ -166,6 +171,76 @@ def multiscale_factor_supervision(
     return torch.stack(node_losses).mean()
 
 
+def multiscale_counterfactual_consistency(
+    intervention_contexts: Mapping[int, ReliabilityContext],
+    clean_contexts: Mapping[int, ReliabilityContext],
+    delta_target: torch.Tensor,
+    weight: torch.Tensor,
+    *,
+    node_indices: tuple[int, ...] = ALL_FUSION_CONTEXT_NODES,
+) -> torch.Tensor:
+    """Match intervention-induced factor deltas at every fusion node."""
+
+    if (
+        not isinstance(delta_target, torch.Tensor)
+        or not isinstance(weight, torch.Tensor)
+        or delta_target.ndim != 4
+        or delta_target.shape[1] != 2
+        or delta_target.shape != weight.shape
+        or not delta_target.is_floating_point()
+        or not weight.is_floating_point()
+    ):
+        raise ValueError(
+            "counterfactual delta and weight must be matching "
+            "[batch, 2, h, w] tensors"
+        )
+    if (
+        not torch.isfinite(delta_target).all()
+        or not torch.isfinite(weight).all()
+        or torch.any(weight < 0.0)
+    ):
+        raise ValueError(
+            "counterfactual targets must be finite with non-negative weights"
+        )
+    node_losses: list[torch.Tensor] = []
+    for node_index in node_indices:
+        if node_index not in intervention_contexts:
+            raise ValueError(
+                f"intervention contexts missing node {node_index}"
+            )
+        if node_index not in clean_contexts:
+            raise ValueError(f"clean contexts missing node {node_index}")
+        intervention = intervention_contexts[node_index].factors
+        clean = clean_contexts[node_index].factors
+        if intervention.shape != clean.shape:
+            raise ValueError(
+                f"counterfactual factor shapes differ at node {node_index}"
+            )
+        if intervention.shape[:2] != delta_target.shape[:2]:
+            raise ValueError(
+                f"counterfactual factors do not match target at node {node_index}"
+            )
+        size = intervention.shape[-2:]
+        scaled_target = F.interpolate(delta_target, size=size, mode="area")
+        scaled_weight = F.interpolate(weight, size=size, mode="area")
+        numerator = (
+            F.smooth_l1_loss(
+                intervention - clean,
+                scaled_target,
+                reduction="none",
+            )
+            * scaled_weight
+        ).sum()
+        denominator = scaled_weight.sum()
+        node_loss = torch.where(
+            denominator > 0,
+            numerator / denominator.clamp_min(1e-12),
+            (intervention.sum() + clean.sum()) * 0.0,
+        )
+        node_losses.append(node_loss)
+    return torch.stack(node_losses).mean()
+
+
 class DCLIBboxLoss(BboxLoss):
     """Ultralytics bbox loss with anchor-aligned, bounded DCLI weighting."""
 
@@ -288,6 +363,7 @@ class IFDRDetectionLoss(v8DetectionLoss):
         factor_weights: tuple[float, float] = (1.0, 1.0),
         entropy_weight: float = 1.0,
         factor_supervision_gain: float = 0.2,
+        counterfactual_gain: float = 0.0,
     ) -> None:
         super().__init__(model)
         self._model_ref = weakref.ref(model)
@@ -296,6 +372,10 @@ class IFDRDetectionLoss(v8DetectionLoss):
         self.factor_supervision_gain = _bounded_scalar(
             factor_supervision_gain,
             "factor_supervision_gain",
+        )
+        self.counterfactual_gain = _bounded_scalar(
+            counterfactual_gain,
+            "counterfactual_gain",
         )
         self.bbox_loss = DCLIBboxLoss(
             self.reg_max,
@@ -324,7 +404,37 @@ class IFDRDetectionLoss(v8DetectionLoss):
             factor_target,
             factor_weight,
         )
+        counterfactual_loss = factor_loss * 0.0
+        counterfactual_weight = batch.get(COUNTERFACTUAL_WEIGHT_KEY)
+        if (
+            self.counterfactual_gain > 0.0
+            and model.factor_supervision_schedule > 0.0
+            and isinstance(counterfactual_weight, torch.Tensor)
+            and torch.any(counterfactual_weight > 0.0)
+        ):
+            counterfactual_image = batch.get(COUNTERFACTUAL_IMAGE_KEY)
+            counterfactual_delta = batch.get(COUNTERFACTUAL_DELTA_KEY)
+            if (
+                not isinstance(counterfactual_image, torch.Tensor)
+                or counterfactual_image.ndim != 4
+            ):
+                raise RuntimeError(
+                    "batch is missing BCHW counterfactual images"
+                )
+            if not isinstance(counterfactual_delta, torch.Tensor):
+                raise RuntimeError(
+                    "batch is missing counterfactual delta targets"
+                )
+            model(counterfactual_image)
+            clean_contexts = model.consume_reliability_context()
+            counterfactual_loss = multiscale_counterfactual_consistency(
+                contexts,
+                clean_contexts,
+                counterfactual_delta,
+                counterfactual_weight,
+            )
         factors = flatten_pyramid_factors(contexts, preds["feats"])
+        factors = model.adapt_localization_factors(factors)
         pred_distri = preds["boxes"].permute(0, 2, 1).contiguous()
         dfl_entropy = normalized_dfl_entropy(
             pred_distri,
@@ -339,20 +449,36 @@ class IFDRDetectionLoss(v8DetectionLoss):
         self.bbox_loss.set_schedule(model.dcli_schedule)
         self.bbox_loss.set_uncertainty(uncertainty)
         try:
-            assignments, loss, _ = super().get_assigned_targets_and_loss(
+            result = super().get_assigned_targets_and_loss(
                 preds,
                 batch,
             )
+            assignments, detection_loss, _ = result
+            factor_component = (
+                factor_loss
+                * self.factor_supervision_gain
+                * model.factor_supervision_schedule
+            )
+            counterfactual_component = (
+                counterfactual_loss
+                * self.counterfactual_gain
+                * model.factor_supervision_schedule
+            )
             auxiliary = torch.stack(
                 (
-                    factor_loss
-                    * self.factor_supervision_gain
-                    * model.factor_supervision_schedule,
+                    factor_component + counterfactual_component,
                     factor_loss * 0.0,
                     factor_loss * 0.0,
                 )
             )
-            loss = loss + auxiliary
-            return assignments, loss, loss.detach()
+            loss = detection_loss + auxiliary
+            reported = torch.cat(
+                (
+                    detection_loss.detach(),
+                    factor_component.detach().reshape(1),
+                    counterfactual_component.detach().reshape(1),
+                )
+            )
+            return assignments, loss, reported
         finally:
             self.bbox_loss.discard_uncertainty()

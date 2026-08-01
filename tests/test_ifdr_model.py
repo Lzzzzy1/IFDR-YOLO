@@ -148,6 +148,33 @@ class IFDRDetectionModelTest(unittest.TestCase):
                 reliability_channels=4,
             )
 
+    def test_semantic_protection_installs_both_task_adapters(self) -> None:
+        from ifdr_yolo.models.gated_fusion import (
+            ResidualFactorAdapter,
+            ResidualSemanticMapAdapter,
+        )
+        from ifdr_yolo.models.ifdr_model import IFDRDetectionModel
+
+        model = IFDRDetectionModel(
+            str(MODEL_PATH),
+            verbose=False,
+            semantic_protection=True,
+        )
+
+        self.assertIsInstance(
+            model.localization_adapter,
+            ResidualFactorAdapter,
+        )
+        self.assertTrue(
+            all(
+                isinstance(
+                    model.model[index].fusion_adapter,
+                    ResidualSemanticMapAdapter,
+                )
+                for index in model.fusion_node_indices
+            )
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

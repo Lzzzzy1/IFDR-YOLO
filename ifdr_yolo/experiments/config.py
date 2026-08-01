@@ -87,6 +87,8 @@ class IFDRComponentsConfig:
     dcli: bool
     factor_supervision: bool
     interventions: bool
+    semantic_protection: bool = False
+    counterfactual_consistency: bool = False
 
 
 @dataclass(frozen=True)
@@ -106,6 +108,7 @@ class IFDRLossConfig:
     factor_supervision_gain: float
     factor_weights: tuple[float, float]
     dfl_entropy_weight: float
+    counterfactual_gain: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -474,7 +477,16 @@ def _parse_ifdr_components(value: object) -> IFDRComponentsConfig:
         "factor_supervision",
         "interventions",
     }
-    _require_fields(mapping, field="ifdr.components", expected=fields)
+    optional = {
+        "semantic_protection",
+        "counterfactual_consistency",
+    }
+    _require_fields(
+        mapping,
+        field="ifdr.components",
+        expected=fields,
+        optional=optional,
+    )
     return IFDRComponentsConfig(
         fusion_gate=_require_bool(
             mapping["fusion_gate"],
@@ -488,6 +500,14 @@ def _parse_ifdr_components(value: object) -> IFDRComponentsConfig:
         interventions=_require_bool(
             mapping["interventions"],
             "ifdr.components.interventions",
+        ),
+        semantic_protection=_require_bool(
+            mapping.get("semantic_protection", False),
+            "ifdr.components.semantic_protection",
+        ),
+        counterfactual_consistency=_require_bool(
+            mapping.get("counterfactual_consistency", False),
+            "ifdr.components.counterfactual_consistency",
         ),
     )
 
@@ -555,7 +575,12 @@ def _parse_ifdr_loss(value: object) -> IFDRLossConfig:
         "factor_weights",
         "dfl_entropy_weight",
     }
-    _require_fields(mapping, field="ifdr.loss", expected=fields)
+    _require_fields(
+        mapping,
+        field="ifdr.loss",
+        expected=fields,
+        optional={"counterfactual_gain"},
+    )
     raw_weights = mapping["factor_weights"]
     if not isinstance(raw_weights, (list, tuple)) or len(raw_weights) != 2:
         raise ValueError("ifdr.loss.factor_weights must contain two values")
@@ -595,6 +620,12 @@ def _parse_ifdr_loss(value: object) -> IFDRLossConfig:
         ),
         factor_weights=(factor_weights[0], factor_weights[1]),
         dfl_entropy_weight=entropy_weight,
+        counterfactual_gain=_require_float(
+            mapping.get("counterfactual_gain", 0.0),
+            "ifdr.loss.counterfactual_gain",
+            minimum=0.0,
+            maximum=1.0,
+        ),
     )
 
 
@@ -611,16 +642,35 @@ def _parse_ifdr_method(value: object) -> IFDRMethodConfig:
             "loss",
         },
     )
+    components = _parse_ifdr_components(mapping["components"])
+    loss = _parse_ifdr_loss(mapping["loss"])
+    if components.counterfactual_consistency:
+        if not components.interventions:
+            raise ValueError(
+                "counterfactual consistency requires interventions"
+            )
+        if not components.factor_supervision:
+            raise ValueError(
+                "counterfactual consistency requires factor supervision"
+            )
+        if loss.counterfactual_gain <= 0.0:
+            raise ValueError(
+                "counterfactual consistency requires a positive gain"
+            )
+    elif loss.counterfactual_gain != 0.0:
+        raise ValueError(
+            "counterfactual_gain must be zero when consistency is disabled"
+        )
     return IFDRMethodConfig(
         reliability_channels=_require_int(
             mapping["reliability_channels"],
             "ifdr.reliability_channels",
             minimum=1,
         ),
-        components=_parse_ifdr_components(mapping["components"]),
+        components=components,
         schedule=_parse_ifdr_schedule(mapping["schedule"]),
         intervention=_parse_ifdr_intervention(mapping["intervention"]),
-        loss=_parse_ifdr_loss(mapping["loss"]),
+        loss=loss,
     )
 
 

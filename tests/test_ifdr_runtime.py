@@ -101,6 +101,8 @@ class IFDRRuntimeAdapterTest(unittest.TestCase):
                 "dcli": True,
                 "factor_supervision": True,
                 "interventions": True,
+                "semantic_protection": False,
+                "counterfactual_consistency": False,
             },
         )
 
@@ -152,6 +154,8 @@ class IFDRRuntimeAdapterTest(unittest.TestCase):
             self.assertTrue(switches.dcli)
             self.assertTrue(switches.factor_supervision)
             self.assertTrue(switches.interventions)
+            self.assertFalse(switches.semantic_protection)
+            self.assertFalse(switches.counterfactual_consistency)
 
 
 if __name__ == "__main__":

@@ -22,6 +22,15 @@ class EvidenceSpec:
     variant: str
     seed: int
     config: Path
+    expected_epochs: int = 300
+
+    def __post_init__(self) -> None:
+        if (
+            isinstance(self.expected_epochs, bool)
+            or not isinstance(self.expected_epochs, int)
+            or self.expected_epochs <= 0
+        ):
+            raise ValueError("expected_epochs must be a positive integer")
 
 
 SPECS = (
@@ -209,7 +218,8 @@ class EvidenceQueue:
                 _formal_mode(run_dir)
                 and status is not None
                 and status.get("state") == "complete"
-                and _completed_epochs(run_dir / "results.csv") == 300
+                and _completed_epochs(run_dir / "results.csv")
+                == spec.expected_epochs
                 and _is_nonempty(run_dir / "weights" / "best.pt")
                 and _is_nonempty(run_dir / "weights" / "last.pt")
                 and _is_nonempty(run_dir / "metrics_ap40.json")
@@ -227,7 +237,7 @@ class EvidenceQueue:
                 and status.get("state") == "failed"
                 and status.get("stage") == "training"
                 and epochs is not None
-                and epochs < 300
+                and epochs < spec.expected_epochs
                 and _is_nonempty(run_dir / "weights" / "best.pt")
                 and _is_nonempty(run_dir / "weights" / "last.pt")
             ):
@@ -362,7 +372,8 @@ class EvidenceQueue:
                     complete = self._complete_run(spec)
                     if complete is None:
                         raise RuntimeError(
-                            "command returned without a valid 300-epoch AP40 run"
+                            "command returned without a valid "
+                            f"{spec.expected_epochs}-epoch AP40 run"
                         )
                     self.completed.append(spec.key)
                     self._write_status(state="running", current=spec.key)

@@ -21,6 +21,60 @@ def _positive_channels(value: object, field: str) -> int:
     return value
 
 
+class ResidualSemanticMapAdapter(nn.Module):
+    """Zero-residual task adapter for protected BCHW semantics."""
+
+    def __init__(self, channels: int) -> None:
+        super().__init__()
+        channels = _positive_channels(channels, "channels")
+        hidden = max(4, channels // 4)
+        self.channels = channels
+        self.delta = nn.Sequential(
+            nn.Conv2d(channels, hidden, 1),
+            nn.SiLU(),
+            nn.Conv2d(hidden, channels, 1),
+        )
+        nn.init.zeros_(self.delta[-1].weight)
+        nn.init.zeros_(self.delta[-1].bias)
+
+    def forward(self, semantics: torch.Tensor) -> torch.Tensor:
+        if (
+            not isinstance(semantics, torch.Tensor)
+            or semantics.ndim != 4
+            or semantics.shape[1] != self.channels
+        ):
+            raise ValueError(
+                f"semantics must have shape [batch, {self.channels}, h, w]"
+            )
+        return semantics + self.delta(semantics)
+
+
+class ResidualFactorAdapter(nn.Module):
+    """Bounded zero-residual adapter for sampling/visibility factors."""
+
+    def __init__(self, hidden_channels: int = 8) -> None:
+        super().__init__()
+        hidden = _positive_channels(hidden_channels, "hidden_channels")
+        self.delta = nn.Sequential(
+            nn.Linear(2, hidden),
+            nn.SiLU(),
+            nn.Linear(hidden, 2),
+        )
+        nn.init.zeros_(self.delta[-1].weight)
+        nn.init.zeros_(self.delta[-1].bias)
+
+    def forward(self, factors: torch.Tensor) -> torch.Tensor:
+        if (
+            not isinstance(factors, torch.Tensor)
+            or not factors.is_floating_point()
+            or factors.ndim < 1
+            or factors.shape[-1] != 2
+        ):
+            raise ValueError("factors must be floating point and end with 2")
+        residual = 0.25 * self.delta(factors).tanh()
+        return (factors + residual).clamp(0.0, 1.0)
+
+
 class ReliabilityEstimator(nn.Module):
     """Cross-scale estimator that gives both factors one shared meaning."""
 
@@ -61,6 +115,7 @@ class ReliabilityGatedConcat(nn.Module):
         input_channels: tuple[int, int],
         reliability_channels: int = 32,
         reliability_estimator: ReliabilityEstimator | None = None,
+        semantic_protection: bool = False,
     ) -> None:
         super().__init__()
         if (
@@ -87,6 +142,9 @@ class ReliabilityGatedConcat(nn.Module):
                 "reliability_estimator must match reliability_channels"
             )
         self.reliability_estimator = reliability_estimator
+        if not isinstance(semantic_protection, bool):
+            raise ValueError("semantic_protection must be a boolean")
+        self.semantic_protection = semantic_protection
         self.projections = nn.ModuleList(
             nn.Sequential(
                 nn.Conv2d(input_channel, channels, 1, bias=False),
@@ -96,6 +154,11 @@ class ReliabilityGatedConcat(nn.Module):
             for input_channel in self.input_channels
         )
         self.router = nn.Conv2d(channels + 2, 2, 1)
+        self.fusion_adapter = (
+            ResidualSemanticMapAdapter(channels + 2)
+            if semantic_protection
+            else None
+        )
         self.gate_logit = nn.Parameter(torch.tensor(0.0))
         self.register_buffer(
             "_schedule",
@@ -162,9 +225,11 @@ class ReliabilityGatedConcat(nn.Module):
             dim=1,
         )
         reliability, factors = self.reliability_estimator(projected)
-        branch_weights = self.router(
-            torch.cat((reliability, factors), dim=1)
-        ).softmax(dim=1)
+        semantics = torch.cat((reliability, factors), dim=1)
+        if self.semantic_protection:
+            assert self.fusion_adapter is not None
+            semantics = self.fusion_adapter(semantics.detach())
+        branch_weights = self.router(semantics).softmax(dim=1)
         gate_strength = self._schedule * self.gate_logit.sigmoid()
         first_scale = 1.0 + gate_strength * (
             branch_weights[:, 0:1] - 0.5
