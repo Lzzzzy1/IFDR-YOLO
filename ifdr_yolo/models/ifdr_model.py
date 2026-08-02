@@ -388,6 +388,8 @@ class IFDRDetectionModel(DetectionModel):
         self,
         losses: dict[str, torch.Tensor],
     ) -> dict[str, object] | None:
+        if not self.training or not torch.is_grad_enabled():
+            return None
         return self._gradient_diagnostics.observe(
             losses,
             self.shared_reliability_parameters(),

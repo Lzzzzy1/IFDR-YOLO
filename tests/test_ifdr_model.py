@@ -175,6 +175,27 @@ class IFDRDetectionModelTest(unittest.TestCase):
             )
         )
 
+    def test_gradient_diagnostics_skip_no_grad_validation(self) -> None:
+        from ifdr_yolo.models.ifdr_model import IFDRDetectionModel
+
+        model = IFDRDetectionModel(
+            str(MODEL_PATH),
+            verbose=False,
+            gradient_diagnostic_interval=1,
+        )
+        model.eval()
+
+        with torch.no_grad():
+            result = model.observe_gradient_diagnostics(
+                {
+                    "detection": torch.tensor(1.0),
+                    "factor": torch.tensor(2.0),
+                }
+            )
+
+        self.assertIsNone(result)
+        self.assertEqual(model.drain_gradient_diagnostics(), ())
+
 
 if __name__ == "__main__":
     unittest.main()
