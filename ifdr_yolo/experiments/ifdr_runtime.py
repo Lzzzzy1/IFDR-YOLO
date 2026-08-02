@@ -112,6 +112,9 @@ class IFDRRuntimeAdapter:
                 if method.components.counterfactual_consistency
                 else 0.0
             ),
+            gradient_diagnostic_interval=(
+                method.gradient_diagnostic_interval
+            ),
         )
         source_handle = self._yolo_factory(str(initialization.pretrained))
         source_model = getattr(source_handle, "model", None)

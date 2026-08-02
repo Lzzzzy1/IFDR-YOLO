@@ -18,7 +18,6 @@ from ifdr_yolo.losses.dcli import (
 )
 from ifdr_yolo.data.ifdr_dataset import (
     COUNTERFACTUAL_DELTA_KEY,
-    COUNTERFACTUAL_IMAGE_KEY,
     COUNTERFACTUAL_WEIGHT_KEY,
 )
 from ifdr_yolo.models.gated_fusion import ReliabilityContext
@@ -391,7 +390,7 @@ class IFDRDetectionLoss(v8DetectionLoss):
         model = self._model_ref()
         if model is None:
             raise RuntimeError("IFDR model is no longer available")
-        contexts = model.consume_reliability_context()
+        contexts, clean_contexts = model.consume_loss_reliability_contexts()
         factor_target = batch.get("ifdr_factor_target")
         factor_weight = batch.get("ifdr_factor_weight")
         if not isinstance(factor_target, torch.Tensor) or not isinstance(
@@ -412,21 +411,15 @@ class IFDRDetectionLoss(v8DetectionLoss):
             and isinstance(counterfactual_weight, torch.Tensor)
             and torch.any(counterfactual_weight > 0.0)
         ):
-            counterfactual_image = batch.get(COUNTERFACTUAL_IMAGE_KEY)
             counterfactual_delta = batch.get(COUNTERFACTUAL_DELTA_KEY)
-            if (
-                not isinstance(counterfactual_image, torch.Tensor)
-                or counterfactual_image.ndim != 4
-            ):
-                raise RuntimeError(
-                    "batch is missing BCHW counterfactual images"
-                )
             if not isinstance(counterfactual_delta, torch.Tensor):
                 raise RuntimeError(
                     "batch is missing counterfactual delta targets"
                 )
-            model(counterfactual_image)
-            clean_contexts = model.consume_reliability_context()
+            if clean_contexts is None:
+                raise RuntimeError(
+                    "counterfactual loss requires paired reliability contexts"
+                )
             counterfactual_loss = multiscale_counterfactual_consistency(
                 contexts,
                 clean_contexts,
@@ -464,6 +457,15 @@ class IFDRDetectionLoss(v8DetectionLoss):
                 * self.counterfactual_gain
                 * model.factor_supervision_schedule
             )
+            diagnostic_losses = {
+                "detection": detection_loss.sum(),
+                "factor": factor_component,
+            }
+            if self.counterfactual_gain > 0.0:
+                diagnostic_losses["counterfactual"] = (
+                    counterfactual_component
+                )
+            model.observe_gradient_diagnostics(diagnostic_losses)
             auxiliary = torch.stack(
                 (
                     factor_component + counterfactual_component,

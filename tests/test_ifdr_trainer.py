@@ -1,6 +1,8 @@
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
+import json
+import tempfile
 from unittest.mock import patch
 
 import torch
@@ -86,6 +88,46 @@ class FusionScheduleTest(unittest.TestCase):
 
 
 class IFDRDetectionTrainerTest(unittest.TestCase):
+    def test_flush_gradient_diagnostics_appends_jsonl_records(self) -> None:
+        from ifdr_yolo.experiments.ifdr_trainer import (
+            flush_gradient_diagnostics,
+        )
+
+        record = {
+            "schema_version": 1,
+            "step": 2,
+            "gradient_norms": {"detection": 1.0, "factor": 2.0},
+            "pairs": {
+                "detection::factor": {
+                    "cosine": -0.5,
+                    "conflict": True,
+                }
+            },
+        }
+
+        class Model:
+            def __init__(self) -> None:
+                self.records = (record,)
+
+            def drain_gradient_diagnostics(self):
+                records, self.records = self.records, ()
+                return records
+
+        with tempfile.TemporaryDirectory() as directory:
+            trainer = type(
+                "Trainer",
+                (),
+                {"model": Model(), "save_dir": Path(directory)},
+            )()
+
+            flush_gradient_diagnostics(trainer)
+            flush_gradient_diagnostics(trainer)
+
+            path = Path(directory) / "gradient_diagnostics.jsonl"
+            lines = path.read_text(encoding="utf-8").splitlines()
+            self.assertEqual(len(lines), 1)
+            self.assertEqual(json.loads(lines[0]), record)
+
     @classmethod
     def setUpClass(cls) -> None:
         bootstrap_ultralytics_config(ROOT)

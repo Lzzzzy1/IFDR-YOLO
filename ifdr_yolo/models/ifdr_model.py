@@ -14,6 +14,13 @@ from ifdr_yolo.models.gated_fusion import (
     ReliabilityGatedConcat,
     ResidualFactorAdapter,
 )
+from ifdr_yolo.data.ifdr_dataset import (
+    COUNTERFACTUAL_IMAGE_KEY,
+    COUNTERFACTUAL_WEIGHT_KEY,
+)
+from ifdr_yolo.experiments.gradient_diagnostics import (
+    ScheduledGradientDiagnostics,
+)
 
 
 @dataclass(frozen=True)
@@ -49,6 +56,70 @@ DEFAULT_P2_FUSION_SPECS = (
     FusionNodeSpec(23, (192, 384)),
     FusionNodeSpec(26, (384, 576)),
 )
+
+
+def _split_paired_tensor(
+    value: torch.Tensor,
+    batch_size: int,
+) -> torch.Tensor:
+    if value.ndim == 0 or value.shape[0] != 2 * batch_size:
+        raise RuntimeError(
+            "paired prediction tensors must have leading dimension 2B"
+        )
+    return value[:batch_size]
+
+
+def _main_paired_predictions(
+    predictions: dict[str, object],
+    batch_size: int,
+) -> dict[str, object]:
+    if not isinstance(predictions, dict):
+        raise RuntimeError("paired IFDR predictions must be a mapping")
+    result: dict[str, object] = {}
+    for name, value in predictions.items():
+        if isinstance(value, torch.Tensor):
+            result[name] = _split_paired_tensor(value, batch_size)
+        elif isinstance(value, list) and all(
+            isinstance(item, torch.Tensor) for item in value
+        ):
+            result[name] = [
+                _split_paired_tensor(item, batch_size) for item in value
+            ]
+        else:
+            raise RuntimeError(
+                f"unsupported paired prediction field: {name}"
+            )
+    return result
+
+
+def _split_paired_contexts(
+    contexts: dict[int, ReliabilityContext],
+    batch_size: int,
+) -> tuple[
+    dict[int, ReliabilityContext],
+    dict[int, ReliabilityContext],
+]:
+    main: dict[int, ReliabilityContext] = {}
+    clean: dict[int, ReliabilityContext] = {}
+    for index, context in contexts.items():
+        if (
+            context.factors.shape[0] != 2 * batch_size
+            or context.branch_weights.shape[0] != 2 * batch_size
+        ):
+            raise RuntimeError(
+                "paired reliability contexts must have leading dimension 2B"
+            )
+        main[index] = ReliabilityContext(
+            factors=context.factors[:batch_size],
+            branch_weights=context.branch_weights[:batch_size],
+            gate_strength=context.gate_strength,
+        )
+        clean[index] = ReliabilityContext(
+            factors=context.factors[batch_size:],
+            branch_weights=context.branch_weights[batch_size:],
+            gate_strength=context.gate_strength,
+        )
+    return main, clean
 
 
 def _copy_graph_attributes(source: object, target: object) -> None:
@@ -116,6 +187,7 @@ class IFDRDetectionModel(DetectionModel):
         factor_supervision_gain: float = 0.2,
         semantic_protection: bool = False,
         counterfactual_gain: float = 0.0,
+        gradient_diagnostic_interval: int = 0,
         fusion_specs: tuple[
             FusionNodeSpec,
             ...,
@@ -156,6 +228,13 @@ class IFDRDetectionModel(DetectionModel):
             ResidualFactorAdapter()
             if semantic_protection
             else None
+        )
+        self._loss_reliability_contexts: tuple[
+            dict[int, ReliabilityContext],
+            dict[int, ReliabilityContext] | None,
+        ] | None = None
+        self._gradient_diagnostics = ScheduledGradientDiagnostics(
+            interval=gradient_diagnostic_interval,
         )
 
     @property
@@ -227,6 +306,69 @@ class IFDRDetectionModel(DetectionModel):
             contexts[index] = layer.consume_context()
         return contexts
 
+    def consume_loss_reliability_contexts(
+        self,
+    ) -> tuple[
+        dict[int, ReliabilityContext],
+        dict[int, ReliabilityContext] | None,
+    ]:
+        contexts = self._loss_reliability_contexts
+        if contexts is not None:
+            self._loss_reliability_contexts = None
+            return contexts
+        return self.consume_reliability_context(), None
+
+    def _counterfactual_pair_is_active(
+        self,
+        batch: dict[str, object],
+    ) -> bool:
+        weight = batch.get(COUNTERFACTUAL_WEIGHT_KEY)
+        return (
+            self.counterfactual_gain > 0.0
+            and self.factor_supervision_schedule > 0.0
+            and isinstance(weight, torch.Tensor)
+            and bool(torch.any(weight > 0.0))
+        )
+
+    def loss(self, batch, preds=None):
+        if preds is not None or not self._counterfactual_pair_is_active(batch):
+            return super().loss(batch, preds)
+        if getattr(self, "criterion", None) is None:
+            self.criterion = self.init_criterion()
+        image = batch.get("img")
+        clean_image = batch.get(COUNTERFACTUAL_IMAGE_KEY)
+        if not isinstance(image, torch.Tensor) or not isinstance(
+            clean_image,
+            torch.Tensor,
+        ):
+            raise RuntimeError(
+                "counterfactual training requires tensor image pairs"
+            )
+        if image.shape != clean_image.shape or image.ndim != 4:
+            raise RuntimeError(
+                "counterfactual image pairs must have matching BCHW shapes"
+            )
+        batch_size = image.shape[0]
+        if batch_size <= 0:
+            raise RuntimeError("counterfactual image batch must not be empty")
+
+        paired_predictions = self.forward(
+            torch.cat((image, clean_image), dim=0)
+        )
+        paired_contexts = self.consume_reliability_context()
+        self._loss_reliability_contexts = _split_paired_contexts(
+            paired_contexts,
+            batch_size,
+        )
+        main_predictions = _main_paired_predictions(
+            paired_predictions,
+            batch_size,
+        )
+        try:
+            return self.criterion(main_predictions, batch)
+        finally:
+            self._loss_reliability_contexts = None
+
     def adapt_localization_factors(
         self,
         factors: torch.Tensor,
@@ -234,6 +376,27 @@ class IFDRDetectionModel(DetectionModel):
         if self.localization_adapter is None:
             return factors
         return self.localization_adapter(factors.detach())
+
+    def shared_reliability_parameters(
+        self,
+    ) -> tuple[torch.nn.Parameter, ...]:
+        first_layer = self.model[self._fusion_node_indices[0]]
+        assert isinstance(first_layer, ReliabilityGatedConcat)
+        return tuple(first_layer.reliability_estimator.parameters())
+
+    def observe_gradient_diagnostics(
+        self,
+        losses: dict[str, torch.Tensor],
+    ) -> dict[str, object] | None:
+        return self._gradient_diagnostics.observe(
+            losses,
+            self.shared_reliability_parameters(),
+        )
+
+    def drain_gradient_diagnostics(
+        self,
+    ) -> tuple[dict[str, object], ...]:
+        return self._gradient_diagnostics.drain()
 
     def init_criterion(self):
         from ifdr_yolo.losses.ifdr_detection import IFDRDetectionLoss

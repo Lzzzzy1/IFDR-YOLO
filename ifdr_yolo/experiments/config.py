@@ -118,6 +118,7 @@ class IFDRMethodConfig:
     schedule: IFDRScheduleConfig
     intervention: IFDRInterventionConfig
     loss: IFDRLossConfig
+    gradient_diagnostic_interval: int = 0
 
 
 @dataclass(frozen=True)
@@ -641,6 +642,7 @@ def _parse_ifdr_method(value: object) -> IFDRMethodConfig:
             "intervention",
             "loss",
         },
+        optional={"gradient_diagnostic_interval"},
     )
     components = _parse_ifdr_components(mapping["components"])
     loss = _parse_ifdr_loss(mapping["loss"])
@@ -671,6 +673,11 @@ def _parse_ifdr_method(value: object) -> IFDRMethodConfig:
         schedule=_parse_ifdr_schedule(mapping["schedule"]),
         intervention=_parse_ifdr_intervention(mapping["intervention"]),
         loss=loss,
+        gradient_diagnostic_interval=_require_int(
+            mapping.get("gradient_diagnostic_interval", 0),
+            "ifdr.gradient_diagnostic_interval",
+            minimum=0,
+        ),
     )
 
 

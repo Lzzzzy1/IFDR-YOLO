@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
+from pathlib import Path
 from typing import Any
 
 import torch
@@ -111,6 +113,22 @@ def apply_fusion_schedule(trainer: object) -> float:
     return value
 
 
+def flush_gradient_diagnostics(trainer: object) -> None:
+    model = _unwrap_training_model(getattr(trainer, "model", None))
+    drain = getattr(model, "drain_gradient_diagnostics", None)
+    if not callable(drain):
+        return
+    records = drain()
+    if not records:
+        return
+    save_dir = Path(getattr(trainer, "save_dir"))
+    save_dir.mkdir(parents=True, exist_ok=True)
+    path = save_dir / "gradient_diagnostics.jsonl"
+    with path.open("a", encoding="utf-8", newline="\n") as file:
+        for record in records:
+            file.write(json.dumps(record, sort_keys=True) + "\n")
+
+
 class IFDRDetectionTrainer(DetectionTrainer):
     """Ultralytics-compatible trainer that owns the IFDR model lifecycle."""
 
@@ -151,6 +169,10 @@ class IFDRDetectionTrainer(DetectionTrainer):
         ):
             raise ValueError("intervention_seed must be a non-negative integer")
         self.add_callback("on_train_epoch_start", apply_fusion_schedule)
+        self.add_callback(
+            "on_train_batch_end",
+            flush_gradient_diagnostics,
+        )
 
     def get_model(
         self,

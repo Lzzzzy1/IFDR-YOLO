@@ -265,6 +265,105 @@ class PyramidFactorAlignmentTest(unittest.TestCase):
 
 
 class IFDRDetectionLossIntegrationTest(unittest.TestCase):
+    def test_gradient_diagnostics_observe_protected_anchor_contract(self) -> None:
+        from ultralytics.utils import DEFAULT_CFG
+
+        from ifdr_yolo.models.ifdr_model import IFDRDetectionModel
+
+        batch = {
+            "img": torch.randn(1, 3, 128, 128),
+            "batch_idx": torch.tensor([0.0]),
+            "cls": torch.tensor([[0.0]]),
+            "bboxes": torch.tensor([[0.5, 0.5, 0.25, 0.25]]),
+            "ifdr_factor_target": torch.ones(1, 2, 128, 128),
+            "ifdr_factor_weight": torch.ones(1, 2, 128, 128),
+        }
+        norms_by_protection: dict[bool, dict[str, float]] = {}
+        for protected in (False, True):
+            model = IFDRDetectionModel(
+                str(MODEL_PATH),
+                nc=3,
+                verbose=False,
+                semantic_protection=protected,
+                gradient_diagnostic_interval=1,
+            )
+            model.args = DEFAULT_CFG
+            model.set_component_schedules(
+                fusion=1.0,
+                dcli=0.0,
+                factor_supervision=1.0,
+            )
+            model.train()
+
+            total, _ = model.loss(batch)
+            records = model.drain_gradient_diagnostics()
+
+            self.assertEqual(len(records), 1)
+            norms = records[0]["gradient_norms"]
+            norms_by_protection[protected] = norms
+            self.assertGreater(norms["factor"], 0.0)
+            self.assertTrue(
+                all(parameter.grad is None for parameter in model.parameters())
+            )
+            total.sum().backward()
+
+        self.assertGreater(norms_by_protection[False]["detection"], 0.0)
+        self.assertEqual(norms_by_protection[True]["detection"], 0.0)
+
+    def test_counterfactual_pair_uses_one_joint_forward_and_one_bn_update(
+        self,
+    ) -> None:
+        from torch.nn.modules.batchnorm import _BatchNorm
+        from ultralytics.utils import DEFAULT_CFG
+
+        from ifdr_yolo.models.ifdr_model import IFDRDetectionModel
+
+        torch.manual_seed(66)
+        model = IFDRDetectionModel(
+            str(MODEL_PATH),
+            nc=3,
+            verbose=False,
+            semantic_protection=True,
+            counterfactual_gain=0.2,
+        )
+        model.args = DEFAULT_CFG
+        model.set_reliability_schedule(1.0)
+        model.train()
+        first_batch_norm = next(
+            module for module in model.modules() if isinstance(module, _BatchNorm)
+        )
+        tracked_before = int(first_batch_norm.num_batches_tracked)
+        observed_batch_sizes: list[int] = []
+
+        def record_input_batch(_module, inputs) -> None:
+            observed_batch_sizes.append(int(inputs[0].shape[0]))
+
+        handle = model.model[0].register_forward_pre_hook(record_input_batch)
+        image = torch.randn(1, 3, 128, 128)
+        batch = {
+            "img": image,
+            "batch_idx": torch.tensor([0.0]),
+            "cls": torch.tensor([[0.0]]),
+            "bboxes": torch.tensor([[0.5, 0.5, 0.25, 0.25]]),
+            "ifdr_factor_target": torch.zeros(1, 2, 128, 128),
+            "ifdr_factor_weight": torch.ones(1, 2, 128, 128),
+            "ifdr_counterfactual_img": image.clone(),
+            "ifdr_counterfactual_delta": torch.zeros(1, 2, 128, 128),
+            "ifdr_counterfactual_weight": torch.ones(1, 2, 128, 128),
+        }
+
+        try:
+            total, _ = model.loss(batch)
+        finally:
+            handle.remove()
+
+        self.assertTrue(torch.isfinite(total).all())
+        self.assertEqual(observed_batch_sizes, [2])
+        self.assertEqual(
+            int(first_batch_norm.num_batches_tracked),
+            tracked_before + 1,
+        )
+
     def test_real_model_uses_dcli_and_backpropagates_to_factor_heads(self) -> None:
         from ultralytics.utils import DEFAULT_CFG
 
