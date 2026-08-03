@@ -1,12 +1,20 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
+from pathlib import Path
 from typing import Any
+
+import torch
+import torch.nn.functional as F
 
 from ultralytics.models.yolo.detect import DetectionTrainer
 from ultralytics.utils import DEFAULT_CFG, RANK
 
-from ifdr_yolo.data.ifdr_dataset import build_ifdr_dataset
+from ifdr_yolo.data.ifdr_dataset import (
+    COUNTERFACTUAL_IMAGE_KEY,
+    build_ifdr_dataset,
+)
 from ifdr_yolo.data.interventions.sampler import SamplingPolicy
 from ifdr_yolo.models.ifdr_model import IFDRDetectionModel
 
@@ -44,6 +52,8 @@ class IFDRComponentSwitches:
     dcli: bool = True
     factor_supervision: bool = True
     interventions: bool = True
+    semantic_protection: bool = False
+    counterfactual_consistency: bool = False
 
     def __post_init__(self) -> None:
         for field in (
@@ -51,6 +61,8 @@ class IFDRComponentSwitches:
             "dcli",
             "factor_supervision",
             "interventions",
+            "semantic_protection",
+            "counterfactual_consistency",
         ):
             if not isinstance(getattr(self, field), bool):
                 raise ValueError(f"{field} must be a boolean")
@@ -101,8 +113,32 @@ def apply_fusion_schedule(trainer: object) -> float:
     return value
 
 
+def flush_gradient_diagnostics(trainer: object) -> None:
+    model = _unwrap_training_model(getattr(trainer, "model", None))
+    drain = getattr(model, "drain_gradient_diagnostics", None)
+    if not callable(drain):
+        return
+    records = drain()
+    if not records:
+        return
+    save_dir = Path(getattr(trainer, "save_dir"))
+    save_dir.mkdir(parents=True, exist_ok=True)
+    path = save_dir / "gradient_diagnostics.jsonl"
+    with path.open("a", encoding="utf-8", newline="\n") as file:
+        for record in records:
+            file.write(json.dumps(record, sort_keys=True) + "\n")
+
+
 class IFDRDetectionTrainer(DetectionTrainer):
     """Ultralytics-compatible trainer that owns the IFDR model lifecycle."""
+
+    IFDR_LOSS_NAMES = (
+        "box_loss",
+        "cls_loss",
+        "dfl_loss",
+        "factor_loss",
+        "counterfactual_loss",
+    )
 
     def __init__(
         self,
@@ -123,6 +159,7 @@ class IFDRDetectionTrainer(DetectionTrainer):
         self.intervention_seed = intervention_seed
         self.intervention_policy = intervention_policy or SamplingPolicy()
         super().__init__(cfg=cfg, overrides=overrides, _callbacks=_callbacks)
+        self.loss_names = self.IFDR_LOSS_NAMES
         if self.intervention_seed is None:
             self.intervention_seed = int(self.args.seed)
         if (
@@ -132,6 +169,10 @@ class IFDRDetectionTrainer(DetectionTrainer):
         ):
             raise ValueError("intervention_seed must be a non-negative integer")
         self.add_callback("on_train_epoch_start", apply_fusion_schedule)
+        self.add_callback(
+            "on_train_batch_end",
+            flush_gradient_diagnostics,
+        )
 
     def get_model(
         self,
@@ -150,6 +191,11 @@ class IFDRDetectionTrainer(DetectionTrainer):
         if weights:
             model.load(weights)
         return model
+
+    def get_validator(self):
+        validator = super().get_validator()
+        self.loss_names = self.IFDR_LOSS_NAMES
+        return validator
 
     def build_dataset(
         self,
@@ -177,9 +223,31 @@ class IFDRDetectionTrainer(DetectionTrainer):
                 mode == "train"
                 and component_switches.interventions
             ),
+            counterfactual_enabled=(
+                mode == "train"
+                and component_switches.counterfactual_consistency
+            ),
             intervention_policy=getattr(
                 self,
                 "intervention_policy",
                 None,
             ),
         )
+
+    def preprocess_batch(self, batch: dict) -> dict:
+        batch = super().preprocess_batch(batch)
+        counterfactual = batch.get(COUNTERFACTUAL_IMAGE_KEY)
+        if counterfactual is None:
+            return batch
+        if not isinstance(counterfactual, torch.Tensor):
+            raise RuntimeError("counterfactual images must be a tensor")
+        counterfactual = counterfactual.float() / 255
+        if counterfactual.shape[-2:] != batch["img"].shape[-2:]:
+            counterfactual = F.interpolate(
+                counterfactual,
+                size=batch["img"].shape[-2:],
+                mode="bilinear",
+                align_corners=False,
+            )
+        batch[COUNTERFACTUAL_IMAGE_KEY] = counterfactual
+        return batch

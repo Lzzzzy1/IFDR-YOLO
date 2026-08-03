@@ -175,6 +175,12 @@ def recover_ifdr_run(
                 dcli=method.components.dcli,
                 factor_supervision=method.components.factor_supervision,
                 interventions=method.components.interventions,
+                semantic_protection=(
+                    method.components.semantic_protection
+                ),
+                counterfactual_consistency=(
+                    method.components.counterfactual_consistency
+                ),
             ),
             intervention_seed=intervention.base_seed,
             intervention_policy=SamplingPolicy(

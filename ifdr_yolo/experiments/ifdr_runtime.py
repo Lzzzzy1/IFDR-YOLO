@@ -106,6 +106,15 @@ class IFDRRuntimeAdapter:
             uncertainty_factor_weights=loss.factor_weights,
             dfl_entropy_weight=loss.dfl_entropy_weight,
             factor_supervision_gain=loss.factor_supervision_gain,
+            semantic_protection=method.components.semantic_protection,
+            counterfactual_gain=(
+                loss.counterfactual_gain
+                if method.components.counterfactual_consistency
+                else 0.0
+            ),
+            gradient_diagnostic_interval=(
+                method.gradient_diagnostic_interval
+            ),
         )
         source_handle = self._yolo_factory(str(initialization.pretrained))
         source_model = getattr(source_handle, "model", None)
@@ -136,6 +145,12 @@ class IFDRRuntimeAdapter:
                         method.components.factor_supervision
                     ),
                     "interventions": method.components.interventions,
+                    "semantic_protection": (
+                        method.components.semantic_protection
+                    ),
+                    "counterfactual_consistency": (
+                        method.components.counterfactual_consistency
+                    ),
                 },
             }
         )
@@ -185,6 +200,12 @@ class IFDRRuntimeAdapter:
                     method.components.factor_supervision
                 ),
                 interventions=method.components.interventions,
+                semantic_protection=(
+                    method.components.semantic_protection
+                ),
+                counterfactual_consistency=(
+                    method.components.counterfactual_consistency
+                ),
             ),
             intervention_seed=intervention.base_seed,
             intervention_policy=SamplingPolicy(

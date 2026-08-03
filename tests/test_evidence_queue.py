@@ -114,6 +114,57 @@ class FakeRunner:
 
 
 class EvidenceQueueTest(unittest.TestCase):
+    def test_exposes_valid_complete_run_for_follow_up_evaluation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            spec = SPECS[0]
+            expected = _write_formal(
+                root,
+                spec,
+                state="complete",
+                epochs=spec.expected_epochs,
+            )
+            queue = EvidenceQueue(
+                repository_root=root,
+                job_dir=root / "job",
+                python_executable=Path("python"),
+                device="0",
+                command_runner=FakeRunner(root, (spec,)),
+                commit=COMMIT,
+                specs=(spec,),
+            )
+
+            self.assertEqual(queue.complete_run(spec), expected)
+
+    def test_condition_specific_epoch_budget_controls_completion(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = root / "screen.yaml"
+            config.write_text("training:\n  epochs: 2\n", encoding="utf-8")
+            spec = EvidenceSpec(
+                "screen_s17",
+                "ifdr",
+                "ifdr-screen",
+                17,
+                config,
+                expected_epochs=2,
+            )
+            _write_formal(root, spec, state="complete", epochs=2)
+            runner = FakeRunner(root, (spec,))
+
+            result = EvidenceQueue(
+                repository_root=root,
+                job_dir=root / "job",
+                python_executable=Path("python"),
+                device="0",
+                command_runner=runner,
+                commit=COMMIT,
+                specs=(spec,),
+            ).run()
+
+            self.assertEqual(result.completed, (spec.key,))
+            self.assertEqual(runner.calls, [])
+
     def test_runs_exact_locked_order_and_completes(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

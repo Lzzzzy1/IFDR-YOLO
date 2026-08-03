@@ -148,6 +148,54 @@ class IFDRDetectionModelTest(unittest.TestCase):
                 reliability_channels=4,
             )
 
+    def test_semantic_protection_installs_both_task_adapters(self) -> None:
+        from ifdr_yolo.models.gated_fusion import (
+            ResidualFactorAdapter,
+            ResidualSemanticMapAdapter,
+        )
+        from ifdr_yolo.models.ifdr_model import IFDRDetectionModel
+
+        model = IFDRDetectionModel(
+            str(MODEL_PATH),
+            verbose=False,
+            semantic_protection=True,
+        )
+
+        self.assertIsInstance(
+            model.localization_adapter,
+            ResidualFactorAdapter,
+        )
+        self.assertTrue(
+            all(
+                isinstance(
+                    model.model[index].fusion_adapter,
+                    ResidualSemanticMapAdapter,
+                )
+                for index in model.fusion_node_indices
+            )
+        )
+
+    def test_gradient_diagnostics_skip_no_grad_validation(self) -> None:
+        from ifdr_yolo.models.ifdr_model import IFDRDetectionModel
+
+        model = IFDRDetectionModel(
+            str(MODEL_PATH),
+            verbose=False,
+            gradient_diagnostic_interval=1,
+        )
+        model.eval()
+
+        with torch.no_grad():
+            result = model.observe_gradient_diagnostics(
+                {
+                    "detection": torch.tensor(1.0),
+                    "factor": torch.tensor(2.0),
+                }
+            )
+
+        self.assertIsNone(result)
+        self.assertEqual(model.drain_gradient_diagnostics(), ())
+
 
 if __name__ == "__main__":
     unittest.main()

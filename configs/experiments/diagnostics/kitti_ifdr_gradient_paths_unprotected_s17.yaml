@@ -1,0 +1,69 @@
+schema_version: 1
+experiment:
+  dataset: kitti
+  model: yolov8m
+  variant: ifdr-gradient-paths-unprotected
+  seed: 17
+paths:
+  model: models/kitti-p2-m.yaml
+  model_sha256: 0d2cbd9215dc62c4c9920127964ce0ab61b5d10581861d8e83c33fc168aa302a
+  data: configs/data/kitti_v2.yaml
+  generated_data: data/processed/kitti_yolo_v2
+  raw_images: kitti_raw/training/image_2/training/image_2
+  raw_labels: kitti_raw/training/label_2/training/label_2
+  train_ids: configs/splits/kitti_train.txt
+  val_ids: configs/splits/kitti_val.txt
+initialization:
+  pretrained: yolov8m.pt
+  pretrained_sha256: 5d4a90cdc7a21786cc59cd19778e9eafff836df9e2da32524737c7ee6efe4fe5
+  strategy: semantic_prefix
+  max_layer: 15
+  expected_items: 306
+ifdr:
+  reliability_channels: 32
+  gradient_diagnostic_interval: 1
+  components:
+    fusion_gate: true
+    dcli: true
+    factor_supervision: true
+    interventions: true
+    semantic_protection: false
+    counterfactual_consistency: true
+  schedule:
+    frozen_epochs: 0
+    ramp_epochs: 1
+  intervention:
+    base_seed: 17
+    identity_probability: 0.2
+    sampling_probability: 0.4
+    visibility_probability: 0.4
+    minimum_strength: 0.1
+    maximum_strength: 0.8
+  loss:
+    dcli_beta: 0.5
+    uncertainty_calibration_gain: 0.1
+    factor_supervision_gain: 0.2
+    factor_weights: [1.0, 1.0]
+    dfl_entropy_weight: 1.0
+    counterfactual_gain: 0.2
+training:
+  epochs: 1
+  imgsz: 640
+  batch: 16
+  workers: 8
+  device: "0"
+  optimizer: SGD
+  lr0: 0.01
+  lrf: 0.01
+  momentum: 0.937
+  weight_decay: 0.0005
+  warmup_epochs: 3.0
+  patience: 0
+  amp: true
+  deterministic: true
+  cache: false
+prediction:
+  conf: 0.001
+  iou: 0.7
+  max_det: 300
+  half: false

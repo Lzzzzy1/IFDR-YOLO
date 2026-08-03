@@ -115,6 +115,77 @@ class IFDRInterventionTransformTest(unittest.TestCase):
         self.assertEqual(float(result["ifdr_factor_weight"].sum()), 0.0)
         self.assertEqual(result["ifdr_spec"], "disabled")
 
+    def test_sampling_intervention_emits_clean_counterfactual_delta_pair(
+        self,
+    ) -> None:
+        from ifdr_yolo.data.ifdr_dataset import (
+            COUNTERFACTUAL_DELTA_KEY,
+            COUNTERFACTUAL_IMAGE_KEY,
+            COUNTERFACTUAL_WEIGHT_KEY,
+            IFDRInterventionTransform,
+            SharedEpoch,
+        )
+        from ifdr_yolo.data.interventions.sampler import SamplingPolicy
+
+        labels = self._labels()
+        clean = labels["img"].copy()
+        transform = IFDRInterventionTransform(
+            base_seed=17,
+            epoch_state=SharedEpoch(3),
+            enabled=True,
+            policy=SamplingPolicy(
+                identity_probability=0.0,
+                sampling_probability=1.0,
+                visibility_probability=0.0,
+                minimum_strength=0.5,
+                maximum_strength=0.5,
+            ),
+        )
+
+        result = transform(labels)
+
+        expected_clean = torch.from_numpy(
+            np.ascontiguousarray(clean[:, :, ::-1].transpose(2, 0, 1))
+        )
+        self.assertTrue(
+            torch.equal(result[COUNTERFACTUAL_IMAGE_KEY], expected_clean)
+        )
+        delta = result[COUNTERFACTUAL_DELTA_KEY]
+        weight = result[COUNTERFACTUAL_WEIGHT_KEY]
+        self.assertEqual(delta.shape, (2, 64, 96))
+        self.assertEqual(weight.shape, (2, 64, 96))
+        support = weight[0] > 0
+        self.assertTrue(support.any())
+        self.assertGreater(float(delta[0][support].max()), 0.0)
+        self.assertEqual(float(delta[1][support].abs().max()), 0.0)
+        self.assertTrue(torch.equal(weight[0], weight[1]))
+
+    def test_disabled_path_emits_zero_counterfactual_weight(self) -> None:
+        from ifdr_yolo.data.ifdr_dataset import (
+            COUNTERFACTUAL_IMAGE_KEY,
+            COUNTERFACTUAL_WEIGHT_KEY,
+            IFDRInterventionTransform,
+            SharedEpoch,
+        )
+
+        labels = self._labels()
+        transform = IFDRInterventionTransform(
+            base_seed=17,
+            epoch_state=SharedEpoch(),
+            enabled=False,
+        )
+
+        result = transform(labels)
+
+        self.assertEqual(
+            tuple(result[COUNTERFACTUAL_IMAGE_KEY].shape),
+            (3, 64, 96),
+        )
+        self.assertEqual(
+            float(result[COUNTERFACTUAL_WEIGHT_KEY].sum()),
+            0.0,
+        )
+
     def test_shared_epoch_rejects_invalid_values(self) -> None:
         from ifdr_yolo.data.ifdr_dataset import SharedEpoch
 
@@ -128,7 +199,12 @@ class IFDRInterventionTransformTest(unittest.TestCase):
 
 class IFDRCollateTest(unittest.TestCase):
     def test_stacks_dense_factor_maps(self) -> None:
-        from ifdr_yolo.data.ifdr_dataset import collate_ifdr_batch
+        from ifdr_yolo.data.ifdr_dataset import (
+            COUNTERFACTUAL_DELTA_KEY,
+            COUNTERFACTUAL_IMAGE_KEY,
+            COUNTERFACTUAL_WEIGHT_KEY,
+            collate_ifdr_batch,
+        )
 
         samples = []
         for value in (0.0, 1.0):
@@ -140,6 +216,16 @@ class IFDRCollateTest(unittest.TestCase):
                     "batch_idx": torch.zeros(0),
                     "ifdr_factor_target": torch.full((2, 8, 8), value),
                     "ifdr_factor_weight": torch.ones(2, 8, 8),
+                    COUNTERFACTUAL_IMAGE_KEY: torch.full(
+                        (3, 8, 8),
+                        int(value),
+                        dtype=torch.uint8,
+                    ),
+                    COUNTERFACTUAL_DELTA_KEY: torch.full(
+                        (2, 8, 8),
+                        value,
+                    ),
+                    COUNTERFACTUAL_WEIGHT_KEY: torch.ones(2, 8, 8),
                     "ifdr_spec": str(value),
                 }
             )
@@ -148,6 +234,9 @@ class IFDRCollateTest(unittest.TestCase):
 
         self.assertEqual(batch["ifdr_factor_target"].shape, (2, 2, 8, 8))
         self.assertEqual(batch["ifdr_factor_weight"].shape, (2, 2, 8, 8))
+        self.assertEqual(batch[COUNTERFACTUAL_IMAGE_KEY].shape, (2, 3, 8, 8))
+        self.assertEqual(batch[COUNTERFACTUAL_DELTA_KEY].shape, (2, 2, 8, 8))
+        self.assertEqual(batch[COUNTERFACTUAL_WEIGHT_KEY].shape, (2, 2, 8, 8))
         self.assertEqual(batch["ifdr_spec"], ("0.0", "1.0"))
 
 

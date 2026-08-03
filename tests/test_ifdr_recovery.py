@@ -14,7 +14,8 @@ from ifdr_yolo.experiments.recovery import (
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = load_ifdr_config(
-    ROOT / "configs/experiments/kitti_ifdr_yolov8m_s17.yaml",
+    ROOT
+    / "configs/experiments/mechanisms/kitti_ifdr_protected_cf_s17.yaml",
     repository_root=ROOT,
 )
 
@@ -113,6 +114,9 @@ class IFDRRecoveryTest(unittest.TestCase):
                 trainer.kwargs["overrides"]["save_dir"],
                 str(run_dir),
             )
+            switches = trainer.kwargs["component_switches"]
+            self.assertTrue(switches.semantic_protection)
+            self.assertTrue(switches.counterfactual_consistency)
             self.assertTrue(
                 (run_dir / "status.before-recovery.json").is_file()
             )

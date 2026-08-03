@@ -1,6 +1,8 @@
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
+import json
+import tempfile
 from unittest.mock import patch
 
 import torch
@@ -86,6 +88,46 @@ class FusionScheduleTest(unittest.TestCase):
 
 
 class IFDRDetectionTrainerTest(unittest.TestCase):
+    def test_flush_gradient_diagnostics_appends_jsonl_records(self) -> None:
+        from ifdr_yolo.experiments.ifdr_trainer import (
+            flush_gradient_diagnostics,
+        )
+
+        record = {
+            "schema_version": 1,
+            "step": 2,
+            "gradient_norms": {"detection": 1.0, "factor": 2.0},
+            "pairs": {
+                "detection::factor": {
+                    "cosine": -0.5,
+                    "conflict": True,
+                }
+            },
+        }
+
+        class Model:
+            def __init__(self) -> None:
+                self.records = (record,)
+
+            def drain_gradient_diagnostics(self):
+                records, self.records = self.records, ()
+                return records
+
+        with tempfile.TemporaryDirectory() as directory:
+            trainer = type(
+                "Trainer",
+                (),
+                {"model": Model(), "save_dir": Path(directory)},
+            )()
+
+            flush_gradient_diagnostics(trainer)
+            flush_gradient_diagnostics(trainer)
+
+            path = Path(directory) / "gradient_diagnostics.jsonl"
+            lines = path.read_text(encoding="utf-8").splitlines()
+            self.assertEqual(len(lines), 1)
+            self.assertEqual(json.loads(lines[0]), record)
+
     @classmethod
     def setUpClass(cls) -> None:
         bootstrap_ultralytics_config(ROOT)
@@ -216,6 +258,89 @@ class IFDRDetectionTrainerTest(unittest.TestCase):
             trainer.build_dataset("train.txt", mode="train", batch=8)
 
         self.assertFalse(builder.call_args.kwargs["interventions_enabled"])
+
+    def test_preprocess_normalizes_and_resizes_counterfactual_view(self) -> None:
+        from ifdr_yolo.data.ifdr_dataset import COUNTERFACTUAL_IMAGE_KEY
+        from ifdr_yolo.experiments.ifdr_trainer import IFDRDetectionTrainer
+
+        trainer = object.__new__(IFDRDetectionTrainer)
+        trainer.device = torch.device("cpu")
+        trainer.args = SimpleNamespace(multi_scale=0.0)
+        batch = {
+            "img": torch.full((1, 3, 8, 8), 255, dtype=torch.uint8),
+            COUNTERFACTUAL_IMAGE_KEY: torch.full(
+                (1, 3, 8, 8),
+                127,
+                dtype=torch.uint8,
+            ),
+        }
+
+        result = trainer.preprocess_batch(batch)
+
+        self.assertEqual(float(result["img"].max()), 1.0)
+        self.assertAlmostEqual(
+            float(result[COUNTERFACTUAL_IMAGE_KEY].max()),
+            127.0 / 255.0,
+        )
+
+    def test_build_dataset_forwards_counterfactual_switch(self) -> None:
+        from ifdr_yolo.experiments.ifdr_trainer import (
+            IFDRComponentSwitches,
+            IFDRDetectionTrainer,
+        )
+
+        trainer = object.__new__(IFDRDetectionTrainer)
+        trainer.model = SimpleNamespace(stride=torch.tensor([4, 8, 16, 32]))
+        trainer.args = SimpleNamespace()
+        trainer.data = {"nc": 3}
+        trainer.intervention_seed = 17
+        trainer.component_switches = IFDRComponentSwitches(
+            counterfactual_consistency=True,
+        )
+
+        with patch(
+            "ifdr_yolo.experiments.ifdr_trainer.build_ifdr_dataset",
+            return_value=object(),
+        ) as builder:
+            trainer.build_dataset("train.txt", mode="train", batch=8)
+
+        self.assertTrue(
+            builder.call_args.kwargs["counterfactual_enabled"]
+        )
+
+    def test_loss_names_expose_factor_and_counterfactual_terms(self) -> None:
+        from ifdr_yolo.experiments.ifdr_trainer import IFDRDetectionTrainer
+
+        self.assertEqual(
+            IFDRDetectionTrainer.IFDR_LOSS_NAMES,
+            (
+                "box_loss",
+                "cls_loss",
+                "dfl_loss",
+                "factor_loss",
+                "counterfactual_loss",
+            ),
+        )
+
+    def test_validator_creation_restores_ifdr_loss_names(self) -> None:
+        from ultralytics.models.yolo.detect import DetectionTrainer
+
+        from ifdr_yolo.experiments.ifdr_trainer import IFDRDetectionTrainer
+
+        trainer = object.__new__(IFDRDetectionTrainer)
+        sentinel = object()
+        with patch.object(
+            DetectionTrainer,
+            "get_validator",
+            return_value=sentinel,
+        ):
+            validator = trainer.get_validator()
+
+        self.assertIs(validator, sentinel)
+        self.assertEqual(
+            trainer.loss_names,
+            IFDRDetectionTrainer.IFDR_LOSS_NAMES,
+        )
 
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 
@@ -45,6 +46,7 @@ class ClassMetrics:
     true_positives: int
     false_positives: int
     ignored_detections: int
+    matched_ious: tuple[float, ...]
 
 
 def box_iou(left: BoundingBox, right: BoundingBox) -> float:
@@ -131,6 +133,8 @@ def evaluate_class(
     detections_by_image: dict[str, tuple[Detection, ...]],
     class_name: str,
     difficulty: Difficulty,
+    valid_selector: Callable[[KittiObject], bool] | None = None,
+    iou_threshold: float | None = None,
 ) -> ClassMetrics:
     """Evaluate one KITTI class/difficulty.
 
@@ -140,6 +144,11 @@ def evaluate_class(
 
     if class_name not in EVAL_CLASSES:
         raise ValueError(f"unknown KITTI evaluation class: {class_name}")
+    if iou_threshold is not None and (
+        isinstance(iou_threshold, bool)
+        or not 0.0 <= float(iou_threshold) <= 1.0
+    ):
+        raise ValueError("IoU threshold must be within [0, 1]")
     for image_id, detections in detections_by_image.items():
         for detection in detections:
             if detection.image_id != image_id:
@@ -154,18 +163,22 @@ def evaluate_class(
     matched_valid: dict[str, list[bool]] = {}
     matched_ignored: dict[str, list[bool]] = {}
     for image_id, objects in gt_by_image.items():
-        valid = tuple(
-            obj
-            for obj in objects
-            if classify_ground_truth(obj, class_name, difficulty)
-            is GroundTruthStatus.VALID
-        )
-        ignored = tuple(
-            obj
-            for obj in objects
-            if classify_ground_truth(obj, class_name, difficulty)
-            is GroundTruthStatus.IGNORED
-        )
+        valid_items: list[KittiObject] = []
+        ignored_items: list[KittiObject] = []
+        for obj in objects:
+            status = classify_ground_truth(obj, class_name, difficulty)
+            if (
+                status is GroundTruthStatus.VALID
+                and valid_selector is not None
+                and not valid_selector(obj)
+            ):
+                status = GroundTruthStatus.IGNORED
+            if status is GroundTruthStatus.VALID:
+                valid_items.append(obj)
+            elif status is GroundTruthStatus.IGNORED:
+                ignored_items.append(obj)
+        valid = tuple(valid_items)
+        ignored = tuple(ignored_items)
         valid_ground_truth[image_id] = valid
         ignored_ground_truth[image_id] = ignored
         dontcare_regions[image_id] = tuple(
@@ -185,11 +198,16 @@ def evaluate_class(
         reverse=True,
     )
     num_valid_gt = sum(len(objects) for objects in valid_ground_truth.values())
-    threshold = CLASS_IOU_THRESHOLDS[class_name]
+    threshold = (
+        CLASS_IOU_THRESHOLDS[class_name]
+        if iou_threshold is None
+        else float(iou_threshold)
+    )
     min_detection_height = DIFFICULTY_RULES[difficulty][0]
     tp_flags: list[int] = []
     fp_flags: list[int] = []
     evaluated_scores: list[float] = []
+    matched_ious: list[float] = []
     ignored_detection_count = 0
 
     for detection in ranked_detections:
@@ -209,6 +227,7 @@ def evaluate_class(
             tp_flags.append(1)
             fp_flags.append(0)
             evaluated_scores.append(detection.score)
+            matched_ious.append(best_iou)
             continue
 
         ignored_candidates = ignored_ground_truth.get(detection.image_id, ())
@@ -238,6 +257,7 @@ def evaluate_class(
             tp_flags.append(0)
             fp_flags.append(1)
             evaluated_scores.append(detection.score)
+            matched_ious.append(0.0)
 
     precision_values: list[float] = []
     recall_values: list[float] = []
@@ -268,4 +288,5 @@ def evaluate_class(
         true_positives=sum(tp_flags),
         false_positives=sum(fp_flags),
         ignored_detections=ignored_detection_count,
+        matched_ious=tuple(matched_ious),
     )

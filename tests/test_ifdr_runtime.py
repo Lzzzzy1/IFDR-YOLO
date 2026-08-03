@@ -1,5 +1,6 @@
 from pathlib import Path
 from types import SimpleNamespace
+from dataclasses import replace
 import tempfile
 import unittest
 
@@ -101,7 +102,46 @@ class IFDRRuntimeAdapterTest(unittest.TestCase):
                 "dcli": True,
                 "factor_supervision": True,
                 "interventions": True,
+                "semantic_protection": False,
+                "counterfactual_consistency": False,
             },
+        )
+
+    def test_prepare_forwards_gradient_diagnostic_interval(self) -> None:
+        from ifdr_yolo.experiments.ifdr_runtime import IFDRRuntimeAdapter
+
+        config = replace(
+            CONFIG,
+            method=replace(
+                CONFIG.method,
+                gradient_diagnostic_interval=50,
+            ),
+        )
+        model_calls = []
+        target = torch.nn.Linear(1, 1)
+        adapter = IFDRRuntimeAdapter(
+            config,
+            model_factory=lambda **kwargs: (
+                model_calls.append(kwargs) or target
+            ),
+            yolo_factory=lambda _: SimpleNamespace(
+                model=torch.nn.Linear(1, 1)
+            ),
+            model_initializer=lambda *_args, **_kwargs: FakeReport(),
+            trainer_factory=FakeTrainer,
+        )
+
+        adapter.prepare_model(
+            model_path=config.paths.model,
+            model_sha256=config.paths.model_sha256,
+            initialization=config.initialization,
+            seed=17,
+            deterministic=True,
+        )
+
+        self.assertEqual(
+            model_calls[0]["gradient_diagnostic_interval"],
+            50,
         )
 
     def test_train_attaches_prepared_model_and_locked_method_controls(self) -> None:
@@ -152,6 +192,8 @@ class IFDRRuntimeAdapterTest(unittest.TestCase):
             self.assertTrue(switches.dcli)
             self.assertTrue(switches.factor_supervision)
             self.assertTrue(switches.interventions)
+            self.assertFalse(switches.semantic_protection)
+            self.assertFalse(switches.counterfactual_consistency)
 
 
 if __name__ == "__main__":

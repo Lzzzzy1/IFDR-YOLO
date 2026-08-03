@@ -157,6 +157,33 @@ class KittiAP40Test(unittest.TestCase):
         self.assertEqual(result.false_positives, 0)
         self.assertEqual(result.ignored_detections, 1)
 
+    def test_slice_excludes_same_class_ground_truth_as_ignored(self) -> None:
+        small = BoundingBox(0, 0, 20, 30)
+        large = BoundingBox(100, 0, 150, 80)
+        result = evaluate_class(
+            gt_by_image={
+                "000001": (
+                    ground_truth("Car", small),
+                    ground_truth("Car", large),
+                )
+            },
+            detections_by_image={
+                "000001": (
+                    Detection("000001", "Car", 0.9, small),
+                    Detection("000001", "Car", 0.8, large),
+                )
+            },
+            class_name="Car",
+            difficulty=Difficulty.HARD,
+            valid_selector=lambda obj: obj.bbox.height <= 40.0,
+        )
+
+        self.assertEqual(result.num_valid_gt, 1)
+        self.assertEqual(result.true_positives, 1)
+        self.assertEqual(result.false_positives, 0)
+        self.assertEqual(result.ignored_detections, 1)
+        self.assertEqual(result.ap40, 100.0)
+
     def test_detection_below_difficulty_minimum_height_is_ignored(self) -> None:
         detection = Detection(
             "000001",
@@ -238,7 +265,29 @@ class KittiAP40Test(unittest.TestCase):
             difficulty=Difficulty.MODERATE,
         )
         self.assertEqual(result.scores, (0.9, 0.2))
+        self.assertEqual(result.matched_ious, (0.0, 1.0))
         self.assertAlmostEqual(result.ap40, 50.0)
+
+    def test_custom_matching_threshold_supports_localization_calibration(
+        self,
+    ) -> None:
+        truth = BoundingBox(0, 0, 100, 100)
+        quarter_overlap = BoundingBox(0, 0, 25, 100)
+
+        result = evaluate_class(
+            gt_by_image={"000001": (ground_truth("Car", truth),)},
+            detections_by_image={
+                "000001": (
+                    Detection("000001", "Car", 0.9, quarter_overlap),
+                )
+            },
+            class_name="Car",
+            difficulty=Difficulty.HARD,
+            iou_threshold=0.0,
+        )
+
+        self.assertEqual(result.true_positives, 1)
+        self.assertEqual(result.matched_ious, (0.25,))
 
     def test_unknown_evaluation_class_is_rejected(self) -> None:
         with self.assertRaisesRegex(ValueError, "unknown"):
