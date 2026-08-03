@@ -79,7 +79,6 @@ class GradientDiagnosticsTest(unittest.TestCase):
         )
         self.assertIsNone(anchor.grad)
         self.assertIsNone(adapter.grad)
-
     def test_accumulator_reports_conflict_frequency_and_negative_cosine(self) -> None:
         accumulator = GradientConflictAccumulator()
         accumulator.update(
@@ -144,7 +143,6 @@ class GradientDiagnosticsTest(unittest.TestCase):
         self.assertEqual(record["step"], 1)
         self.assertEqual(record["schema_version"], 2)
         self.assertEqual(recorder.drain(), (record,))
-
 
 if __name__ == "__main__":
     unittest.main()

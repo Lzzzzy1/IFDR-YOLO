@@ -404,7 +404,6 @@ class IFDRDetectionModel(DetectionModel):
             self.localization_adapter.parameters()
         )
         return groups
-
     def observe_gradient_diagnostics(
         self,
         losses: dict[str, torch.Tensor],

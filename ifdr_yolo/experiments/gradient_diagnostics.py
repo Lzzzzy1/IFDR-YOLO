@@ -115,7 +115,6 @@ def grouped_gradient_conflict_snapshot(
         "parameter_groups": groups,
     }
 
-
 class GradientConflictAccumulator:
     def __init__(self) -> None:
         self._observations: defaultdict[str, int] = defaultdict(int)
@@ -212,7 +211,6 @@ class ScheduledGradientDiagnostics:
         record["step"] = self._step
         self._records.append(record)
         return record
-
     def drain(self) -> tuple[dict[str, object], ...]:
         records = tuple(self._records)
         self._records.clear()

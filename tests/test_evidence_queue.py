@@ -135,7 +135,6 @@ class EvidenceQueueTest(unittest.TestCase):
             )
 
             self.assertEqual(queue.complete_run(spec), expected)
-
     def test_condition_specific_epoch_budget_controls_completion(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
