@@ -98,7 +98,9 @@ Add frozen `NaturalFactorObservation` and `NaturalFactorGateDecision`. Each obse
 - residual Spearman using class indicators and box height as registered controls;
 - controlled monotonicity success rate across control-factor quartiles;
 - paired object-minus-background response and intervention-severity monotonicity;
-- 2,000 image-bootstrap replicates with seed `20260804` and percentile 95% intervals.
+- 2,000 image-cluster bootstrap replicates with seed `20260804` and percentile 95% intervals. Average-tie ranks are frozen on the original audit sample before resampling. Raw Spearman intervals use per-image rank cross-moment sufficient statistics; residual intervals use per-image ranked-control cross-products and refit the registered weighted least-squares controls in every replicate. Multinomial image weights reproduce sampling source images with replacement while keeping every object, seed, and reliability node from the same source image in one cluster. This avoids rebuilding and sorting hundreds of thousands of rows 2,000 times without changing the registered image-level sampling unit.
+
+Clean target/background rows are the internal intervention manifest and declare whether a pair audits sampling or visibility. Registered severities are `(0.25, 0.50, 0.75, 1.0)`; missing, extra, or duplicated rows make the pair malformed and block the gate. Task 3/4 own detection of an entirely absent pair, including its clean manifest, through the observer plan and expected-row progress manifest.
 
 The gate passes a factor only when the expected direction holds for every seed, the pooled raw and residual confidence-interval lower bounds exceed zero, target response exceeds matched background response, and controlled intervention severity is ordered for at least `0.80` of eligible pairs. Report all six nodes separately and a pooled result; a single unstable seed blocks the pooled pass. Do not tune these thresholds after observing validation performance.
 
