@@ -574,7 +574,6 @@ def build_factor_observation_manifest(
                             "image_id": image_id,
                             "object_id": record.object_id,
                             "factor": factor,
-                            "severity": severity,
                             "seed": seed,
                             "source_sha256": source_sha,
                         }
