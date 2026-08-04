@@ -632,7 +632,7 @@ class FactorAuditTest(unittest.TestCase):
         self.assertEqual(first["sampling_unit"], "image_id")
         self.assertEqual(first["unique_image_count"], 4 * len(SEEDS) * len(NODES))
 
-    def test_moment_bootstrap_matches_fixed_rank_row_expansion_raw_and_residual(self) -> None:
+    def test_exact_bootstrap_matches_row_expansion_raw_and_residual(self) -> None:
         import numpy as np
         import ifdr_yolo.eval.natural_factor_audit as audit_module
 
@@ -667,51 +667,112 @@ class FactorAuditTest(unittest.TestCase):
             [sampled_images.count(image_id) for image_id in sorted(by_image)], dtype=np.float64
         )
 
-        images, raw_moments = audit_module._raw_image_moments(rows, "sampling")
-        self.assertEqual(images, tuple(sorted(by_image)))
-        raw_value = audit_module._raw_moment_rho(raw_moments, weights)
-        target_rank = audit_module.average_tie_rank(
-            tuple(row.natural_sampling for row in rows)
+        data = audit_module._precompute_bootstrap_data(rows, "sampling")
+        raw_value = audit_module._exact_raw_statistic(data, weights)
+        raw_reference = audit_module.spearman(
+            tuple(rows[index].natural_sampling for index in expanded_indices),
+            tuple(rows[index].predicted_sampling for index in expanded_indices),
         )
-        prediction_rank = audit_module.average_tie_rank(
-            tuple(row.predicted_sampling for row in rows)
-        )
-        raw_reference = audit_module._pearson(
-            tuple(target_rank[index] for index in expanded_indices),
-            tuple(prediction_rank[index] for index in expanded_indices),
-        )["rho"]
-        self.assertAlmostEqual(raw_value, raw_reference, places=12)
+        self.assertEqual(raw_reference["status"], "ok")
+        self.assertAlmostEqual(raw_value, raw_reference["rho"], places=12)
 
-        residual_images, cross_products, response_moments = audit_module._residual_image_moments(
-            rows, "sampling"
+        residual_value = audit_module._exact_residual_statistic(data, weights)
+        residual_reference = audit_module.partial_spearman(
+            tuple(rows[index].natural_sampling for index in expanded_indices),
+            tuple(rows[index].predicted_sampling for index in expanded_indices),
+            tuple(rows[index].box_height for index in expanded_indices),
+            tuple(rows[index].class_id for index in expanded_indices),
         )
-        residual_value = audit_module._residual_moment_rho(
-            cross_products, response_moments, weights
+        self.assertEqual(residual_reference["status"], "ok")
+        self.assertAlmostEqual(residual_value, residual_reference["rho"], places=12)
+
+    def test_exact_reranking_matches_random_tied_row_expansions(self) -> None:
+        import random
+        import ifdr_yolo.eval.natural_factor_audit as audit_module
+
+        randomizer = random.Random(20260805)
+        rows = tuple(
+            _observation(
+                image_id=f"random-{index // 3}",
+                object_id=index,
+                class_id=index % 3,
+                box_height=float((index % 4) + 10),
+                natural_sampling=(index % 4) / 3.0,
+                predicted_sampling=((index * 3) % 5) / 4.0,
+            )
+            for index in range(12)
         )
-        height_rank = audit_module.average_tie_rank(tuple(row.box_height for row in rows))
-        classes = tuple(row.class_id for row in rows)
-        class_dummies = sorted(set(classes))[1:]
-        design = np.column_stack(
-            [
-                np.ones(len(rows)),
-                np.asarray(height_rank),
-                *[np.asarray([float(value == klass) for value in classes]) for klass in class_dummies],
+        data = audit_module._precompute_bootstrap_data(rows, "sampling")
+        by_image = {image_id: [] for image_id in data.images}
+        for index, row in enumerate(rows):
+            by_image[row.image_id].append(index)
+        for _ in range(20):
+            weights = np.asarray([randomizer.randrange(4) for _ in data.images], dtype=np.float64)
+            if weights.sum() == 0:
+                weights[0] = 1.0
+            expanded_indices = [
+                index
+                for image_id, image_weight in zip(data.images, weights)
+                for _ in range(int(image_weight))
+                for index in by_image[image_id]
             ]
+            raw_reference = audit_module.spearman(
+                tuple(rows[index].natural_sampling for index in expanded_indices),
+                tuple(rows[index].predicted_sampling for index in expanded_indices),
+            )
+            raw_value = audit_module._exact_raw_statistic(data, weights)
+            if raw_reference["status"] == "ok":
+                self.assertAlmostEqual(raw_value, raw_reference["rho"], places=12)
+            else:
+                self.assertIsNone(raw_value)
+            residual_reference = audit_module.partial_spearman(
+                tuple(rows[index].natural_sampling for index in expanded_indices),
+                tuple(rows[index].predicted_sampling for index in expanded_indices),
+                tuple(rows[index].box_height for index in expanded_indices),
+                tuple(rows[index].class_id for index in expanded_indices),
+            )
+            residual_value = audit_module._exact_residual_statistic(data, weights)
+            if residual_reference["status"] == "ok":
+                self.assertAlmostEqual(residual_value, residual_reference["rho"], places=10)
+            else:
+                self.assertIsNone(residual_value)
+
+    def test_exact_cluster_rerank_raw_quality_counterexample(self) -> None:
+        import numpy as np
+        import ifdr_yolo.eval.natural_factor_audit as audit_module
+
+        values = ((0.61, 0.07), (0.99, 0.46), (0.45, 0.29), (0.38, 0.06), (0.75, 0.54), (0.66, 0.04))
+        rows = tuple(
+            _observation(
+                image_id=f"quality-{index // 2}",
+                object_id=index,
+                natural_sampling=target,
+                predicted_sampling=prediction,
+            )
+            for index, (target, prediction) in enumerate(values)
         )
-        expanded_design = design[expanded_indices]
-        expanded_target = np.asarray([target_rank[index] for index in expanded_indices])
-        expanded_prediction = np.asarray([prediction_rank[index] for index in expanded_indices])
-        target_residual = expanded_target - expanded_design @ np.linalg.lstsq(
-            expanded_design, expanded_target, rcond=None
-        )[0]
-        prediction_residual = expanded_prediction - expanded_design @ np.linalg.lstsq(
-            expanded_design, expanded_prediction, rcond=None
-        )[0]
-        residual_reference = audit_module._pearson(
-            target_residual, prediction_residual
-        )["rho"]
-        self.assertEqual(residual_images, images)
-        self.assertAlmostEqual(residual_value, residual_reference, places=12)
+        data = audit_module._precompute_bootstrap_data(rows, "sampling")
+        exact = audit_module._exact_raw_statistic(data, np.asarray((2.0, 1.0, 0.0)))
+        self.assertAlmostEqual(exact, 0.8181818182, places=8)
+
+    def test_exact_cluster_rerank_residual_quality_counterexample_is_constant(self) -> None:
+        import ifdr_yolo.eval.natural_factor_audit as audit_module
+
+        values = ((0.61, 0.07), (0.99, 0.46), (0.45, 0.29), (0.38, 0.06), (0.75, 0.54), (0.66, 0.04))
+        rows = tuple(
+            _observation(
+                image_id=f"quality-{index // 2}",
+                object_id=index,
+                class_id=index % 3,
+                box_height=10.0 + index,
+                natural_sampling=target,
+                predicted_sampling=prediction,
+            )
+            for index, (target, prediction) in enumerate(values)
+        )
+        data = audit_module._precompute_bootstrap_data(rows, "sampling")
+        exact = audit_module._exact_residual_statistic(data, np.asarray((0.0, 1.0, 1.0)))
+        self.assertIsNone(exact)
 
     def test_bootstrap_requires_two_replicates_and_rejects_insufficient_valid_replicates(self) -> None:
         with self.assertRaises(ValueError):
@@ -726,6 +787,8 @@ class FactorAuditTest(unittest.TestCase):
         self.assertEqual(valid["status"], "ok")
 
     def test_bootstrap_debug_samples_have_a_bounded_draw_budget(self) -> None:
+        import ifdr_yolo.eval.natural_factor_audit as audit_module
+
         rows = tuple(
             _observation(
                 image_id=f"debug-{index}",
@@ -739,6 +802,8 @@ class FactorAuditTest(unittest.TestCase):
             image_cluster_bootstrap(
                 rows, factor="sampling", replicates=50_001, return_samples=True
             )
+        with self.assertRaises(ValueError):
+            audit_module.bootstrap_image_ids(("debug-0", "debug-1"), replicates=50_001)
 
     def test_gate_decision_recursively_freezes_nested_results(self) -> None:
         decision = audit_natural_factors(
@@ -797,7 +862,11 @@ class FactorAuditTest(unittest.TestCase):
             captured.append((tuple(sampled_images), result))
             return result
 
-        with patch.object(audit_module, "_cluster_rows", side_effect=spy_cluster_rows):
+        with (
+            patch.object(audit_module, "_cluster_rows", side_effect=spy_cluster_rows),
+            patch.object(audit_module.np, "unique", wraps=audit_module.np.unique) as unique_spy,
+            patch.object(audit_module.np, "argsort", wraps=audit_module.np.argsort) as argsort_spy,
+        ):
             bootstrap = image_cluster_bootstrap(
                 tuple(rows), factor="sampling", replicates=40, seed=20260804, return_samples=True
             )
@@ -812,6 +881,8 @@ class FactorAuditTest(unittest.TestCase):
                 [expected_count[image_id] for image_id in image_sample], count_sample
             )
         self.assertEqual(captured, [])
+        self.assertEqual(unique_spy.call_count, 3)
+        self.assertEqual(argsort_spy.call_count, 0)
 
     def test_missing_required_seed_node_intervention_evidence_fails(self) -> None:
         rows = tuple(

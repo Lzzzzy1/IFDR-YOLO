@@ -460,6 +460,8 @@ def bootstrap_image_ids(
     unique = tuple(sorted(set(image_ids)))
     if not unique:
         return ()
+    if int(replicates) * len(unique) > 100_000:
+        raise ValueError("bootstrap image-id samples are limited to 100000 draws")
     generator = np.random.default_rng(int(seed))
     samples: list[tuple[str, ...]] = []
     for _ in range(int(replicates)):
@@ -481,130 +483,204 @@ def _cluster_rows(
     return tuple(rows)
 
 
-def _raw_image_moments(
+@dataclass(frozen=True)
+class _RankGroups:
+    """Sorted value groups and row-to-group inverse for weighted midranks."""
+
+    values: np.ndarray
+    inverse: np.ndarray
+
+
+@dataclass(frozen=True)
+class _BootstrapData:
+    """Natural rows and all reusable value/image grouping metadata."""
+
+    images: tuple[str, ...]
+    image_inverse: np.ndarray
+    row_counts: np.ndarray
+    target: np.ndarray
+    prediction: np.ndarray
+    height: np.ndarray
+    classes: np.ndarray
+    target_groups: _RankGroups
+    prediction_groups: _RankGroups
+    height_groups: _RankGroups
+    class_dummies: tuple[int, ...]
+
+
+def _value_groups(values: np.ndarray) -> _RankGroups:
+    unique, inverse = np.unique(values, return_inverse=True)
+    return _RankGroups(
+        values=np.asarray(unique, dtype=np.float64),
+        inverse=np.asarray(inverse, dtype=np.intp),
+    )
+
+
+def _precompute_bootstrap_data(
     observations: Sequence[NaturalFactorObservation],
     factor: str,
-) -> tuple[tuple[str, ...], np.ndarray]:
-    """Precompute fixed-rank Pearson moments for each image cluster."""
+) -> _BootstrapData:
+    """Precompute image and value groups once; ranks remain replicate-specific."""
 
     images = tuple(sorted({row.image_id for row in observations}))
     image_index = {image_id: index for index, image_id in enumerate(images)}
-    natural_values = tuple(_factor_natural(row, factor) for row in observations)
-    prediction_values = tuple(_factor_prediction(row, factor) for row in observations)
-    natural_rank = np.asarray(average_tie_rank(natural_values), dtype=np.float64)
-    prediction_rank = np.asarray(average_tie_rank(prediction_values), dtype=np.float64)
-    moments = np.zeros((len(images), 6), dtype=np.float64)
-    for index, row in enumerate(observations):
-        image_moment = moments[image_index[row.image_id]]
-        x = natural_rank[index]
-        y = prediction_rank[index]
-        image_moment[0] += 1.0
-        image_moment[1] += x
-        image_moment[2] += y
-        image_moment[3] += x * x
-        image_moment[4] += y * y
-        image_moment[5] += x * y
-    return images, moments
-
-
-def _residual_image_moments(
-    observations: Sequence[NaturalFactorObservation],
-    factor: str,
-) -> tuple[tuple[str, ...], np.ndarray, np.ndarray]:
-    """Precompute fixed-rank control cross-products for each image cluster."""
-
-    images = tuple(sorted({row.image_id for row in observations}))
-    image_index = {image_id: index for index, image_id in enumerate(images)}
-    natural_values = tuple(_factor_natural(row, factor) for row in observations)
-    prediction_values = tuple(_factor_prediction(row, factor) for row in observations)
-    target_rank = np.asarray(average_tie_rank(natural_values), dtype=np.float64)
-    prediction_rank = np.asarray(average_tie_rank(prediction_values), dtype=np.float64)
-    height_rank = np.asarray(
-        average_tie_rank(tuple(row.box_height for row in observations)), dtype=np.float64
+    image_inverse = np.asarray(
+        [image_index[row.image_id] for row in observations], dtype=np.intp
     )
-    classes = tuple(int(row.class_id) for row in observations)
-    unique_classes = sorted(set(classes))
-    class_dummies = unique_classes[1:]
-    design = np.column_stack(
-        [
-            np.ones(len(observations), dtype=np.float64),
-            height_rank,
-            *[np.asarray([float(value == klass) for value in classes]) for klass in class_dummies],
-        ]
+    target = np.asarray(tuple(_factor_natural(row, factor) for row in observations), dtype=np.float64)
+    prediction = np.asarray(
+        tuple(_factor_prediction(row, factor) for row in observations), dtype=np.float64
     )
-    feature_count = design.shape[1]
-    cross_products = np.zeros((len(images), feature_count, feature_count + 2), dtype=np.float64)
-    response_moments = np.zeros((len(images), 3), dtype=np.float64)
-    for index, row in enumerate(observations):
-        cluster = image_index[row.image_id]
-        z = design[index]
-        x = target_rank[index]
-        y = prediction_rank[index]
-        cross_products[cluster, :, :feature_count] += np.outer(z, z)
-        cross_products[cluster, :, feature_count] += z * x
-        cross_products[cluster, :, feature_count + 1] += z * y
-        response_moments[cluster, 0] += x * x
-        response_moments[cluster, 1] += y * y
-        response_moments[cluster, 2] += x * y
-    return images, cross_products, response_moments
+    height = np.asarray(tuple(row.box_height for row in observations), dtype=np.float64)
+    classes = np.asarray(tuple(int(row.class_id) for row in observations), dtype=np.intp)
+    class_values = tuple(sorted(set(int(value) for value in classes)))
+    return _BootstrapData(
+        images=images,
+        image_inverse=image_inverse,
+        row_counts=np.bincount(image_inverse, minlength=len(images)).astype(np.float64),
+        target=target,
+        prediction=prediction,
+        height=height,
+        classes=classes,
+        target_groups=_value_groups(target),
+        prediction_groups=_value_groups(prediction),
+        height_groups=_value_groups(height),
+        class_dummies=class_values[1:],
+    )
 
 
-def _raw_moment_rho(moments: np.ndarray, weights: np.ndarray) -> float | None:
-    totals = weights @ moments
-    n = float(totals[0])
-    if n < 2.0:
+def _rank_from_groups(groups: _RankGroups, observation_weights: np.ndarray) -> np.ndarray | None:
+    total = float(np.sum(observation_weights))
+    if total < 2.0:
         return None
-    covariance = float(totals[5] - totals[1] * totals[2] / n)
-    x_variance = float(totals[3] - totals[1] * totals[1] / n)
-    y_variance = float(totals[4] - totals[2] * totals[2] / n)
-    if x_variance <= 0.0 or y_variance <= 0.0:
+    group_weights = np.bincount(
+        groups.inverse,
+        weights=observation_weights,
+        minlength=len(groups.values),
+    ).astype(np.float64)
+    group_rank = np.cumsum(group_weights) - 0.5 * group_weights + 0.5
+    # Affine rank normalization preserves all correlations and keeps the
+    # residual least-squares scale stable across multinomial draws.
+    return (group_rank[groups.inverse] - 1.0) / (total - 1.0)
+
+
+def _observation_weights(data: _BootstrapData, image_weights: np.ndarray) -> np.ndarray:
+    return np.asarray(image_weights[data.image_inverse], dtype=np.float64)
+
+
+def _weighted_pearson(
+    left: np.ndarray,
+    right: np.ndarray,
+    weights: np.ndarray,
+) -> float | None:
+    total = float(np.sum(weights))
+    if total < 2.0:
         return None
-    rho = covariance / math.sqrt(x_variance * y_variance)
+    left_mean = float(np.dot(weights, left) / total)
+    right_mean = float(np.dot(weights, right) / total)
+    left_centered = left - left_mean
+    right_centered = right - right_mean
+    left_ss = float(np.dot(weights, left_centered * left_centered))
+    right_ss = float(np.dot(weights, right_centered * right_centered))
+    if left_ss <= 0.0 or right_ss <= 0.0:
+        return None
+    covariance = float(np.dot(weights, left_centered * right_centered))
+    rho = covariance / math.sqrt(left_ss * right_ss)
     return float(max(-1.0, min(1.0, rho))) if math.isfinite(rho) else None
 
 
-def _residual_moment_rho(
-    cross_products: np.ndarray,
-    response_moments: np.ndarray,
-    weights: np.ndarray,
+def _exact_raw_statistic(
+    data: _BootstrapData,
+    image_weights: np.ndarray,
 ) -> float | None:
-    weighted_cross = np.tensordot(weights, cross_products, axes=(0, 0))
-    weighted_response = weights @ response_moments
-    feature_count = weighted_cross.shape[0]
-    design_cross = weighted_cross[:, :feature_count]
-    target_cross = weighted_cross[:, feature_count]
-    prediction_cross = weighted_cross[:, feature_count + 1]
-    n = float(np.sum(weights * cross_products[:, 0, 0]))
-    if n < 3.0:
+    observation_weights = _observation_weights(data, image_weights)
+    target_rank = _rank_from_groups(data.target_groups, observation_weights)
+    prediction_rank = _rank_from_groups(data.prediction_groups, observation_weights)
+    if target_rank is None or prediction_rank is None:
         return None
+    return _weighted_pearson(target_rank, prediction_rank, observation_weights)
+
+
+def _exact_residual_statistic(
+    data: _BootstrapData,
+    image_weights: np.ndarray,
+) -> float | None:
+    observation_weights = _observation_weights(data, image_weights)
+    target_rank = _rank_from_groups(data.target_groups, observation_weights)
+    prediction_rank = _rank_from_groups(data.prediction_groups, observation_weights)
+    height_rank = _rank_from_groups(data.height_groups, observation_weights)
+    if target_rank is None or prediction_rank is None or height_rank is None:
+        return None
+    total = float(np.sum(observation_weights))
+    if total < 3.0:
+        return None
+    design = np.column_stack(
+        [
+            np.ones(len(data.classes), dtype=np.float64),
+            height_rank,
+            *[
+                np.asarray(data.classes == klass, dtype=np.float64)
+                for klass in data.class_dummies
+            ],
+        ]
+    )
+    weighted_design = design * observation_weights[:, None]
+    design_cross = design.T @ weighted_design
+    target_cross = design.T @ (target_rank * observation_weights)
+    prediction_cross = design.T @ (prediction_rank * observation_weights)
     try:
-        target_beta = np.linalg.lstsq(design_cross, target_cross, rcond=None)[0]
-        prediction_beta = np.linalg.lstsq(design_cross, prediction_cross, rcond=None)[0]
+        design_pinv = np.linalg.pinv(design_cross, rcond=1e-12)
     except np.linalg.LinAlgError:
         return None
-    target_ss = float(weighted_response[0] - np.dot(target_beta, target_cross))
-    prediction_ss = float(weighted_response[1] - np.dot(prediction_beta, prediction_cross))
-    residual_cross = float(weighted_response[2] - np.dot(target_beta, prediction_cross))
-    if target_ss <= 0.0 or prediction_ss <= 0.0:
+    target_beta = design_pinv @ target_cross
+    prediction_beta = design_pinv @ prediction_cross
+    target_ss = float(
+        np.dot(observation_weights, target_rank * target_rank)
+        - np.dot(target_beta, target_cross)
+    )
+    prediction_ss = float(
+        np.dot(observation_weights, prediction_rank * prediction_rank)
+        - np.dot(prediction_beta, prediction_cross)
+    )
+    residual_cross = float(
+        np.dot(observation_weights, target_rank * prediction_rank)
+        - np.dot(target_beta, prediction_cross)
+    )
+    target_mean = float(np.dot(observation_weights, target_rank) / total)
+    prediction_mean = float(np.dot(observation_weights, prediction_rank) / total)
+    target_raw_ss = float(
+        np.dot(observation_weights, (target_rank - target_mean) ** 2)
+    )
+    prediction_raw_ss = float(
+        np.dot(observation_weights, (prediction_rank - prediction_mean) ** 2)
+    )
+    tolerance = np.finfo(np.float64).eps * 1024.0 * max(
+        1.0, target_raw_ss, prediction_raw_ss
+    )
+    if -tolerance <= target_ss < 0.0:
+        target_ss = 0.0
+    if -tolerance <= prediction_ss < 0.0:
+        prediction_ss = 0.0
+    if abs(residual_cross) <= tolerance:
+        residual_cross = 0.0
+    if target_ss <= tolerance or prediction_ss <= tolerance:
         return None
     rho = residual_cross / math.sqrt(target_ss * prediction_ss)
     return float(max(-1.0, min(1.0, rho))) if math.isfinite(rho) else None
 
 
-def _moment_bootstrap(
+def _exact_bootstrap(
     *,
-    images: tuple[str, ...],
-    moments: np.ndarray,
-    statistic: Callable[[np.ndarray, np.ndarray], float | None],
+    data: _BootstrapData,
+    statistic: Callable[[_BootstrapData, np.ndarray], float | None],
     estimate: float | None,
     replicates: int,
     seed: int,
     confidence: float,
-    row_counts: np.ndarray | None = None,
     return_samples: bool = False,
 ) -> dict[str, object]:
     _validate_bootstrap(replicates, seed, confidence)
-    image_count = len(images)
+    image_count = len(data.images)
     if image_count == 0:
         return {
             "estimate": estimate,
@@ -625,16 +701,15 @@ def _moment_bootstrap(
     sampled_sizes: list[list[int]] = []
     for _ in range(int(replicates)):
         sampled_indices = generator.integers(0, image_count, size=image_count)
-        weights = np.bincount(sampled_indices, minlength=image_count).astype(np.float64)
-        value = statistic(moments, weights)
+        image_weights = np.bincount(sampled_indices, minlength=image_count).astype(np.float64)
+        value = statistic(data, image_weights)
         if value is not None and math.isfinite(float(value)):
             values.append(float(value))
         if return_samples:
-            sampled_ids.append([images[int(index)] for index in sampled_indices])
-            if row_counts is None:
-                sampled_sizes.append([1] * image_count)
-            else:
-                sampled_sizes.append([int(row_counts[int(index)]) for index in sampled_indices])
+            sampled_ids.append([data.images[int(index)] for index in sampled_indices])
+            sampled_sizes.append(
+                [int(data.row_counts[int(index)]) for index in sampled_indices]
+            )
     required_valid = math.ceil(0.95 * int(replicates))
     if len(values) < required_valid:
         return {
@@ -678,23 +753,20 @@ def image_cluster_bootstrap(
     factor = _validate_factor(factor)
     rows = _validated_observations(observations)
     natural = _natural_rows(rows)
-    images, moments = _raw_image_moments(natural, factor)
+    data = _precompute_bootstrap_data(natural, factor)
     estimate_result = spearman(
         tuple(_factor_natural(row, factor) for row in natural),
         tuple(_factor_prediction(row, factor) for row in natural),
     )
     estimate = estimate_result.get("rho")
     estimate_value = float(estimate) if isinstance(estimate, Real) and math.isfinite(float(estimate)) else None
-    row_counts = moments[:, 0].copy() if len(images) else np.empty(0, dtype=np.float64)
-    result = _moment_bootstrap(
-        images=images,
-        moments=moments,
-        statistic=_raw_moment_rho,
+    result = _exact_bootstrap(
+        data=data,
+        statistic=_exact_raw_statistic,
         estimate=estimate_value,
         replicates=replicates,
         seed=seed,
         confidence=confidence,
-        row_counts=row_counts,
         return_samples=return_samples,
     )
     # ``image_cluster_bootstrap`` historically reads naturally as a raw
@@ -1068,8 +1140,7 @@ def natural_factor_alignment(
 
     pooled_raw = raw_statistic(natural)
     pooled_residual = residual_statistic(natural)
-    raw_images, raw_moments = _raw_image_moments(natural, factor)
-    residual_images, residual_cross, residual_response = _residual_image_moments(natural, factor)
+    bootstrap_data = _precompute_bootstrap_data(natural, factor)
     raw_estimate = pooled_raw.get("rho")
     raw_estimate = (
         float(raw_estimate)
@@ -1082,21 +1153,17 @@ def natural_factor_alignment(
         if isinstance(residual_estimate, Real) and math.isfinite(float(residual_estimate))
         else None
     )
-    pooled_raw_ci = _moment_bootstrap(
-        images=raw_images,
-        moments=raw_moments,
-        statistic=_raw_moment_rho,
+    pooled_raw_ci = _exact_bootstrap(
+        data=bootstrap_data,
+        statistic=_exact_raw_statistic,
         estimate=raw_estimate,
         replicates=bootstrap_replicates,
         seed=bootstrap_seed,
         confidence=confidence,
     )
-    pooled_residual_ci = _moment_bootstrap(
-        images=residual_images,
-        moments=(residual_cross, residual_response),  # type: ignore[arg-type]
-        statistic=lambda packed, weights: _residual_moment_rho(
-            packed[0], packed[1], weights
-        ),
+    pooled_residual_ci = _exact_bootstrap(
+        data=bootstrap_data,
+        statistic=_exact_residual_statistic,
         estimate=residual_estimate,
         replicates=bootstrap_replicates,
         seed=bootstrap_seed,
