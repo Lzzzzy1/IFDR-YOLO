@@ -34,7 +34,7 @@ Cover the following exact behavior:
 - A 4-pixel, 60-metre object maps to sampling `1.0`.
 - KITTI occlusion level 3 and truncation 1.0 map to visibility `1.0`.
 - Intermediate scores are monotonic and clipped to `[0, 1]`.
-- JSONL parsing validates canonical non-training KITTI classes structurally and skips them with explicit counts; KITTI sentinel values such as `DontCare` truncation/occlusion `-1` and location `-1000` remain valid only for skipped classes. It rejects unknown class names, non-positive or non-finite derived boxes, and invalid training-class depth/occlusion/truncation.
+- JSONL parsing validates canonical non-training KITTI classes structurally and skips them with explicit counts; KITTI sentinel values such as `DontCare` truncation/occlusion `-1` and location `-1000` remain valid only for skipped classes. It rejects unknown class names, non-positive or non-finite derived boxes, non-finite metadata, and invalid training-class occlusion/truncation. A finite non-positive training depth is retained as unavailable and counted, because its height/visibility metadata remain usable.
 
 Run:
 
@@ -58,7 +58,7 @@ occlusion_score = occlusion_level / 3.0
 visibility = 1.0 - (1.0 - occlusion_score) * (1.0 - truncation)
 ```
 
-If depth is absent, set `depth_score=0.0`, retain a `depth_available=False` flag, and never silently impute distance. Support only Car, Pedestrian, and Cyclist in the audit output. Canonical KITTI non-training classes (`Van`, `Truck`, `Person_sitting`, `Tram`, `Misc`, and `DontCare`) receive structural and finite-value validation but are skipped before training-class range checks; any other class name fails validation. Derive a stable per-image object id from original metadata row order when no explicit object id is present, and reject any explicit/implicit identifier collision within an image.
+If depth is absent or finite but non-positive, set `depth_m=None`, `depth_score=0.0`, and `depth_available=False`; increment `invalid_depth_count` for the latter and never take an absolute value or silently impute distance. Support only Car, Pedestrian, and Cyclist in the audit output. Canonical KITTI non-training classes (`Van`, `Truck`, `Person_sitting`, `Tram`, `Misc`, and `DontCare`) receive structural and finite-value validation but are skipped before training-class range checks; any other class name fails validation. Derive a stable per-image object id from original metadata row order when no explicit object id is present, and reject any explicit/implicit identifier collision within an image.
 
 **Step 3: Verify and commit**
 
