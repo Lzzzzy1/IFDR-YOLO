@@ -34,7 +34,7 @@ Cover the following exact behavior:
 - A 4-pixel, 60-metre object maps to sampling `1.0`.
 - KITTI occlusion level 3 and truncation 1.0 map to visibility `1.0`.
 - Intermediate scores are monotonic and clipped to `[0, 1]`.
-- JSONL parsing validates canonical non-training KITTI classes structurally and skips them with explicit counts; KITTI sentinel values such as `DontCare` truncation/occlusion `-1` and location `-1000` remain valid only for skipped classes. It rejects unknown class names, non-positive or non-finite derived boxes, non-finite metadata, and invalid training-class occlusion/truncation. A finite non-positive training depth is retained as unavailable and counted, because its height/visibility metadata remain usable.
+- JSONL parsing validates every metadata field consumed by this audit and skips canonical non-training KITTI classes with explicit counts; KITTI sentinel values such as `DontCare` truncation/occlusion `-1` and location `-1000` remain valid only for skipped classes. It rejects unknown class names, non-positive or non-finite derived boxes, non-finite consumed metadata, and invalid training-class occlusion/truncation. A finite non-positive training depth is retained as unavailable and counted, because its height/visibility metadata remain usable.
 
 Run:
 
