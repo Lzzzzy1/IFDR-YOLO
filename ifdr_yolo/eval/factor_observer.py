@@ -49,9 +49,11 @@ def _digest(value: Any) -> str:
 def _sha256_hex(value: object, name: str) -> str:
     if not isinstance(value, str) or len(value) != 64:
         raise ValueError(f"{name} must be a 64-character SHA-256 hex digest")
+    if value != value.lower():
+        raise ValueError(f"{name} must be lowercase hexadecimal")
     if any(character not in "0123456789abcdefABCDEF" for character in value):
-        raise ValueError(f"{name} must be a 64-character SHA-256 hex digest")
-    return value.lower()
+        raise ValueError(f"{name} must be lowercase hexadecimal")
+    return value
 
 
 def _integer(value: object, name: str, *, minimum: int = 0) -> int:
@@ -67,6 +69,14 @@ def _finite(value: object, name: str) -> float:
     if not math.isfinite(result):
         raise ValueError(f"{name} must be finite")
     return result
+
+
+def _registered_severity(value: object, name: str) -> float:
+    number = _finite(value, name)
+    matches = [candidate for candidate in REGISTERED_SEVERITIES if abs(number - candidate) <= 1e-9]
+    if len(matches) != 1:
+        raise ValueError(f"{name} must be one of the registered severities")
+    return matches[0]
 
 
 def _box(value: object, name: str = "bbox_xyxy") -> tuple[float, float, float, float]:
@@ -90,6 +100,58 @@ def _box_iou(left: tuple[float, float, float, float], right: tuple[float, float,
     left_area = (left[2] - left[0]) * (left[3] - left[1])
     right_area = (right[2] - right[0]) * (right[3] - right[1])
     return intersection / (left_area + right_area - intersection)
+
+
+def _condition_sort_key(condition: "ObservationCondition") -> tuple[object, ...]:
+    return (
+        condition.object_id,
+        condition.intervention_factor or "",
+        condition.intervention_severity,
+        condition.intervention_kind,
+        condition.region_role,
+    )
+
+
+def _canonical_transform_id(
+    *,
+    image_id: str,
+    source_sha256: str,
+    seed: int,
+    object_id: int,
+    intervention_kind: str,
+    intervention_factor: str | None,
+    intervention_severity: float,
+    region_role: str,
+    bbox_xyxy: Sequence[float],
+) -> str:
+    """Return the stable pixel-transform identity for one condition.
+
+    Natural and clean conditions all consume the untouched source image, so
+    their transform identity is shared across every ROI/object in the image.
+    Non-zero interventions identify every input that can change pixels,
+    including the actual applied ROI, while deliberately excluding condition
+    bookkeeping such as ``pair_id``.
+    """
+
+    if intervention_kind in {"natural", "clean"}:
+        payload: dict[str, object] = {
+            "kind": "source_transform",
+            "image_id": image_id,
+            "source_sha256": source_sha256,
+        }
+    else:
+        payload = {
+            "kind": "intervention_transform",
+            "image_id": image_id,
+            "source_sha256": source_sha256,
+            "seed": seed,
+            "object_id": object_id,
+            "factor": intervention_factor,
+            "severity": intervention_severity,
+            "region_role": region_role,
+            "bbox_xyxy": tuple(bbox_xyxy),
+        }
+    return _digest(payload)
 
 
 @dataclass(frozen=True)
@@ -172,8 +234,15 @@ class ObservationCondition:
             raise ValueError("class_id must be one of 0, 1, or 2")
         if not isinstance(self.class_name, str) or not self.class_name.strip():
             raise ValueError("class_name must be non-empty text")
-        object.__setattr__(self, "bbox_xyxy", _box(self.bbox_xyxy))
-        object.__setattr__(self, "box_height", _finite(self.box_height, "box_height"))
+        expected_class_name = ("Car", "Pedestrian", "Cyclist")[self.class_id]
+        if self.class_name != expected_class_name:
+            raise ValueError("class_name must correspond to class_id")
+        bbox = _box(self.bbox_xyxy)
+        object.__setattr__(self, "bbox_xyxy", bbox)
+        box_height = _finite(self.box_height, "box_height")
+        if box_height <= 0.0 or not math.isclose(box_height, bbox[3] - bbox[1], rel_tol=0.0, abs_tol=1e-6):
+            raise ValueError("box_height must equal bbox height and be positive")
+        object.__setattr__(self, "box_height", box_height)
         sampling = _finite(self.natural_sampling, "natural_sampling")
         visibility = _finite(self.natural_visibility, "natural_visibility")
         if not 0.0 <= sampling <= 1.0 or not 0.0 <= visibility <= 1.0:
@@ -187,26 +256,44 @@ class ObservationCondition:
         if self.intervention_factor is not None and self.intervention_factor not in _FACTORS:
             raise ValueError("intervention_factor must be sampling or visibility")
         severity = _finite(self.intervention_severity, "intervention_severity")
-        if not 0.0 <= severity <= 1.0:
-            raise ValueError("intervention_severity must be within [0, 1]")
+        if severity == 0.0:
+            canonical_severity = 0.0
+        else:
+            canonical_severity = _registered_severity(severity, "intervention_severity")
+        severity = canonical_severity
         object.__setattr__(self, "intervention_severity", severity)
+        matched_background = (
+            None
+            if self.matched_background_bbox is None
+            else _box(self.matched_background_bbox, "matched_background_bbox")
+        )
+        object.__setattr__(self, "matched_background_bbox", matched_background)
         if self.intervention_kind == "natural":
             if self.intervention_factor is not None or severity != 0.0:
                 raise ValueError("natural conditions do not have intervention metadata")
-            if self.region_role != "target" or self.pair_id is not None:
+            if self.region_role != "target" or self.pair_id is not None or matched_background is not None:
                 raise ValueError("natural conditions are target-only and unpaired")
         else:
             if self.intervention_factor not in _FACTORS:
                 raise ValueError("controlled conditions require an intervention factor")
-            if not isinstance(self.pair_id, str) or len(self.pair_id) != 64:
+            if not isinstance(self.pair_id, str):
                 raise ValueError("controlled conditions require a pair_id")
-        if not isinstance(self.condition_id, str) or len(self.condition_id) != 64:
-            raise ValueError("condition_id must be a SHA-256 digest")
-        if not isinstance(self.transform_id, str) or len(self.transform_id) != 64:
-            raise ValueError("transform_id must be a SHA-256 digest")
+            _sha256_hex(self.pair_id, "pair_id")
+            if matched_background is None:
+                raise ValueError("controlled conditions require a matched_background_bbox")
+            if self.intervention_kind == "clean":
+                if severity != 0.0:
+                    raise ValueError("clean conditions must have severity 0")
+            elif self.intervention_kind in _FACTORS:
+                if self.intervention_kind != self.intervention_factor:
+                    raise ValueError("intervention_kind must match intervention_factor")
+                if severity <= 0.0:
+                    raise ValueError("factor intervention severity must be positive")
+            if self.region_role == "background" and self.bbox_xyxy != matched_background:
+                raise ValueError("background bbox must equal matched_background_bbox")
+        _sha256_hex(self.condition_id, "condition_id")
+        _sha256_hex(self.transform_id, "transform_id")
         object.__setattr__(self, "source_sha256", _sha256_hex(self.source_sha256, "source_sha256"))
-        if self.matched_background_bbox is not None:
-            object.__setattr__(self, "matched_background_bbox", _box(self.matched_background_bbox, "matched_background_bbox"))
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -257,12 +344,111 @@ class ImageObservationPlan:
             raise ValueError("an image observation plan must contain conditions")
         if any(condition.image_id != self.image_id for condition in conditions):
             raise ValueError("condition image_id does not match plan")
+        if any(condition.source_sha256 != source for condition in conditions):
+            raise ValueError("condition source_sha256 does not match plan")
+        if conditions != tuple(sorted(conditions, key=_condition_sort_key)):
+            raise ValueError("conditions are not in canonical order")
+        for condition in conditions:
+            x1, y1, x2, y2 = condition.bbox_xyxy
+            if x1 < 0.0 or y1 < 0.0 or x2 > self.width or y2 > self.height:
+                raise ValueError("condition bbox is outside image bounds")
+            if condition.matched_background_bbox is not None:
+                bx1, by1, bx2, by2 = condition.matched_background_bbox
+                if bx1 < 0.0 or by1 < 0.0 or bx2 > self.width or by2 > self.height:
+                    raise ValueError("matched background bbox is outside image bounds")
         condition_ids = [condition.condition_id for condition in conditions]
         if len(set(condition_ids)) != len(condition_ids):
             raise ValueError("duplicate condition identity")
         expected = tuple(self.expected_observation_ids)
-        if len(set(expected)) != len(expected) or not all(isinstance(item, str) and len(item) == 64 for item in expected):
+        if len(set(expected)) != len(expected):
             raise ValueError("expected_observation_ids must be unique SHA-256 digests")
+        for observation_id in expected:
+            _sha256_hex(observation_id, "observation_id")
+        natural_by_object: dict[int, ObservationCondition] = {}
+        for condition in conditions:
+            if condition.intervention_kind == "natural":
+                if condition.object_id in natural_by_object:
+                    raise ValueError("each object must have one natural condition")
+                natural_by_object[condition.object_id] = condition
+        if not natural_by_object:
+            raise ValueError("plan must contain natural conditions")
+        for condition in conditions:
+            natural = natural_by_object.get(condition.object_id)
+            if natural is None:
+                raise ValueError("controlled condition has no natural object condition")
+            if (
+                condition.seed != natural.seed
+                or condition.class_id != natural.class_id
+                or condition.class_name != natural.class_name
+                or condition.box_height != natural.box_height
+                or condition.natural_sampling != natural.natural_sampling
+                or condition.natural_visibility != natural.natural_visibility
+            ):
+                raise ValueError("condition metadata is inconsistent with natural condition")
+            if condition.intervention_kind != "natural":
+                if condition.region_role == "target" and condition.bbox_xyxy != natural.bbox_xyxy:
+                    raise ValueError("controlled target bbox is inconsistent with natural bbox")
+                if condition.region_role == "background" and condition.bbox_xyxy != condition.matched_background_bbox:
+                    raise ValueError("controlled background bbox is inconsistent with matched background")
+        natural_boxes = [condition.bbox_xyxy for condition in natural_by_object.values()]
+        pairs: dict[str, list[ObservationCondition]] = {}
+        for condition in conditions:
+            if condition.intervention_kind != "natural":
+                assert condition.pair_id is not None
+                pairs.setdefault(condition.pair_id, []).append(condition)
+        for pair_id, pair_conditions in pairs.items():
+            factors = {condition.intervention_factor for condition in pair_conditions}
+            objects = {condition.object_id for condition in pair_conditions}
+            matched = {condition.matched_background_bbox for condition in pair_conditions}
+            if len(factors) != 1 or len(objects) != 1 or len(matched) != 1:
+                raise ValueError("controlled pair background metadata is inconsistent")
+            factor = next(iter(factors))
+            background = next(iter(matched))
+            assert factor is not None and background is not None
+            target_boxes = {condition.bbox_xyxy for condition in pair_conditions if condition.region_role == "target"}
+            if len(target_boxes) != 1:
+                raise ValueError("controlled pair must have one target ROI")
+            target = next(iter(target_boxes))
+            if not math.isclose(background[2] - background[0], target[2] - target[0], rel_tol=0.0, abs_tol=1e-6) or not math.isclose(background[3] - background[1], target[3] - target[1], rel_tol=0.0, abs_tol=1e-6):
+                raise ValueError("matched background must match target dimensions")
+            if any(_box_iou(background, natural_box) > 0.05 + 1e-12 for natural_box in natural_boxes):
+                raise ValueError("matched background IoU exceeds 0.05")
+            expected_pair = {
+                ("clean", role, 0.0)
+                for role in _ROLES
+            }
+            expected_pair.update(
+                (factor, role, severity)
+                for role in _ROLES
+                for severity in REGISTERED_SEVERITIES
+            )
+            actual_pair = {
+                (condition.intervention_kind, condition.region_role, condition.intervention_severity)
+                for condition in pair_conditions
+            }
+            if len(pair_conditions) != 10 or actual_pair != expected_pair:
+                raise ValueError("controlled pair must contain clean plus four severities per role")
+        expected_for_plan = tuple(
+            _digest({"condition_id": condition.condition_id, "node_id": node})
+            for condition in conditions
+            for node in DEFAULT_REQUIRED_NODES
+        )
+        if expected != expected_for_plan:
+            raise ValueError("expected_observation_ids do not match conditions")
+        for condition in conditions:
+            expected_transform_id = _canonical_transform_id(
+                image_id=condition.image_id,
+                source_sha256=condition.source_sha256,
+                seed=condition.seed,
+                object_id=condition.object_id,
+                intervention_kind=condition.intervention_kind,
+                intervention_factor=condition.intervention_factor,
+                intervention_severity=condition.intervention_severity,
+                region_role=condition.region_role,
+                bbox_xyxy=condition.bbox_xyxy,
+            )
+            if condition.transform_id != expected_transform_id:
+                raise ValueError("condition transform_id is inconsistent with its pixel transform")
         object.__setattr__(self, "conditions", conditions)
         object.__setattr__(self, "expected_observation_ids", expected)
 
@@ -299,10 +485,8 @@ class FactorObservationManifest:
         if image_ids != sorted(image_ids) or len(set(image_ids)) != len(image_ids):
             raise ValueError("plans must be sorted by unique image_id")
         nodes = tuple(_integer(node, "required node") for node in self.required_nodes)
-        if not nodes or len(set(nodes)) != len(nodes):
-            raise ValueError("required_nodes must be non-empty and unique")
-        if nodes != tuple(sorted(nodes)):
-            raise ValueError("required_nodes must be sorted")
+        if nodes != DEFAULT_REQUIRED_NODES:
+            raise ValueError(f"required_nodes must equal {DEFAULT_REQUIRED_NODES}")
         object.__setattr__(self, "plans", plans)
         object.__setattr__(self, "required_nodes", nodes)
         object.__setattr__(self, "checkpoint_sha256", _sha256_hex(self.checkpoint_sha256, "checkpoint_sha256"))
@@ -439,7 +623,17 @@ def _condition(
         "seed": seed,
     }
     condition_id = _digest({"kind": "condition", **common})
-    transform_id = _digest({"kind": "transform", **common})
+    transform_id = _canonical_transform_id(
+        image_id=record.image_id,
+        source_sha256=source_sha256,
+        seed=seed,
+        object_id=record.object_id,
+        intervention_kind=intervention_kind,
+        intervention_factor=intervention_factor,
+        intervention_severity=intervention_severity,
+        region_role=region_role,
+        bbox_xyxy=bbox_xyxy,
+    )
     return ObservationCondition(
         image_id=record.image_id,
         seed=seed,
@@ -477,8 +671,8 @@ def build_factor_observation_manifest(
     seed = _integer(seed, "seed")
     input_size = _integer(input_size, "input_size", minimum=1)
     nodes = tuple(_integer(node, "required node") for node in required_nodes)
-    if not nodes or len(set(nodes)) != len(nodes) or nodes != tuple(sorted(nodes)):
-        raise ValueError("required_nodes must be non-empty, unique, and sorted")
+    if nodes != DEFAULT_REQUIRED_NODES:
+        raise ValueError(f"required_nodes must equal {DEFAULT_REQUIRED_NODES}")
     if not isinstance(image_paths, Mapping):
         raise ValueError("image_paths must be a mapping from image id to PNG path")
 
@@ -593,15 +787,7 @@ def build_factor_observation_manifest(
                                 seed=seed,
                             )
                         )
-        conditions.sort(
-            key=lambda item: (
-                item.object_id,
-                item.intervention_factor or "",
-                item.intervention_severity if item.intervention_severity is not None else -1.0,
-                item.intervention_kind,
-                item.region_role,
-            )
-        )
+        conditions.sort(key=_condition_sort_key)
         expected_ids = tuple(
             _digest({"condition_id": condition.condition_id, "node_id": node})
             for condition in conditions
@@ -774,8 +960,11 @@ class FactorObservationJournal:
                 "status": "running",
             }
             _atomic_write_json(self.progress_path, self._state)
+        last_completed_end = self._validate_completed_prefix(
+            allow_suffix=self._state.get("inflight") is not None
+        )
         if self._state.get("inflight") is not None:
-            self._recover_inflight()
+            self._recover_inflight(last_completed_end)
         self._validate_file_and_progress()
 
     def _validate_binding(self) -> None:
@@ -788,19 +977,132 @@ class FactorObservationJournal:
         if not isinstance(self._state.get("completed"), dict):
             raise ValueError("progress completed must be an object")
 
-    def _recover_inflight(self) -> None:
+    @staticmethod
+    def _expected_observation_hash(plan: ImageObservationPlan) -> str:
+        return hashlib.sha256(
+            _canonical_json(list(plan.expected_observation_ids)).encode("utf-8")
+        ).hexdigest()
+
+    def _validate_completed_prefix(self, *, allow_suffix: bool) -> int:
+        completed = self._state.get("completed")
+        if not isinstance(completed, dict):
+            raise ValueError("progress completed must be an object")
+        size = self.output_path.stat().st_size
+        entries: list[tuple[int, int, str, dict[str, Any], ImageObservationPlan]] = []
+        expected_entry_fields = {"start_offset", "end_offset", "expected_hash", "rows_sha256", "row_count"}
+        for image_id, entry in completed.items():
+            plan = next((item for item in self.manifest.plans if item.image_id == image_id), None)
+            if plan is None:
+                raise ValueError("progress contains an unknown completed image")
+            if not isinstance(entry, dict) or set(entry) != expected_entry_fields:
+                raise ValueError("completed image entry fields do not match schema")
+            start_offset = entry["start_offset"]
+            end_offset = entry["end_offset"]
+            if (
+                isinstance(start_offset, bool)
+                or type(start_offset) is not int
+                or isinstance(end_offset, bool)
+                or type(end_offset) is not int
+                or start_offset < 0
+                or end_offset < start_offset
+            ):
+                raise ValueError("completed image offsets are invalid")
+            if end_offset > size:
+                raise ValueError("completed image extends beyond JSONL")
+            expected_hash = _sha256_hex(entry["expected_hash"], "completed expected_hash")
+            if expected_hash != self._expected_observation_hash(plan):
+                raise ValueError("completed expected_hash does not match manifest")
+            rows_sha256 = _sha256_hex(entry["rows_sha256"], "completed rows_sha256")
+            row_count = entry["row_count"]
+            if (
+                isinstance(row_count, bool)
+                or type(row_count) is not int
+                or row_count != len(plan.expected_observation_ids)
+            ):
+                raise ValueError("completed row_count does not match manifest")
+            entries.append((start_offset, end_offset, image_id, entry, plan))
+        entries.sort(key=lambda item: item[0])
+        cursor = 0
+        with self.output_path.open("rb") as handle:
+            for start_offset, end_offset, image_id, entry, plan in entries:
+                if start_offset != cursor:
+                    raise ValueError("completed image blocks are not contiguous")
+                handle.seek(start_offset)
+                block = handle.read(end_offset - start_offset)
+                if len(block) != end_offset - start_offset:
+                    raise ValueError("completed image block is truncated")
+                if hashlib.sha256(block).hexdigest() != entry["rows_sha256"]:
+                    raise ValueError("completed image rows hash does not match JSONL")
+                seen: set[str] = set()
+                rows: list[dict[str, Any]] = []
+                for raw_line in block.splitlines(keepends=True):
+                    if not raw_line.endswith(b"\n"):
+                        raise ValueError("completed image contains an unterminated JSONL line")
+                    try:
+                        row = json.loads(
+                            raw_line.decode("utf-8"),
+                            parse_constant=lambda value: (_ for _ in ()).throw(ValueError(value)),
+                        )
+                    except (UnicodeDecodeError, ValueError, TypeError) as exc:
+                        raise ValueError("completed image contains malformed JSON") from exc
+                    if not isinstance(row, dict):
+                        raise ValueError("completed image rows must be objects")
+                    observation_id = row.get("observation_id")
+                    if (
+                        not isinstance(observation_id, str)
+                        or observation_id not in plan.expected_observation_ids
+                        or observation_id in seen
+                        or row.get("image_id") != image_id
+                    ):
+                        raise ValueError("completed image rows do not match manifest identities")
+                    seen.add(observation_id)
+                    rows.append(row)
+                if len(rows) != entry["row_count"] or seen != set(plan.expected_observation_ids):
+                    raise ValueError("completed image rows do not match manifest")
+                cursor = end_offset
+        if allow_suffix:
+            if size < cursor:
+                raise ValueError("JSONL is shorter than completed prefix")
+        elif size != cursor:
+            raise ValueError("JSONL contains an uncommitted suffix")
+        return cursor
+
+    def _recover_inflight(self, last_completed_end: int) -> None:
         inflight = self._state.get("inflight")
         if not isinstance(inflight, dict):
             raise ValueError("progress inflight must be an object")
-        try:
-            offset = int(inflight["start_offset"])
-        except (KeyError, TypeError, ValueError) as exc:
-            raise ValueError("progress inflight start_offset is invalid") from exc
-        if offset < 0:
+        expected_fields = {"image_id", "start_offset", "expected_hash", "expected_row_count"}
+        if set(inflight) != expected_fields:
+            raise ValueError("progress inflight fields do not match schema")
+        image_id = inflight["image_id"]
+        if not isinstance(image_id, str) or not image_id.strip():
+            raise ValueError("progress inflight image_id is invalid")
+        plan = next((item for item in self.manifest.plans if item.image_id == image_id), None)
+        if plan is None:
+            raise ValueError("progress inflight image_id is unknown")
+        if image_id in self._state["completed"]:
+            raise ValueError("progress inflight image_id is already completed")
+        offset = inflight["start_offset"]
+        if isinstance(offset, bool) or type(offset) is not int or offset < 0:
             raise ValueError("progress inflight start_offset is invalid")
         size = self.output_path.stat().st_size
-        if size < offset:
+        if offset > size:
             raise ValueError("output JSONL is shorter than inflight start offset")
+        if offset != last_completed_end:
+            raise ValueError("progress inflight start_offset does not follow completed prefix")
+        expected_hash = inflight["expected_hash"]
+        if expected_hash != self._expected_observation_hash(plan):
+            _sha256_hex(expected_hash, "progress inflight expected_hash")
+            raise ValueError("progress inflight expected_hash does not match manifest")
+        else:
+            _sha256_hex(expected_hash, "progress inflight expected_hash")
+        expected_row_count = inflight["expected_row_count"]
+        if (
+            isinstance(expected_row_count, bool)
+            or type(expected_row_count) is not int
+            or expected_row_count != len(plan.expected_observation_ids)
+        ):
+            raise ValueError("progress inflight expected_row_count does not match manifest")
         with self.output_path.open("r+b") as handle:
             handle.truncate(offset)
             handle.flush()
@@ -957,7 +1259,9 @@ class FactorObservationJournal:
         self._state["inflight"] = {
             "image_id": image_id,
             "start_offset": start_offset,
-            "expected_hash": rows_hash,
+            "expected_hash": self._expected_observation_hash(
+                next(plan for plan in self.manifest.plans if plan.image_id == image_id)
+            ),
             "expected_row_count": len(observation_ids),
         }
         _atomic_write_json(self.progress_path, self._state)
@@ -970,6 +1274,9 @@ class FactorObservationJournal:
         completed[image_id] = {
             "start_offset": start_offset,
             "end_offset": end_offset,
+            "expected_hash": self._expected_observation_hash(
+                next(plan for plan in self.manifest.plans if plan.image_id == image_id)
+            ),
             "rows_sha256": rows_hash,
             "row_count": len(observation_ids),
         }

@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+from dataclasses import replace
 from pathlib import Path
 import tempfile
 import unittest
@@ -48,7 +49,223 @@ def _record(image_id: str, object_id: int, bbox=(10.0, 10.0, 30.0, 30.0)) -> Nat
 
 
 class FactorObserverFoundationTest(unittest.TestCase):
-    def _manifest(self, root: Path, *, nodes=(11,)):
+    @staticmethod
+    def _condition_kwargs(**overrides):
+        values = {
+            "image_id": "a",
+            "seed": 17,
+            "object_id": 1,
+            "class_id": 0,
+            "class_name": "Car",
+            "bbox_xyxy": (10.0, 10.0, 30.0, 30.0),
+            "box_height": 20.0,
+            "natural_sampling": 0.1,
+            "natural_visibility": 0.2,
+            "region_role": "target",
+            "intervention_kind": "natural",
+            "intervention_factor": None,
+            "intervention_severity": 0.0,
+            "pair_id": None,
+            "condition_id": "cd" * 32,
+            "transform_id": "ef" * 32,
+            "source_sha256": "ab" * 32,
+            "matched_background_bbox": None,
+        }
+        values.update(overrides)
+        return values
+
+    def test_direct_condition_schema_rejects_bad_ids_and_class_names(self) -> None:
+        from ifdr_yolo.eval.factor_observer import ObservationCondition
+
+        for field in ("condition_id", "transform_id", "source_sha256"):
+            with self.subTest(field=field):
+                with self.assertRaisesRegex(ValueError, "lowercase|hex"):
+                    ObservationCondition(**self._condition_kwargs(**{field: "A" * 64}))
+                with self.assertRaisesRegex(ValueError, "lowercase|hex"):
+                    ObservationCondition(**self._condition_kwargs(**{field: "g" * 64}))
+        for class_id, class_name in ((0, "Pedestrian"), (1, "Car"), (2, "Pedestrian")):
+            with self.subTest(class_id=class_id, class_name=class_name):
+                with self.assertRaisesRegex(ValueError, "class_name"):
+                    ObservationCondition(**self._condition_kwargs(class_id=class_id, class_name=class_name))
+
+        controlled = self._condition_kwargs(
+            intervention_kind="sampling",
+            intervention_factor="sampling",
+            intervention_severity=0.5,
+            pair_id="12" * 32,
+            matched_background_bbox=(40.0, 10.0, 60.0, 30.0),
+        )
+        with self.assertRaisesRegex(ValueError, "lowercase|hex"):
+            ObservationCondition(**{**controlled, "pair_id": "A" * 64})
+
+        canonical = ObservationCondition(
+            **{**controlled, "intervention_severity": 0.1 + 0.15}
+        )
+        self.assertEqual(canonical.intervention_severity, 0.25)
+        with self.assertRaisesRegex(ValueError, "registered"):
+            ObservationCondition(**{**controlled, "intervention_severity": 0.33})
+
+    def test_direct_condition_schema_requires_natural_and_controlled_shapes(self) -> None:
+        from ifdr_yolo.eval.factor_observer import ObservationCondition
+
+        natural = self._condition_kwargs()
+        for field, value in (
+            ("intervention_factor", "sampling"),
+            ("pair_id", "12" * 32),
+            ("matched_background_bbox", (40.0, 10.0, 60.0, 30.0)),
+            ("region_role", "background"),
+            ("intervention_severity", 0.1),
+        ):
+            with self.subTest(field=field):
+                with self.assertRaises(ValueError):
+                    ObservationCondition(**{**natural, field: value})
+
+        clean = self._condition_kwargs(
+            intervention_kind="clean",
+            intervention_factor="sampling",
+            intervention_severity=0.0,
+            pair_id="12" * 32,
+            matched_background_bbox=(40.0, 10.0, 60.0, 30.0),
+        )
+        ObservationCondition(**clean)
+        for field, value in (
+            ("intervention_severity", 0.25),
+            ("matched_background_bbox", None),
+            ("intervention_factor", None),
+        ):
+            with self.subTest(field=field):
+                with self.assertRaises(ValueError):
+                    ObservationCondition(**{**clean, field: value})
+
+        for kind, factor, severity in (
+            ("sampling", "visibility", 0.5),
+            ("sampling", "sampling", 0.0),
+            ("visibility", "visibility", 0.0),
+        ):
+            with self.subTest(kind=kind, factor=factor, severity=severity):
+                with self.assertRaises(ValueError):
+                    ObservationCondition(
+                        **{
+                            **clean,
+                            "intervention_kind": kind,
+                            "intervention_factor": factor,
+                            "intervention_severity": severity,
+                        }
+                    )
+
+        with self.assertRaises(ValueError):
+            ObservationCondition(**{**clean, "region_role": "background", "bbox_xyxy": (41.0, 10.0, 61.0, 30.0)})
+
+    def test_direct_manifest_and_plan_hashes_require_lowercase_hex(self) -> None:
+        from ifdr_yolo.eval.factor_observer import FactorObservationManifest, ImageObservationPlan
+
+        with tempfile.TemporaryDirectory() as directory:
+            manifest = self._manifest(Path(directory))
+            with self.assertRaisesRegex(ValueError, "lowercase|hex"):
+                FactorObservationManifest(
+                    plans=manifest.plans,
+                    checkpoint_sha256="A" * 64,
+                    seed=manifest.seed,
+                    required_nodes=manifest.required_nodes,
+                    input_size=manifest.input_size,
+                )
+            with self.assertRaisesRegex(ValueError, "lowercase|hex"):
+                ImageObservationPlan(
+                    image_id=manifest.plans[0].image_id,
+                    image_path=manifest.plans[0].image_path,
+                    width=manifest.plans[0].width,
+                    height=manifest.plans[0].height,
+                    source_sha256=manifest.plans[0].source_sha256,
+                    conditions=manifest.plans[0].conditions,
+                    expected_observation_ids=("A" * 64,) + manifest.plans[0].expected_observation_ids[1:],
+                )
+
+    def test_condition_height_and_plan_order_bounds_are_strict(self) -> None:
+        from ifdr_yolo.eval.factor_observer import ImageObservationPlan, ObservationCondition
+
+        with tempfile.TemporaryDirectory() as directory:
+            manifest = self._manifest(Path(directory))
+            plan = manifest.plans[0]
+            natural = plan.conditions[0]
+            with self.assertRaisesRegex(ValueError, "box_height"):
+                ObservationCondition(**{**natural.to_dict(), "bbox_xyxy": list(natural.bbox_xyxy), "box_height": 19.0, "matched_background_bbox": None})
+            with self.assertRaises(ValueError):
+                ImageObservationPlan(
+                    image_id=plan.image_id,
+                    image_path=plan.image_path,
+                    width=plan.width,
+                    height=plan.height,
+                    source_sha256=plan.source_sha256,
+                    conditions=tuple(reversed(plan.conditions)),
+                    expected_observation_ids=plan.expected_observation_ids,
+                )
+            outside = replace(natural, bbox_xyxy=(-1.0, 10.0, 30.0, 30.0))
+            altered = (outside,) + plan.conditions[1:]
+            with self.assertRaisesRegex(ValueError, "image bounds"):
+                ImageObservationPlan(
+                    image_id=plan.image_id,
+                    image_path=plan.image_path,
+                    width=plan.width,
+                    height=plan.height,
+                    source_sha256=plan.source_sha256,
+                    conditions=altered,
+                    expected_observation_ids=plan.expected_observation_ids,
+                )
+
+    def test_plan_rejects_controlled_pair_and_cross_condition_inconsistency(self) -> None:
+        from ifdr_yolo.eval.factor_observer import ImageObservationPlan
+
+        with tempfile.TemporaryDirectory() as directory:
+            manifest = self._manifest(Path(directory))
+            plan = manifest.plans[0]
+            controlled_index = next(
+                index for index, condition in enumerate(plan.conditions)
+                if condition.intervention_kind == "sampling"
+            )
+            controlled = plan.conditions[controlled_index]
+            wrong_background = replace(
+                controlled,
+                bbox_xyxy=plan.conditions[0].bbox_xyxy,
+                matched_background_bbox=plan.conditions[0].bbox_xyxy,
+            )
+            altered = list(plan.conditions)
+            altered[controlled_index] = wrong_background
+            with self.assertRaisesRegex(ValueError, "IoU|background"):
+                ImageObservationPlan(
+                    image_id=plan.image_id,
+                    image_path=plan.image_path,
+                    width=plan.width,
+                    height=plan.height,
+                    source_sha256=plan.source_sha256,
+                    conditions=tuple(altered),
+                    expected_observation_ids=plan.expected_observation_ids,
+                )
+            missing = tuple(item for index, item in enumerate(plan.conditions) if index != controlled_index)
+            with self.assertRaisesRegex(ValueError, "pair|condition"):
+                ImageObservationPlan(
+                    image_id=plan.image_id,
+                    image_path=plan.image_path,
+                    width=plan.width,
+                    height=plan.height,
+                    source_sha256=plan.source_sha256,
+                    conditions=missing,
+                    expected_observation_ids=plan.expected_observation_ids,
+                )
+            inconsistent = replace(controlled, source_sha256="cd" * 32)
+            altered = list(plan.conditions)
+            altered[controlled_index] = inconsistent
+            with self.assertRaisesRegex(ValueError, "source|consistent"):
+                ImageObservationPlan(
+                    image_id=plan.image_id,
+                    image_path=plan.image_path,
+                    width=plan.width,
+                    height=plan.height,
+                    source_sha256=plan.source_sha256,
+                    conditions=tuple(altered),
+                    expected_observation_ids=plan.expected_observation_ids,
+                )
+
+    def _manifest(self, root: Path, *, nodes=(11, 14, 17, 20, 23, 26)):
         from ifdr_yolo.eval.factor_observer import build_factor_observation_manifest
 
         image_paths = {}
@@ -84,17 +301,18 @@ class FactorObserverFoundationTest(unittest.TestCase):
                 {("a", 1)},
                 "ab" * 32,
                 17,
-                required_nodes=(11,),
+                required_nodes=(11, 14, 17, 20, 23, 26),
                 input_size=64,
             )
             self.assertEqual(first.hash(), second.hash())
             self.assertEqual(first.image_ids, ("a", "b"))
             self.assertEqual(len(first.plans[0].conditions), 21)
-            self.assertEqual(first.expected_observation_count, 22)
+            self.assertEqual(first.expected_observation_count, 132)
             self.assertEqual(
                 set(first.plans[0].expected_observation_ids),
-                set(first.expected_observation_ids[:21]),
+                set(first.expected_observation_ids[:126]),
             )
+            self.assertEqual(len(first.plans[0].expected_observation_ids), len(first.plans[0].conditions) * 6)
             selected = [
                 condition
                 for condition in first.plans[0].conditions
@@ -116,6 +334,101 @@ class FactorObserverFoundationTest(unittest.TestCase):
                 0.05,
             )
 
+    def test_transform_ids_reuse_source_and_distinguish_interventions(self) -> None:
+        from ifdr_yolo.eval.factor_observer import build_factor_observation_manifest
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "a.png"
+            encoded_ok, encoded = cv2.imencode(
+                ".png", np.full((100, 140, 3), 77, dtype=np.uint8)
+            )
+            self.assertTrue(encoded_ok)
+            path.write_bytes(encoded.tobytes())
+            records = (
+                _record("a", 1, (10.0, 10.0, 30.0, 30.0)),
+                _record("a", 2, (60.0, 10.0, 80.0, 30.0)),
+            )
+            kwargs = {
+                "records": records,
+                "image_paths": {"a": path},
+                "selected_intervention_objects": {("a", 1), ("a", 2)},
+                "checkpoint_sha256": "ab" * 32,
+                "seed": 17,
+                "required_nodes": (11, 14, 17, 20, 23, 26),
+                "input_size": 64,
+            }
+            manifest = build_factor_observation_manifest(**kwargs)
+            repeated = build_factor_observation_manifest(
+                **{**kwargs, "records": tuple(reversed(records))}
+            )
+            plan = manifest.plans[0]
+            repeated_plan = repeated.plans[0]
+            source_conditions = [
+                condition
+                for condition in plan.conditions
+                if condition.intervention_kind in {"natural", "clean"}
+            ]
+            self.assertTrue(source_conditions)
+            self.assertEqual(len({condition.transform_id for condition in source_conditions}), 1)
+
+            def transform_map(current_plan):
+                return {
+                    (
+                        condition.object_id,
+                        condition.intervention_kind,
+                        condition.intervention_factor,
+                        condition.intervention_severity,
+                        condition.region_role,
+                    ): condition.transform_id
+                    for condition in current_plan.conditions
+                }
+
+            transforms = transform_map(plan)
+            self.assertEqual(transforms, transform_map(repeated_plan))
+            nonzero = {
+                key: value
+                for key, value in transforms.items()
+                if key[3] > 0.0
+            }
+            self.assertEqual(len(nonzero), len(set(nonzero.values())))
+            self.assertNotEqual(
+                transforms[(1, "sampling", "sampling", 0.25, "target")],
+                transforms[(1, "visibility", "visibility", 0.25, "target")],
+            )
+            self.assertNotEqual(
+                transforms[(1, "sampling", "sampling", 0.25, "target")],
+                transforms[(1, "sampling", "sampling", 0.5, "target")],
+            )
+            self.assertNotEqual(
+                transforms[(1, "sampling", "sampling", 0.25, "target")],
+                transforms[(1, "sampling", "sampling", 0.25, "background")],
+            )
+
+    def test_plan_rejects_noncanonical_transform_identity(self) -> None:
+        from ifdr_yolo.eval.factor_observer import ImageObservationPlan
+
+        with tempfile.TemporaryDirectory() as directory:
+            manifest = self._manifest(Path(directory))
+            plan = manifest.plans[0]
+            index = next(
+                index
+                for index, condition in enumerate(plan.conditions)
+                if condition.intervention_kind == "sampling"
+            )
+            altered = list(plan.conditions)
+            altered[index] = replace(altered[index], transform_id="12" * 32)
+            with self.assertRaisesRegex(ValueError, "transform"):
+                ImageObservationPlan(
+                    image_id=plan.image_id,
+                    image_path=plan.image_path,
+                    width=plan.width,
+                    height=plan.height,
+                    source_sha256=plan.source_sha256,
+                    conditions=tuple(altered),
+                    expected_observation_ids=plan.expected_observation_ids,
+                )
+
     def test_manifest_rejects_identity_selection_and_background_failures(self) -> None:
         from ifdr_yolo.eval.factor_observer import build_factor_observation_manifest
 
@@ -130,7 +443,7 @@ class FactorObserverFoundationTest(unittest.TestCase):
                 "image_paths": {"a": path},
                 "checkpoint_sha256": "ab" * 32,
                 "seed": 17,
-                "required_nodes": (11,),
+                "required_nodes": (11, 14, 17, 20, 23, 26),
                 "input_size": 64,
             }
             with self.assertRaisesRegex(ValueError, "unknown"):
@@ -145,11 +458,41 @@ class FactorObserverFoundationTest(unittest.TestCase):
                     set(),
                     kwargs["checkpoint_sha256"],
                     kwargs["seed"],
-                    required_nodes=(11,),
+                    required_nodes=(11, 14, 17, 20, 23, 26),
                     input_size=64,
                 )
             with self.assertRaisesRegex(ValueError, "SHA-256"):
                 build_factor_observation_manifest(selected_intervention_objects=set(), checkpoint_sha256="bad", **{key: value for key, value in kwargs.items() if key != "checkpoint_sha256"})
+
+    def test_required_nodes_are_the_registered_six_only(self) -> None:
+        from ifdr_yolo.eval.factor_observer import FactorObservationManifest, build_factor_observation_manifest
+
+        registered = (11, 14, 17, 20, 23, 26)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = self._manifest(root)
+            image_paths = {plan.image_id: plan.image_path for plan in manifest.plans}
+            records = (_record("a", 1), _record("b", 2))
+            for nodes in ((11,), (14, 11, 17, 20, 23, 26), registered + (29,)):
+                with self.subTest(nodes=nodes):
+                    with self.assertRaises(ValueError):
+                        build_factor_observation_manifest(
+                            records,
+                            image_paths,
+                            {("a", 1)},
+                            "ab" * 32,
+                            17,
+                            required_nodes=nodes,
+                            input_size=64,
+                        )
+                    with self.assertRaises(ValueError):
+                        FactorObservationManifest(
+                            plans=manifest.plans,
+                            checkpoint_sha256=manifest.checkpoint_sha256,
+                            seed=manifest.seed,
+                            required_nodes=nodes,
+                            input_size=manifest.input_size,
+                        )
 
     def test_letterbox_edges_and_multiple_feature_maps_are_clipped(self) -> None:
         from ifdr_yolo.eval.factor_observer import letterbox_image, map_box_to_feature_roi
@@ -183,7 +526,7 @@ class FactorObserverFoundationTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            manifest = self._manifest(root, nodes=(11,))
+            manifest = self._manifest(root)
             output = root / "rows.jsonl"
             progress = root / "progress.json"
             journal = FactorObservationJournal(manifest, output, progress)
@@ -209,7 +552,7 @@ class FactorObserverFoundationTest(unittest.TestCase):
 
             with output.open("ab") as handle:
                 handle.write(b"{bad")
-            with self.assertRaisesRegex(ValueError, "unterminated|malformed"):
+            with self.assertRaisesRegex(ValueError, "unterminated|malformed|suffix"):
                 FactorObservationJournal(manifest, output, progress)
 
     def test_journal_rejects_hash_drift_identity_variants_and_missing_finalize(self) -> None:
@@ -217,7 +560,7 @@ class FactorObserverFoundationTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            manifest = self._manifest(root, nodes=(11,))
+            manifest = self._manifest(root)
             output, progress = root / "rows.jsonl", root / "progress.json"
             journal = FactorObservationJournal(manifest, output, progress)
             plan = manifest.plans[0]
@@ -239,7 +582,7 @@ class FactorObserverFoundationTest(unittest.TestCase):
                 {("a", 1)},
                 "cd" * 32,
                 17,
-                required_nodes=(11,),
+                required_nodes=(11, 14, 17, 20, 23, 26),
                 input_size=64,
             )
             with self.assertRaisesRegex(ValueError, "hash"):
@@ -251,13 +594,140 @@ class FactorObserverFoundationTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            manifest = self._manifest(root, nodes=(11,))
+            manifest = self._manifest(root)
             journal = FactorObservationJournal(manifest, root / "rows.jsonl", root / "progress.json")
             plan = manifest.plans[0]
             rows = [{"observation_id": item, "image_id": plan.image_id} for item in plan.expected_observation_ids]
             with patch("ifdr_yolo.eval.factor_observer.os.fsync", wraps=os_fsync) as fsync:
                 journal.commit_image("a", rows)
             self.assertGreaterEqual(fsync.call_count, 2)
+
+    def test_journal_rejects_forged_inflight_progress_without_mutation(self) -> None:
+        from ifdr_yolo.eval.factor_observer import FactorObservationJournal
+
+        cases = [
+            ("extra field", lambda value: value.update(extra=True)),
+            ("missing field", lambda value: value.pop("expected_hash")),
+            ("unknown image", lambda value: value.update(image_id="unknown")),
+            ("float offset", lambda value: value.update(start_offset=1.2)),
+            ("bool offset", lambda value: value.update(start_offset=True)),
+            ("offset beyond file", lambda value: value.update(start_offset=10**9)),
+            ("uppercase hash", lambda value: value.update(expected_hash="A" * 64)),
+            ("wrong hash", lambda value: value.update(expected_hash="0" * 64)),
+            ("bool row count", lambda value: value.update(expected_row_count=True)),
+            ("float row count", lambda value: value.update(expected_row_count=1.0)),
+            ("wrong row count", lambda value: value.update(expected_row_count=0)),
+        ]
+        for name, mutate in cases:
+            with self.subTest(case=name):
+                with tempfile.TemporaryDirectory() as directory:
+                    root = Path(directory)
+                    manifest = self._manifest(root)
+                    output = root / "rows.jsonl"
+                    progress = root / "progress.json"
+                    journal = FactorObservationJournal(manifest, output, progress)
+                    plan = manifest.plans[1]
+                    rows = [{"observation_id": item, "image_id": plan.image_id} for item in plan.expected_observation_ids]
+
+                    def crash(_phase: str) -> None:
+                        raise RuntimeError("power loss")
+
+                    with self.assertRaises(RuntimeError):
+                        journal.commit_image(plan.image_id, rows, crash_hook=crash)
+                    progress_payload = json.loads(progress.read_text())
+                    original_output = output.read_bytes()
+                    mutate(progress_payload["inflight"])
+                    progress.write_text(json.dumps(progress_payload, sort_keys=True) + "\n")
+                    forged_progress = progress.read_text()
+                    with self.assertRaises(ValueError):
+                        FactorObservationJournal(manifest, output, progress)
+                    self.assertEqual(output.read_bytes(), original_output)
+                    self.assertEqual(progress.read_text(), forged_progress)
+
+        # A valid transaction for an already completed image is also forged by
+        # changing only the inflight identity; it must not truncate/clear.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = self._manifest(root)
+            output, progress = root / "rows.jsonl", root / "progress.json"
+            journal = FactorObservationJournal(manifest, output, progress)
+            first = manifest.plans[0]
+            first_rows = [{"observation_id": item, "image_id": first.image_id} for item in first.expected_observation_ids]
+            journal.commit_image(first.image_id, first_rows)
+            second = manifest.plans[1]
+            second_rows = [{"observation_id": item, "image_id": second.image_id} for item in second.expected_observation_ids]
+
+            def crash(_phase: str) -> None:
+                raise RuntimeError("power loss")
+
+            with self.assertRaises(RuntimeError):
+                journal.commit_image(second.image_id, second_rows, crash_hook=crash)
+            payload = json.loads(progress.read_text())
+            payload["inflight"]["image_id"] = first.image_id
+            before_output = output.read_bytes()
+            progress.write_text(json.dumps(payload, sort_keys=True) + "\n")
+            forged_progress = progress.read_text()
+            with self.assertRaises(ValueError):
+                FactorObservationJournal(manifest, output, progress)
+            self.assertEqual(output.read_bytes(), before_output)
+            self.assertEqual(progress.read_text(), forged_progress)
+
+    def test_journal_rejects_inflight_offset_before_completed_prefix(self) -> None:
+        from ifdr_yolo.eval.factor_observer import FactorObservationJournal
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = self._manifest(root)
+            output, progress = root / "rows.jsonl", root / "progress.json"
+            journal = FactorObservationJournal(manifest, output, progress)
+            first, second = manifest.plans
+            first_rows = [{"observation_id": item, "image_id": first.image_id} for item in first.expected_observation_ids]
+            second_rows = [{"observation_id": item, "image_id": second.image_id} for item in second.expected_observation_ids]
+            journal.commit_image(first.image_id, first_rows)
+
+            def crash(_phase: str) -> None:
+                raise RuntimeError("power loss")
+
+            with self.assertRaises(RuntimeError):
+                journal.commit_image(second.image_id, second_rows, crash_hook=crash)
+            payload = json.loads(progress.read_text())
+            payload["inflight"]["start_offset"] = 0
+            progress.write_text(json.dumps(payload, sort_keys=True) + "\n")
+            forged_progress = progress.read_text()
+            before_output = output.read_bytes()
+            with self.assertRaises(ValueError):
+                FactorObservationJournal(manifest, output, progress)
+            self.assertEqual(output.read_bytes(), before_output)
+            self.assertEqual(progress.read_text(), forged_progress)
+
+    def test_journal_rejects_completed_prefix_corruption_before_any_recovery(self) -> None:
+        from ifdr_yolo.eval.factor_observer import FactorObservationJournal
+
+        for corruption in ("truncate", "byte", "offset"):
+            with self.subTest(corruption=corruption), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                manifest = self._manifest(root)
+                output, progress = root / "rows.jsonl", root / "progress.json"
+                journal = FactorObservationJournal(manifest, output, progress)
+                plan = manifest.plans[0]
+                rows = [{"observation_id": item, "image_id": plan.image_id} for item in plan.expected_observation_ids]
+                journal.commit_image(plan.image_id, rows)
+                if corruption == "truncate":
+                    output.write_bytes(output.read_bytes()[:-1])
+                elif corruption == "byte":
+                    data = bytearray(output.read_bytes())
+                    data[0] = ord("{") if data[0] != ord("{") else ord("[")
+                    output.write_bytes(bytes(data))
+                else:
+                    payload = json.loads(progress.read_text())
+                    payload["completed"][plan.image_id]["end_offset"] = 0
+                    progress.write_text(json.dumps(payload, sort_keys=True) + "\n")
+                forged_output = output.read_bytes()
+                forged_progress = progress.read_text()
+                with self.assertRaises(ValueError):
+                    FactorObservationJournal(manifest, output, progress)
+                self.assertEqual(output.read_bytes(), forged_output)
+                self.assertEqual(progress.read_text(), forged_progress)
 
 
 def _iou(left, right):
