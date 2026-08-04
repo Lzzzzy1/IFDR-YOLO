@@ -137,6 +137,36 @@ def _runner_fixture(directory: str):
     return image_path, manifest
 
 
+def _runner_fixture_two(directory: str):
+    root = Path(directory)
+    first_path, _ = _runner_fixture(directory)
+    second_path = root / "runner-image-2.png"
+    second_path.write_bytes(first_path.read_bytes())
+    second_record = NaturalDegradationRecord(
+        image_id="runner-image-2",
+        object_id=0,
+        class_id=0,
+        class_name="Car",
+        bbox_xyxy=(8.0, 8.0, 16.0, 16.0),
+        box_height=8.0,
+        depth_m=20.0,
+        depth_available=True,
+        occlusion_level=0,
+        truncation=0.0,
+        sampling_score=0.1,
+        visibility_score=0.2,
+    )
+    manifest = build_factor_observation_manifest(
+        [_runner_record(), second_record],
+        {"runner-image": first_path, "runner-image-2": second_path},
+        [("runner-image", 0), ("runner-image-2", 0)],
+        "ab" * 32,
+        seed=17,
+        input_size=32,
+    )
+    return manifest
+
+
 class LoadedIFDRCheckpointTest(unittest.TestCase):
     def test_loader_prefers_ema_and_records_hash_device_and_eval(self) -> None:
         from ifdr_yolo.eval.factor_observer_runtime import load_ifdr_checkpoint
@@ -518,6 +548,71 @@ class FactorObserverRunnerTest(unittest.TestCase):
                     ),
                 )
                 self.assertEqual(spec.seed, _transform_seed_for_condition(condition))
+
+    def test_completed_image_rechecks_png_before_zero_forward_skip(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            image_path, manifest = _runner_fixture(directory)
+            output = Path(directory) / "observations.jsonl"
+            progress = Path(directory) / "progress.json"
+            run_factor_observer(
+                LoadedIFDRCheckpoint(_RunnerModel(), manifest.checkpoint_sha256),
+                manifest,
+                FactorObservationJournal(manifest, output, progress),
+            )
+            image_path.write_bytes(image_path.read_bytes() + b"trailing-png-bytes")
+            second_model = _RunnerModel()
+            with self.assertRaisesRegex(ValueError, "source hash"):
+                run_factor_observer(
+                    LoadedIFDRCheckpoint(second_model, manifest.checkpoint_sha256),
+                    manifest,
+                    FactorObservationJournal(manifest, output, progress),
+                )
+            self.assertEqual(second_model.forward_calls, 0)
+
+    def test_manifest_hash_is_constant_per_run_not_per_row(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            _, manifest = _runner_fixture(directory)
+            output = Path(directory) / "observations.jsonl"
+            progress = Path(directory) / "progress.json"
+            journal = FactorObservationJournal(manifest, output, progress)
+            with patch.object(
+                type(manifest),
+                "hash",
+                wraps=manifest.hash,
+            ) as hash_method:
+                run_factor_observer(
+                    LoadedIFDRCheckpoint(_RunnerModel(), manifest.checkpoint_sha256),
+                    manifest,
+                    journal,
+                )
+            self.assertLessEqual(hash_method.call_count, 5)
+
+    def test_resume_validates_each_completed_image_block_in_stream_order(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            manifest = _runner_fixture_two(directory)
+            output = Path(directory) / "observations.jsonl"
+            progress = Path(directory) / "progress.json"
+            run_factor_observer(
+                LoadedIFDRCheckpoint(_RunnerModel(), manifest.checkpoint_sha256),
+                manifest,
+                FactorObservationJournal(manifest, output, progress),
+            )
+            from ifdr_yolo.eval import factor_observer_runtime as runtime
+
+            with patch.object(
+                runtime,
+                "validate_observation_rows",
+                wraps=runtime.validate_observation_rows,
+            ) as validator:
+                run_factor_observer(
+                    LoadedIFDRCheckpoint(_RunnerModel(), manifest.checkpoint_sha256),
+                    manifest,
+                    FactorObservationJournal(manifest, output, progress),
+                )
+            self.assertEqual(
+                [call.kwargs["plan"].image_id for call in validator.call_args_list],
+                list(manifest.image_ids),
+            )
 
 
 if __name__ == "__main__":

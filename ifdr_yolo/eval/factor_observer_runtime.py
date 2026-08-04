@@ -463,15 +463,18 @@ def validate_observation_row(
     node_id: int,
     observation_id: str,
     checkpoint_sha256: str,
+    manifest_sha256: str | None = None,
 ) -> dict[str, object]:
     """Validate one JSON-native row against its immutable plan identity."""
 
+    if manifest_sha256 is None:
+        manifest_sha256 = manifest.hash()
     value = _require_row_mapping(row)
     if set(value) != _OBSERVATION_ROW_FIELDS:
         raise ValueError("observation row fields do not match schema")
     if value.get("schema_version") != 1:
         raise ValueError("observation schema_version must be 1")
-    _row_equal(value.get("manifest_sha256"), manifest.hash(), "manifest_sha256")
+    _row_equal(value.get("manifest_sha256"), manifest_sha256, "manifest_sha256")
     _row_equal(value.get("observation_id"), observation_id, "observation_id")
     for field, expected in (
         ("condition_id", condition.condition_id),
@@ -596,9 +599,12 @@ def validate_observation_rows(
     manifest: FactorObservationManifest,
     plan: ImageObservationPlan,
     checkpoint_sha256: str,
+    manifest_sha256: str | None = None,
 ) -> tuple[dict[str, object], ...]:
     """Validate all rows for one image and require exact condition×node coverage."""
 
+    if manifest_sha256 is None:
+        manifest_sha256 = manifest.hash()
     materialized = tuple(rows)
     expected = _condition_observation_ids(plan, DEFAULT_REQUIRED_NODES)
     if len(materialized) != len(expected):
@@ -613,7 +619,7 @@ def validate_observation_rows(
         condition = condition_by_id.get(condition_id) if isinstance(condition_id, str) else None
         node_id = value.get("node_id")
         if condition is None or isinstance(node_id, bool) or not isinstance(node_id, int) or node_id not in node_set:
-            raise ValueError("observation condition/node does not match manifest")
+            raise ValueError("observation condition-by-node does not match manifest")
         observation_id = expected[(condition_id, node_id)]
         if observation_id in seen:
             raise ValueError("duplicate observation_id in image rows")
@@ -627,6 +633,7 @@ def validate_observation_rows(
                 node_id=node_id,
                 observation_id=observation_id,
                 checkpoint_sha256=checkpoint_sha256,
+                manifest_sha256=manifest_sha256,
             )
         )
     if seen != set(expected.values()):
@@ -638,8 +645,35 @@ def _read_existing_rows(
     journal: FactorObservationJournal,
     manifest: FactorObservationManifest,
     checkpoint_sha256: str,
-) -> dict[str, tuple[dict[str, object], ...]]:
-    by_image: dict[str, list[dict[str, object]]] = defaultdict(list)
+    manifest_sha256: str,
+) -> None:
+    plan_by_image = {plan.image_id: plan for plan in manifest.plans}
+    completed = journal.completed_image_ids
+    seen_images: set[str] = set()
+    current_image_id: str | None = None
+    current_rows: list[dict[str, object]] = []
+
+    def validate_block(image_id: str | None, rows: list[dict[str, object]]) -> None:
+        if image_id is None:
+            return
+        if image_id in seen_images:
+            raise ValueError("observation rows for one image are not contiguous")
+        plan = plan_by_image.get(image_id)
+        if plan is None:
+            raise ValueError("observation JSONL contains an unknown image")
+        if image_id not in completed:
+            raise ValueError("observation rows exist for an uncommitted image")
+        if not rows:
+            raise ValueError("completed image has no observation rows")
+        validate_observation_rows(
+            rows,
+            manifest=manifest,
+            plan=plan,
+            checkpoint_sha256=checkpoint_sha256,
+            manifest_sha256=manifest_sha256,
+        )
+        seen_images.add(image_id)
+
     try:
         handle = journal.output_path.open("rb")
     except OSError as exc:
@@ -659,23 +693,15 @@ def _read_existing_rows(
             image_id = value.get("image_id")
             if not isinstance(image_id, str):
                 raise ValueError("observation row image_id is invalid")
-            by_image[image_id].append(dict(value))
-    plan_by_image = {plan.image_id: plan for plan in manifest.plans}
-    if any(image_id not in plan_by_image for image_id in by_image):
-        raise ValueError("observation JSONL contains an unknown image")
-    validated: dict[str, tuple[dict[str, object], ...]] = {}
-    for image_id, plan in plan_by_image.items():
-        rows = by_image.get(image_id, [])
-        if rows:
-            validated[image_id] = validate_observation_rows(
-                rows,
-                manifest=manifest,
-                plan=plan,
-                checkpoint_sha256=checkpoint_sha256,
-            )
-        elif journal.is_completed(image_id):
-            raise ValueError("completed image has no observation rows")
-    return validated
+            if image_id != current_image_id:
+                validate_block(current_image_id, current_rows)
+                current_image_id = image_id
+                current_rows = []
+            current_rows.append(dict(value))
+    validate_block(current_image_id, current_rows)
+    missing = completed - seen_images
+    if missing:
+        raise ValueError("completed image has no observation rows")
 
 
 def _intervention_spec(
@@ -712,6 +738,7 @@ def _intervention_spec(
 def _observation_row(
     *,
     manifest: FactorObservationManifest,
+    manifest_sha256: str,
     plan: ImageObservationPlan,
     condition: ObservationCondition,
     node: PooledReliability,
@@ -722,7 +749,7 @@ def _observation_row(
     matched = condition.matched_background_bbox
     row: dict[str, object] = {
         "schema_version": 1,
-        "manifest_sha256": manifest.hash(),
+        "manifest_sha256": manifest_sha256,
         "observation_id": observation_id,
         "condition_id": condition.condition_id,
         "transform_id": condition.transform_id,
@@ -772,28 +799,34 @@ def run_factor_observer(
         raise ValueError("manifest must be a FactorObservationManifest")
     if not isinstance(journal, FactorObservationJournal):
         raise ValueError("journal must be a FactorObservationJournal")
+    manifest_sha256 = manifest.hash()
     if loaded.checkpoint_sha256 != manifest.checkpoint_sha256:
         raise ValueError("checkpoint hash does not match manifest")
-    if journal.manifest.hash() != manifest.hash():
+    if journal.manifest != manifest:
         raise ValueError("journal manifest does not match manifest")
     if journal.manifest.checkpoint_sha256 != loaded.checkpoint_sha256:
         raise ValueError("journal checkpoint hash does not match checkpoint")
     if isinstance(transform_batch_size, bool) or type(transform_batch_size) is not int or transform_batch_size <= 0:
         raise ValueError("transform_batch_size must be a positive integer")
 
-    _read_existing_rows(journal, manifest, loaded.checkpoint_sha256)
+    _read_existing_rows(
+        journal,
+        manifest,
+        loaded.checkpoint_sha256,
+        manifest_sha256,
+    )
     model = loaded.model
     device = _model_device(model)
     model.eval()
     nodes = manifest.required_nodes
     for plan in manifest.plans:
-        if journal.is_completed(plan.image_id):
-            continue
         image, width, height, source_sha256 = _read_png_once(plan.image_path)
         if width != plan.width or height != plan.height:
             raise ValueError(f"image dimensions do not match manifest for {plan.image_id}")
         if source_sha256 != plan.source_sha256:
             raise ValueError(f"image source hash does not match manifest for {plan.image_id}")
+        if journal.is_completed(plan.image_id):
+            continue
         grouped: dict[str, list[ObservationCondition]] = defaultdict(list)
         for condition in plan.conditions:
             grouped[condition.transform_id].append(condition)
@@ -841,6 +874,7 @@ def run_factor_observer(
                         rows.append(
                             _observation_row(
                                 manifest=manifest,
+                                manifest_sha256=manifest_sha256,
                                 plan=plan,
                                 condition=condition,
                                 node=node,
@@ -855,6 +889,7 @@ def run_factor_observer(
             manifest=manifest,
             plan=plan,
             checkpoint_sha256=loaded.checkpoint_sha256,
+            manifest_sha256=manifest_sha256,
         )
         if len(validated) != len(plan.expected_observation_ids):
             raise ValueError("generated observation rows do not match manifest")
