@@ -10,6 +10,7 @@ described as original when it appears under `Prior work we must cite`.
 | Topic used in IFDR-YOLO | Citation | What it supports | Originality boundary |
 |---|---|---|---|
 | KITTI data, labels and evaluation | Geiger et al., *Are We Ready for Autonomous Driving? The KITTI Vision Benchmark Suite*, CVPR 2012. https://www.cvlibs.net/publications/Geiger2012CVPR.pdf | Dataset and road-scene benchmark | KITTI and its difficulty definitions are not ours |
+| BDD100K cross-domain validation | Yu et al., *BDD100K: A Diverse Driving Dataset for Heterogeneous Multitask Learning*, CVPR 2020. https://openaccess.thecvf.com/content_CVPR_2020/html/Yu_BDD100K_A_Diverse_Driving_Dataset_for_Heterogeneous_Multitask_Learning_CVPR_2020_paper.html | Diverse driving-domain validation | BDD100K and its diversity claims are not ours |
 | Feature pyramids | Lin et al., *Feature Pyramid Networks for Object Detection*, CVPR 2017. https://openaccess.thecvf.com/content_cvpr_2017/html/Lin_Feature_Pyramid_Networks_CVPR_2017_paper.html | Multi-scale top-down/lateral features | Pyramid detection is not ours |
 | Bottom-up pyramid aggregation | Liu et al., *Path Aggregation Network for Instance Segmentation*, CVPR 2018. https://openaccess.thecvf.com/content_cvpr_2018/html/Liu_Path_Aggregation_Network_CVPR_2018_paper.html | PAN/FPN background used by YOLO necks | Bidirectional paths alone are not ours |
 | Weighted bidirectional fusion | Tan et al., *EfficientDet: Scalable and Efficient Object Detection*, CVPR 2020. https://openaccess.thecvf.com/content_CVPR_2020/html/Tan_EfficientDet_Scalable_and_Efficient_Object_Detection_CVPR_2020_paper.html | BiFPN-style learnable fusion weights | Generic adaptive weighted fusion is not ours |
@@ -24,6 +25,7 @@ described as original when it appears under `Prior work we must cite`.
 | Small-object localization gradients | Sun et al., *Uncertainty-Aware Gradient Stabilization for Small Object Detection*, ICCV 2025. https://openaccess.thecvf.com/content/ICCV2025/html/Sun_Uncertainty-Aware_Gradient_Stabilization_for_Small_Object_Detection_ICCV_2025_paper.html | Small boxes can have sharper localization curvature | Generic small-object gradient stabilization is not ours |
 | Gradient-conflict projection | Yu et al., *Gradient Surgery for Multi-Task Learning (PCGrad)*, NeurIPS 2020. https://proceedings.neurips.cc/paper_files/paper/2020/hash/3fe78a8acf5fda99de95303940a2420c-Abstract.html | Conflicting auxiliary gradients can be projected | Generic gradient surgery is not ours |
 | Validation-aware negative-transfer control | Jiang et al., *ForkMerge*, NeurIPS 2023. https://proceedings.neurips.cc/paper_files/paper/2023/hash/60f9118a849e8e9a0c67e2a36ad80ebf-Abstract-Conference.html | Auxiliary tasks can hurt the target despite optimization fixes | Generic auxiliary-task filtering is not ours |
+| Multi-objective conflict control | Liu et al., *Conflict-Averse Gradient Descent for Multi-task Learning*, NeurIPS 2021. https://proceedings.neurips.cc/paper/2021/hash/9d27fdf2477ffbff837d73ef7ae23db9-Abstract.html | Worst-task-aware conflict control and Pareto motivation | CAGrad and generic Pareto optimization are not ours |
 
 ## Candidate baselines that require citation if implemented
 
@@ -32,6 +34,33 @@ described as original when it appears under `Prior work we must cite`.
 - GradNorm: https://proceedings.mlr.press/v80/chen18a.html
 - ScaleKD: https://openaccess.thecvf.com/content/CVPR2023/html/Zhu_ScaleKD_Distilling_Scale-Aware_Knowledge_in_Small_Object_Detector_CVPR_2023_paper.html
 - Data-centric long-tailed sample selection (LTTSS): https://openaccess.thecvf.com/content/ACCV2022/html/Xu_Boosting_Dense_Long-Tailed_Object_Detection_from_Data-Centric_View_ACCV_2022_paper.html
+- SimLTD staged head-to-tail transfer: https://openaccess.thecvf.com/content/CVPR2025/html/Tran_SimLTD_Simple_Supervised_and_Semi-Supervised_Long-Tailed_Object_Detection_CVPR_2025_paper.html
+- Counterfactual and invariant visual data generation: https://openaccess.thecvf.com/content/CVPR2021/html/Chang_Towards_Robust_Classification_Model_by_Counterfactual_and_Invariant_Data_Generation_CVPR_2021_paper.html
+
+## Literature-backed time-saving route
+
+The preferred next intervention is a degradation-aware staged fine-tuning
+protocol initialized from the accepted protected IFDR checkpoint:
+
+1. Reuse the accepted all-class checkpoint as the shared road-scene
+   representation instead of restarting from ImageNet weights.
+2. Perform a short Cyclist-focused stage whose sampling priority is conditioned
+   on KITTI scale, depth, occlusion and truncation, not class identity alone.
+3. Perform a low-learning-rate balanced recovery stage over all classes.
+4. Select the checkpoint with an explicit no-harm gate over Car, Pedestrian and
+   Cyclist, then confirm a winning recipe with three seeds.
+
+This protocol is inspired by SimLTD's head-to-tail transfer, LOCE's
+head/tail-equilibrium goal, SNIP's scale-conditioned training and LTTSS's
+rare-class positive allocation. The joint degradation score, protected IFDR
+initialization, instance-level road-scene conditioning and no-harm gate are the
+parts that must be evaluated as IFDR-YOLO contributions.
+
+Required controls are: equal-budget ordinary fine-tuning, class-only sampling,
+degradation-only sampling without balanced recovery, and the full staged
+protocol. PCGrad or CAGrad is a strong optimization baseline for semantic
+protection but must not silently replace the existing protected/unprotected
+matched control.
 
 ## IFDR-YOLO contribution boundary
 
@@ -64,4 +93,5 @@ learning, adaptive assignment or gradient surgery individually as new.
 - Do not copy figures, tables or prose; redraw figures from our own model and
   report our own measurements.
 - Every experiment configuration must record which cited baseline it realizes.
-
+- Use `counterfactual-inspired intervention` rather than a causal claim unless
+  the intervention validity and causal assumptions are explicitly tested.
