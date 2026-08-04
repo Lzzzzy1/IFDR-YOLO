@@ -390,6 +390,7 @@ class FactorObserverFoundationTest(unittest.TestCase):
             )
             self.assertEqual(first.hash(), second.hash())
             self.assertEqual(first.image_ids, ("a", "b"))
+            self.assertEqual(first.to_dict()["registered_severities"], [0.25, 0.5, 0.75, 1.0])
             self.assertEqual(len(first.plans[0].conditions), 21)
             self.assertEqual(first.expected_observation_count, 132)
             self.assertEqual(
@@ -663,6 +664,58 @@ class FactorObserverFoundationTest(unittest.TestCase):
                 handle.write(b"{bad")
             with self.assertRaisesRegex(ValueError, "unterminated|malformed|suffix"):
                 FactorObservationJournal(manifest, output, progress)
+
+    def test_journal_commit_uses_cached_prefix_without_scanning(self) -> None:
+        from unittest.mock import patch
+        from ifdr_yolo.eval.factor_observer import FactorObservationJournal
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = self._manifest(root)
+            journal = FactorObservationJournal(manifest, root / "rows.jsonl", root / "progress.json")
+            plan = manifest.plans[0]
+            rows = [{"observation_id": item, "image_id": plan.image_id} for item in plan.expected_observation_ids]
+            with patch.object(journal, "_scan_file", side_effect=AssertionError("commit must not rescan JSONL")) as scan:
+                self.assertTrue(journal.commit_image(plan.image_id, rows))
+            scan.assert_not_called()
+
+    def test_journal_commit_rejects_external_output_suffix_without_mutation(self) -> None:
+        from ifdr_yolo.eval.factor_observer import FactorObservationJournal
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = self._manifest(root)
+            output, progress = root / "rows.jsonl", root / "progress.json"
+            journal = FactorObservationJournal(manifest, output, progress)
+            plan = manifest.plans[0]
+            rows = [{"observation_id": item, "image_id": plan.image_id} for item in plan.expected_observation_ids]
+            before_progress = progress.read_bytes()
+            output.write_bytes(output.read_bytes() + b'{"external":true}\n')
+            before_output = output.read_bytes()
+            with self.assertRaisesRegex(ValueError, "output JSONL changed"):
+                journal.commit_image(plan.image_id, rows)
+            self.assertEqual(output.read_bytes(), before_output)
+            self.assertEqual(progress.read_bytes(), before_progress)
+
+    def test_journal_commit_rejects_external_progress_change_without_output_write(self) -> None:
+        from ifdr_yolo.eval.factor_observer import FactorObservationJournal
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = self._manifest(root)
+            output, progress = root / "rows.jsonl", root / "progress.json"
+            journal = FactorObservationJournal(manifest, output, progress)
+            plan = manifest.plans[0]
+            rows = [{"observation_id": item, "image_id": plan.image_id} for item in plan.expected_observation_ids]
+            forged = json.loads(progress.read_text(encoding="utf-8"))
+            forged["status"] = "external-writer"
+            progress.write_text(json.dumps(forged, sort_keys=True) + "\n", encoding="utf-8")
+            before_output = output.read_bytes()
+            before_progress = progress.read_bytes()
+            with self.assertRaisesRegex(ValueError, "progress JSON changed"):
+                journal.commit_image(plan.image_id, rows)
+            self.assertEqual(output.read_bytes(), before_output)
+            self.assertEqual(progress.read_bytes(), before_progress)
 
     def test_journal_rejects_hash_drift_identity_variants_and_missing_finalize(self) -> None:
         from ifdr_yolo.eval.factor_observer import FactorObservationJournal, build_factor_observation_manifest

@@ -612,6 +612,7 @@ class FactorObservationManifest:
             "schema_version": 1,
             "checkpoint_sha256": self.checkpoint_sha256,
             "seed": self.seed,
+            "registered_severities": list(REGISTERED_SEVERITIES),
             "required_nodes": list(self.required_nodes),
             "input_size": self.input_size,
             "plans": [plan.to_dict() for plan in self.plans],
@@ -1001,7 +1002,13 @@ def _atomic_write_json(path: Path, payload: Mapping[str, object]) -> None:
 
 
 class FactorObservationJournal:
-    """Exactly-once, image-transaction JSONL writer for a manifest."""
+    """Exactly-once JSONL writer with one active writer per output pair.
+
+    Startup and finalization perform full content validation.  Individual
+    commits use cached prefix and progress-file signatures for O(1) external
+    change detection; same-size middle-file edits are intentionally outside
+    the single-writer, non-adversarial commit guarantee.
+    """
 
     def __init__(
         self,
@@ -1012,6 +1019,7 @@ class FactorObservationJournal:
         if not isinstance(manifest, FactorObservationManifest):
             raise ValueError("manifest must be a FactorObservationManifest")
         self.manifest = manifest
+        self._plan_by_image = {plan.image_id: plan for plan in manifest.plans}
         self.output_path = Path(output_jsonl)
         self.progress_path = Path(progress_json)
         self.output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1045,6 +1053,38 @@ class FactorObservationJournal:
         if self._state.get("inflight") is not None:
             self._recover_inflight(last_completed_end)
         self._validate_file_and_progress()
+        self._committed_end = self.output_path.stat().st_size
+        self._progress_snapshot = _canonical_json(self._state)
+        self._progress_signature = self._progress_file_signature()
+
+    def _progress_file_signature(self) -> tuple[int, int, int, int, int]:
+        try:
+            stat = self.progress_path.stat()
+        except OSError as exc:
+            raise ValueError("progress JSON is unavailable") from exc
+        return (
+            int(getattr(stat, "st_dev", 0)),
+            int(getattr(stat, "st_ino", 0)),
+            int(stat.st_size),
+            int(stat.st_mtime_ns),
+            int(getattr(stat, "st_ctime_ns", 0)),
+        )
+
+    def _refresh_progress_snapshot(self) -> None:
+        self._progress_snapshot = _canonical_json(self._state)
+        self._progress_signature = self._progress_file_signature()
+
+    def _assert_commit_state(self) -> None:
+        if self._state.get("inflight") is not None:
+            raise ValueError("cannot commit while another transaction is inflight")
+        try:
+            output_size = self.output_path.stat().st_size
+        except OSError as exc:
+            raise ValueError("output JSONL is unavailable") from exc
+        if output_size != self._committed_end:
+            raise ValueError("output JSONL changed since journal validation")
+        if self._progress_file_signature() != self._progress_signature:
+            raise ValueError("progress JSON changed since journal validation")
 
     def _validate_binding(self) -> None:
         if self._state.get("schema_version") != 1:
@@ -1070,7 +1110,7 @@ class FactorObservationJournal:
         entries: list[tuple[int, int, str, dict[str, Any], ImageObservationPlan]] = []
         expected_entry_fields = {"start_offset", "end_offset", "expected_hash", "rows_sha256", "row_count"}
         for image_id, entry in completed.items():
-            plan = next((item for item in self.manifest.plans if item.image_id == image_id), None)
+            plan = self._plan_by_image.get(image_id)
             if plan is None:
                 raise ValueError("progress contains an unknown completed image")
             if not isinstance(entry, dict) or set(entry) != expected_entry_fields:
@@ -1156,7 +1196,7 @@ class FactorObservationJournal:
         image_id = inflight["image_id"]
         if not isinstance(image_id, str) or not image_id.strip():
             raise ValueError("progress inflight image_id is invalid")
-        plan = next((item for item in self.manifest.plans if item.image_id == image_id), None)
+        plan = self._plan_by_image.get(image_id)
         if plan is None:
             raise ValueError("progress inflight image_id is unknown")
         if image_id in self._state["completed"]:
@@ -1253,7 +1293,7 @@ class FactorObservationJournal:
                 raise ValueError("completed image rows hash does not match JSONL")
             if entry.get("start_offset") != block["start_offset"] or entry.get("end_offset") != block["end_offset"]:
                 raise ValueError("completed image offsets do not match JSONL")
-            expected_ids = set(next(plan for plan in self.manifest.plans if plan.image_id == image_id).expected_observation_ids)
+            expected_ids = set(self._plan_by_image[image_id].expected_observation_ids)
             if {row["observation_id"] for row in rows} != expected_ids:
                 raise ValueError("completed image rows do not match manifest")
         if self._state.get("status") == "complete":
@@ -1294,7 +1334,7 @@ class FactorObservationJournal:
             raise ValueError("every row requires an observation_id")
         if len(set(observation_ids)) != len(observation_ids):
             raise ValueError("rows contain duplicate observation_id")
-        plan = next((item for item in self.manifest.plans if item.image_id == image_id), None)
+        plan = self._plan_by_image.get(image_id)
         if plan is None:
             raise ValueError(f"unknown image_id: {image_id}")
         expected = set(plan.expected_observation_ids)
@@ -1324,26 +1364,24 @@ class FactorObservationJournal:
 
         payload, observation_ids = self._canonical_rows(image_id, rows)
         rows_hash = hashlib.sha256(payload).hexdigest()
+        self._assert_commit_state()
         completed = self._state["completed"]
         if image_id in completed:
             entry = completed[image_id]
             if entry.get("rows_sha256") != rows_hash:
                 raise ValueError("completed image commit conflicts with existing rows")
             return False
-        if self._state.get("inflight") is not None:
-            raise ValueError("cannot commit while another transaction is inflight")
-        # Re-read to catch a tail modified by another process before appending.
-        self._validate_file_and_progress()
-        start_offset = self.output_path.stat().st_size
+        plan = self._plan_by_image[image_id]
+        start_offset = self._committed_end
+        expected_hash = self._expected_observation_hash(plan)
         self._state["inflight"] = {
             "image_id": image_id,
             "start_offset": start_offset,
-            "expected_hash": self._expected_observation_hash(
-                next(plan for plan in self.manifest.plans if plan.image_id == image_id)
-            ),
+            "expected_hash": expected_hash,
             "expected_row_count": len(observation_ids),
         }
         _atomic_write_json(self.progress_path, self._state)
+        self._refresh_progress_snapshot()
         with self.output_path.open("ab") as handle:
             handle.write(payload)
             handle.flush()
@@ -1353,15 +1391,15 @@ class FactorObservationJournal:
         completed[image_id] = {
             "start_offset": start_offset,
             "end_offset": end_offset,
-            "expected_hash": self._expected_observation_hash(
-                next(plan for plan in self.manifest.plans if plan.image_id == image_id)
-            ),
+            "expected_hash": expected_hash,
             "rows_sha256": rows_hash,
             "row_count": len(observation_ids),
         }
         self._state["inflight"] = None
         self._state["status"] = "running"
         _atomic_write_json(self.progress_path, self._state)
+        self._committed_end = end_offset
+        self._refresh_progress_snapshot()
         return True
 
     def finalize(self) -> dict[str, object]:
@@ -1390,6 +1428,7 @@ class FactorObservationJournal:
         self._state["status"] = "complete"
         self._state["summary"] = summary
         _atomic_write_json(self.progress_path, self._state)
+        self._refresh_progress_snapshot()
         return summary
 
 
