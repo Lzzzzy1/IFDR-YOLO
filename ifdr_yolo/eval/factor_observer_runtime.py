@@ -10,9 +10,9 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 import hashlib
+import io
 import math
 from pathlib import Path
-from typing import Any
 
 import torch
 from torch import nn
@@ -86,7 +86,7 @@ def load_ifdr_checkpoint(
     checkpoint_sha256 = hashlib.sha256(raw).hexdigest()
     try:
         payload = torch.load(
-            checkpoint_path,
+            io.BytesIO(raw),
             map_location=device,
             weights_only=False,
         )
@@ -105,7 +105,7 @@ def load_ifdr_checkpoint(
     if not callable(consume):
         raise ValueError("checkpoint model must expose callable consume_reliability_context")
     try:
-        candidate = candidate.to(device)
+        candidate = candidate.float().to(device)
         candidate.eval()
     except Exception as exc:
         raise ValueError(f"unable to prepare checkpoint model on device {device!r}") from exc
@@ -194,6 +194,7 @@ def _validate_context(
         or factors.shape != branches.shape
         or not factors.is_floating_point()
         or not branches.is_floating_point()
+        or factors.device != branches.device
     ):
         raise ValueError(f"node {node} contexts must contain matching floating B2HW tensors")
     if not torch.isfinite(factors).all() or not torch.isfinite(branches).all():
@@ -234,9 +235,18 @@ def pool_reliability_contexts(
     if isinstance(batch_index, bool) or not isinstance(batch_index, int) or batch_index < 0:
         raise ValueError("batch_index must be a non-negative integer")
     pooled: list[PooledReliability] = []
+    expected_batch_size: int | None = None
+    expected_device: torch.device | None = None
     for node in nodes:
         factors, branches, gate = _validate_context(contexts[node], node=node)
         batch_size, _, feature_height, feature_width = factors.shape
+        if expected_batch_size is None:
+            expected_batch_size = batch_size
+            expected_device = factors.device
+        elif batch_size != expected_batch_size:
+            raise ValueError("contexts must share batch size across nodes")
+        elif factors.device != expected_device:
+            raise ValueError("contexts must share device across nodes")
         if batch_index >= batch_size:
             raise ValueError("batch_index is outside context batch dimension")
         roi = map_box_to_feature_roi(

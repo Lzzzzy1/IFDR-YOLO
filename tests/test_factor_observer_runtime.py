@@ -1,8 +1,10 @@
 import hashlib
+import io
 from pathlib import Path
 import tempfile
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 import torch
 from torch import nn
@@ -74,6 +76,37 @@ class LoadedIFDRCheckpointTest(unittest.TestCase):
             torch.save({"ema": None, "model": model}, path)
             loaded = load_ifdr_checkpoint(path)
         self.assertEqual(loaded.model.role, "model")
+
+    def test_loader_hashes_and_loads_the_same_bytes_buffer(self) -> None:
+        from ifdr_yolo.eval.factor_observer_runtime import load_ifdr_checkpoint
+
+        captured = []
+
+        def fake_load(source, *, map_location, weights_only):
+            captured.append((source, map_location, weights_only))
+            self.assertIsInstance(source, io.BytesIO)
+            return {"model": _CheckpointModel()}
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "checkpoint.pt"
+            path.write_bytes(b"trusted-bytes")
+            with patch("ifdr_yolo.eval.factor_observer_runtime.torch.load", side_effect=fake_load):
+                loaded = load_ifdr_checkpoint(path, device="cpu")
+        self.assertEqual(len(captured), 1)
+        self.assertEqual(captured[0][0].getvalue(), b"trusted-bytes")
+        self.assertEqual(captured[0][1], "cpu")
+        self.assertFalse(captured[0][2])
+        self.assertEqual(loaded.checkpoint_sha256, hashlib.sha256(b"trusted-bytes").hexdigest())
+
+    def test_loader_converts_half_precision_checkpoint_to_float32(self) -> None:
+        from ifdr_yolo.eval.factor_observer_runtime import load_ifdr_checkpoint
+
+        model = _CheckpointModel().half()
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "half.pt"
+            torch.save({"model": model}, path)
+            loaded = load_ifdr_checkpoint(path, device="cpu")
+        self.assertEqual(loaded.model.weight.dtype, torch.float32)
 
     def test_loader_rejects_empty_missing_and_non_ifdr_checkpoints(self) -> None:
         from ifdr_yolo.eval.factor_observer_runtime import load_ifdr_checkpoint
@@ -173,6 +206,51 @@ class PooledReliabilityTest(unittest.TestCase):
         malformed[11].gate_strength = 1.5
         with self.assertRaisesRegex(ValueError, "gate_strength"):
             pool_reliability_contexts(malformed, **kwargs)
+        malformed = _contexts()
+        malformed[26] = _context(batch=3, height=7, width=8)
+        with self.assertRaisesRegex(ValueError, "batch"):
+            pool_reliability_contexts(malformed, **kwargs)
+
+    def test_pooling_uses_exact_letterbox_roi_for_gradient_features(self) -> None:
+        from ifdr_yolo.eval.factor_observer import LetterboxGeometry
+        from ifdr_yolo.eval.factor_observer_runtime import pool_reliability_contexts
+
+        geometry = LetterboxGeometry(
+            original_width=100,
+            original_height=50,
+            input_size=200,
+            scale=2.0,
+            resized_width=200,
+            resized_height=100,
+            pad_left=0,
+            pad_top=50,
+            pad_right=0,
+            pad_bottom=50,
+        )
+        contexts = _contexts()
+        factors = torch.zeros_like(contexts[11].factors)
+        factors[:, 0] = torch.tensor([[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]])
+        factors[:, 1] = torch.tensor([[0.6, 0.5, 0.4], [0.3, 0.2, 0.1]])
+        branches = torch.zeros_like(contexts[11].branch_weights)
+        branches[:, 0] = torch.tensor([[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]])
+        branches[:, 1] = 1.0 - branches[:, 0]
+        contexts[11] = SimpleNamespace(
+            factors=factors,
+            branch_weights=branches,
+            gate_strength=0.5,
+        )
+        pooled = pool_reliability_contexts(
+            contexts,
+            batch_index=1,
+            bbox_xyxy=(10.0, 5.0, 40.0, 25.0),
+            geometry=geometry,
+        )
+        first = pooled[0]
+        self.assertEqual(first.roi_xyxy, (0, 0, 2, 1))
+        self.assertAlmostEqual(first.sampling, 0.15)
+        self.assertAlmostEqual(first.visibility, 0.55)
+        self.assertAlmostEqual(first.branch_weights[0], 0.15)
+        self.assertAlmostEqual(first.branch_weights[1], 0.85)
 
 
 if __name__ == "__main__":
