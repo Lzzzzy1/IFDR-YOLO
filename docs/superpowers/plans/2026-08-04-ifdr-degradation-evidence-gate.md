@@ -6,7 +6,7 @@
 
 **Architecture:** Add a read-only natural-degradation audit around the existing reliability context, then add opt-in assignment instrumentation after Ultralytics' parent assigner. Both paths must preserve training outputs exactly when diagnostics are disabled. Their reports become the gate for the later degradation-conditioned conservative replay experiment; dynamic assignment remains prohibited unless its gate passes.
 
-**Tech stack:** Python 3.12, PyTorch, Ultralytics 8.4.98, NumPy, SciPy, unittest, JSON/JSONL, existing KITTI metadata and IFDR checkpoints.
+**Tech stack:** Python 3.12, PyTorch, Ultralytics 8.4.98, NumPy, unittest, JSON/JSONL, existing KITTI metadata and IFDR checkpoints. Implement average-tie ranks and Spearman correlation in the project to avoid adding SciPy solely for this audit.
 
 **Success criteria:**
 
