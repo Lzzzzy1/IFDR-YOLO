@@ -936,9 +936,10 @@ def intervention_statistics(
         elif row.intervention_kind == factor:
             grouped[base].append(row)
 
-    target_responses: list[float] = []
-    background_responses: list[float] = []
-    paired_effects: list[float] = []
+    target_response_sum = 0.0
+    background_response_sum = 0.0
+    paired_effect_sum = 0.0
+    response_count = 0
     malformed_details: list[dict[str, object]] = []
     unordered_details: list[dict[str, object]] = []
     eligible_by_seed_node: dict[str, int] = defaultdict(int)
@@ -1046,9 +1047,10 @@ def intervention_statistics(
         ) and any(effects[index + 1] > effects[index] + 1e-12 for index in range(len(effects) - 1))
         if is_ordered:
             ordered += 1
-        target_responses.extend(pair_target)
-        background_responses.extend(pair_background)
-        paired_effects.extend(effects)
+        target_response_sum += math.fsum(pair_target)
+        background_response_sum += math.fsum(pair_background)
+        paired_effect_sum += math.fsum(effects)
+        response_count += len(pair_target)
         if not is_ordered and len(unordered_details) < _MAX_EVIDENCE_EXAMPLES:
             unordered_details.append(
                 {
@@ -1099,9 +1101,9 @@ def intervention_statistics(
         "eligible": eligible,
         "ordered": ordered,
         "ordered_pair_rate": ordered / eligible,
-        "target_mean_response": float(np.mean(target_responses)),
-        "background_mean_response": float(np.mean(background_responses)),
-        "paired_mean": float(np.mean(paired_effects)),
+        "target_mean_response": target_response_sum / response_count,
+        "background_mean_response": background_response_sum / response_count,
+        "paired_mean": paired_effect_sum / response_count,
         "malformed": malformed,
         "malformed_examples": malformed_evidence,
         "unordered_examples": unordered_evidence,
