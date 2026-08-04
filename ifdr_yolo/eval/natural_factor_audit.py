@@ -11,9 +11,11 @@ cannot be changed after it has been recorded.
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Mapping
 from dataclasses import dataclass
 import math
 from numbers import Integral, Real
+from types import MappingProxyType
 from typing import Any, Callable, Iterable, Sequence
 
 import numpy as np
@@ -28,6 +30,7 @@ _DEFAULT_BOOTSTRAP_REPLICATES = 2000
 _DEFAULT_BOOTSTRAP_SEED = 20260804
 _DEFAULT_MONOTONIC_THRESHOLD = 0.80
 DEFAULT_INTERVENTION_SEVERITIES = (0.25, 0.50, 0.75, 1.0)
+_MAX_EVIDENCE_EXAMPLES = 100
 
 
 def _is_integer(value: object) -> bool:
@@ -159,6 +162,25 @@ class NaturalFactorObservation:
                     "(severity 0 is reserved for clean/natural)"
                 )
 
+        # Dataclasses do not coerce NumPy scalar values.  Normalize the
+        # validated record once so every downstream result is JSON-native and
+        # callers cannot accidentally leak ``np.int64``/``np.float64`` values.
+        object.__setattr__(self, "seed", int(self.seed))
+        object.__setattr__(self, "node_id", int(self.node_id))
+        object.__setattr__(self, "object_id", int(self.object_id))
+        object.__setattr__(self, "class_id", int(self.class_id))
+        object.__setattr__(self, "box_height", float(height))
+        object.__setattr__(self, "intervention_severity", float(severity))
+        object.__setattr__(self, "natural_sampling", float(self.natural_sampling))
+        object.__setattr__(self, "natural_visibility", float(self.natural_visibility))
+        object.__setattr__(self, "predicted_sampling", float(self.predicted_sampling))
+        object.__setattr__(self, "predicted_visibility", float(self.predicted_visibility))
+        object.__setattr__(
+            self,
+            "branch_weights",
+            (float(self.branch_weights[0]), float(self.branch_weights[1])),
+        )
+
 
 def _sort_key(row: NaturalFactorObservation) -> tuple[Any, ...]:
     return (
@@ -199,7 +221,7 @@ def _validated_observations(
 
 
 def _validate_factor(factor: str) -> str:
-    if factor not in _FACTORS:
+    if not isinstance(factor, str) or factor not in _FACTORS:
         raise ValueError("factor must be sampling or visibility")
     return factor
 
@@ -212,16 +234,28 @@ def _validate_expected_severities(
         raise ValueError("expected intervention severities must not be empty")
     if any(value <= 0.0 for value in values):
         raise ValueError("expected intervention severities must be within (0, 1]")
-    if len(set(values)) != len(values) or any(
-        values[index + 1] <= values[index] for index in range(len(values) - 1)
-    ):
+    if any(
+        abs(values[left] - values[right]) <= 1e-9
+        for left in range(len(values))
+        for right in range(left + 1, len(values))
+    ) or any(values[index + 1] <= values[index] for index in range(len(values) - 1)):
         raise ValueError("expected intervention severities must be unique and increasing")
     return values
 
 
+def _canonical_severity(value: float, expected: Sequence[float]) -> float:
+    """Map a measured severity to its registered value within float tolerance."""
+
+    value = float(value)
+    matches = [candidate for candidate in expected if abs(value - candidate) <= 1e-9]
+    if len(matches) == 1:
+        return float(matches[0])
+    return value
+
+
 def _validate_bootstrap(replicates: int, seed: int, confidence: float) -> None:
-    if not _is_integer(replicates) or int(replicates) <= 0:
-        raise ValueError("bootstrap replicates must be a positive integer")
+    if not _is_integer(replicates) or int(replicates) < 2:
+        raise ValueError("bootstrap replicates must be an integer greater than or equal to 2")
     if not _is_integer(seed) or int(seed) < 0:
         raise ValueError("bootstrap seed must be a non-negative integer")
     confidence_value = _finite(confidence, "bootstrap confidence")
@@ -248,12 +282,6 @@ def average_tie_rank(values: Sequence[float]) -> tuple[float, ...]:
             ranks[ordered[index][0]] = mean_rank
         position = end
     return tuple(ranks)
-
-
-# A plural spelling is convenient for callers and keeps the rank primitive
-# discoverable without introducing a second implementation.
-average_tie_ranks = average_tie_rank
-
 
 def _result(
     *,
@@ -320,7 +348,7 @@ def partial_spearman(
     box_height: Sequence[float],
     class_ids: Sequence[int],
 ) -> dict[str, object]:
-    """Partial Spearman controlling ranked height and class one-hot columns."""
+    """Partial Spearman controlling ranked height and reference-coded class."""
 
     lengths = {len(target), len(prediction), len(box_height), len(class_ids)}
     if len(lengths) != 1:
@@ -349,11 +377,15 @@ def partial_spearman(
         return _result(rho=None, n=n, status="constant", reason="target or prediction is constant")
     height_rank = np.asarray(average_tie_rank(height), dtype=np.float64)
     unique_classes = sorted(set(classes))
+    # Intercept + all class indicators is rank-deficient.  Use the first
+    # registered class as the reference level so the residual estimand is
+    # stable and the bootstrap can reuse fixed cross-products.
+    class_dummies = unique_classes[1:]
     design = np.column_stack(
         [
             np.ones(n, dtype=np.float64),
             height_rank,
-            *[np.asarray([float(value == klass) for value in classes]) for klass in unique_classes],
+            *[np.asarray([float(value == klass) for value in classes]) for klass in class_dummies],
         ]
     )
     try:
@@ -449,52 +481,173 @@ def _cluster_rows(
     return tuple(rows)
 
 
-def _cluster_bootstrap(
+def _raw_image_moments(
     observations: Sequence[NaturalFactorObservation],
-    statistic: Callable[[tuple[NaturalFactorObservation, ...]], dict[str, object]],
+    factor: str,
+) -> tuple[tuple[str, ...], np.ndarray]:
+    """Precompute fixed-rank Pearson moments for each image cluster."""
+
+    images = tuple(sorted({row.image_id for row in observations}))
+    image_index = {image_id: index for index, image_id in enumerate(images)}
+    natural_values = tuple(_factor_natural(row, factor) for row in observations)
+    prediction_values = tuple(_factor_prediction(row, factor) for row in observations)
+    natural_rank = np.asarray(average_tie_rank(natural_values), dtype=np.float64)
+    prediction_rank = np.asarray(average_tie_rank(prediction_values), dtype=np.float64)
+    moments = np.zeros((len(images), 6), dtype=np.float64)
+    for index, row in enumerate(observations):
+        image_moment = moments[image_index[row.image_id]]
+        x = natural_rank[index]
+        y = prediction_rank[index]
+        image_moment[0] += 1.0
+        image_moment[1] += x
+        image_moment[2] += y
+        image_moment[3] += x * x
+        image_moment[4] += y * y
+        image_moment[5] += x * y
+    return images, moments
+
+
+def _residual_image_moments(
+    observations: Sequence[NaturalFactorObservation],
+    factor: str,
+) -> tuple[tuple[str, ...], np.ndarray, np.ndarray]:
+    """Precompute fixed-rank control cross-products for each image cluster."""
+
+    images = tuple(sorted({row.image_id for row in observations}))
+    image_index = {image_id: index for index, image_id in enumerate(images)}
+    natural_values = tuple(_factor_natural(row, factor) for row in observations)
+    prediction_values = tuple(_factor_prediction(row, factor) for row in observations)
+    target_rank = np.asarray(average_tie_rank(natural_values), dtype=np.float64)
+    prediction_rank = np.asarray(average_tie_rank(prediction_values), dtype=np.float64)
+    height_rank = np.asarray(
+        average_tie_rank(tuple(row.box_height for row in observations)), dtype=np.float64
+    )
+    classes = tuple(int(row.class_id) for row in observations)
+    unique_classes = sorted(set(classes))
+    class_dummies = unique_classes[1:]
+    design = np.column_stack(
+        [
+            np.ones(len(observations), dtype=np.float64),
+            height_rank,
+            *[np.asarray([float(value == klass) for value in classes]) for klass in class_dummies],
+        ]
+    )
+    feature_count = design.shape[1]
+    cross_products = np.zeros((len(images), feature_count, feature_count + 2), dtype=np.float64)
+    response_moments = np.zeros((len(images), 3), dtype=np.float64)
+    for index, row in enumerate(observations):
+        cluster = image_index[row.image_id]
+        z = design[index]
+        x = target_rank[index]
+        y = prediction_rank[index]
+        cross_products[cluster, :, :feature_count] += np.outer(z, z)
+        cross_products[cluster, :, feature_count] += z * x
+        cross_products[cluster, :, feature_count + 1] += z * y
+        response_moments[cluster, 0] += x * x
+        response_moments[cluster, 1] += y * y
+        response_moments[cluster, 2] += x * y
+    return images, cross_products, response_moments
+
+
+def _raw_moment_rho(moments: np.ndarray, weights: np.ndarray) -> float | None:
+    totals = weights @ moments
+    n = float(totals[0])
+    if n < 2.0:
+        return None
+    covariance = float(totals[5] - totals[1] * totals[2] / n)
+    x_variance = float(totals[3] - totals[1] * totals[1] / n)
+    y_variance = float(totals[4] - totals[2] * totals[2] / n)
+    if x_variance <= 0.0 or y_variance <= 0.0:
+        return None
+    rho = covariance / math.sqrt(x_variance * y_variance)
+    return float(max(-1.0, min(1.0, rho))) if math.isfinite(rho) else None
+
+
+def _residual_moment_rho(
+    cross_products: np.ndarray,
+    response_moments: np.ndarray,
+    weights: np.ndarray,
+) -> float | None:
+    weighted_cross = np.tensordot(weights, cross_products, axes=(0, 0))
+    weighted_response = weights @ response_moments
+    feature_count = weighted_cross.shape[0]
+    design_cross = weighted_cross[:, :feature_count]
+    target_cross = weighted_cross[:, feature_count]
+    prediction_cross = weighted_cross[:, feature_count + 1]
+    n = float(np.sum(weights * cross_products[:, 0, 0]))
+    if n < 3.0:
+        return None
+    try:
+        target_beta = np.linalg.lstsq(design_cross, target_cross, rcond=None)[0]
+        prediction_beta = np.linalg.lstsq(design_cross, prediction_cross, rcond=None)[0]
+    except np.linalg.LinAlgError:
+        return None
+    target_ss = float(weighted_response[0] - np.dot(target_beta, target_cross))
+    prediction_ss = float(weighted_response[1] - np.dot(prediction_beta, prediction_cross))
+    residual_cross = float(weighted_response[2] - np.dot(target_beta, prediction_cross))
+    if target_ss <= 0.0 or prediction_ss <= 0.0:
+        return None
+    rho = residual_cross / math.sqrt(target_ss * prediction_ss)
+    return float(max(-1.0, min(1.0, rho))) if math.isfinite(rho) else None
+
+
+def _moment_bootstrap(
     *,
+    images: tuple[str, ...],
+    moments: np.ndarray,
+    statistic: Callable[[np.ndarray, np.ndarray], float | None],
+    estimate: float | None,
     replicates: int,
     seed: int,
     confidence: float,
+    row_counts: np.ndarray | None = None,
+    return_samples: bool = False,
 ) -> dict[str, object]:
     _validate_bootstrap(replicates, seed, confidence)
-    unique_images = tuple(sorted({row.image_id for row in observations}))
-    if not unique_images:
-        return {
-            "estimate": None,
-            "ci_lower": None,
-            "ci_upper": None,
-            "status": "insufficient",
-            "reason": "no image clusters",
-            "replicates": 0,
-            "valid_replicates": 0,
-            "sampling_unit": "image_id",
-            "unique_image_count": 0,
-        }
-    estimate_result = statistic(tuple(observations))
-    estimate = estimate_result.get("rho")
-    if estimate is None or not isinstance(estimate, Real) or not math.isfinite(float(estimate)):
-        estimate = None
-    generator = np.random.default_rng(int(seed))
-    values: list[float] = []
-    for _ in range(int(replicates)):
-        sampled_indices = generator.integers(0, len(unique_images), size=len(unique_images))
-        sampled = tuple(unique_images[int(index)] for index in sampled_indices)
-        result = statistic(_cluster_rows(observations, sampled))
-        value = result.get("rho")
-        if isinstance(value, Real) and math.isfinite(float(value)):
-            values.append(float(value))
-    if not values:
+    image_count = len(images)
+    if image_count == 0:
         return {
             "estimate": estimate,
             "ci_lower": None,
             "ci_upper": None,
             "status": "insufficient",
-            "reason": "bootstrap produced no finite replicates",
+            "reason": "no image clusters",
             "replicates": int(replicates),
             "valid_replicates": 0,
             "sampling_unit": "image_id",
-            "unique_image_count": len(unique_images),
+            "unique_image_count": 0,
+        }
+    if return_samples and int(replicates) * image_count > 100_000:
+        raise ValueError("return_samples is limited to 100000 sampled image draws")
+    generator = np.random.default_rng(int(seed))
+    values: list[float] = []
+    sampled_ids: list[list[str]] = []
+    sampled_sizes: list[list[int]] = []
+    for _ in range(int(replicates)):
+        sampled_indices = generator.integers(0, image_count, size=image_count)
+        weights = np.bincount(sampled_indices, minlength=image_count).astype(np.float64)
+        value = statistic(moments, weights)
+        if value is not None and math.isfinite(float(value)):
+            values.append(float(value))
+        if return_samples:
+            sampled_ids.append([images[int(index)] for index in sampled_indices])
+            if row_counts is None:
+                sampled_sizes.append([1] * image_count)
+            else:
+                sampled_sizes.append([int(row_counts[int(index)]) for index in sampled_indices])
+    required_valid = math.ceil(0.95 * int(replicates))
+    if len(values) < required_valid:
+        return {
+            "estimate": estimate,
+            "ci_lower": None,
+            "ci_upper": None,
+            "status": "insufficient",
+            "reason": "fewer than 95% of bootstrap replicates were finite",
+            "replicates": int(replicates),
+            "valid_replicates": len(values),
+            "sampling_unit": "image_id",
+            "unique_image_count": image_count,
+            **({"sampled_image_ids": sampled_ids, "sampled_cluster_sizes": sampled_sizes} if return_samples else {}),
         }
     tail = (1.0 - float(confidence)) / 2.0
     return {
@@ -506,7 +659,8 @@ def _cluster_bootstrap(
         "replicates": int(replicates),
         "valid_replicates": len(values),
         "sampling_unit": "image_id",
-        "unique_image_count": len(unique_images),
+        "unique_image_count": image_count,
+        **({"sampled_image_ids": sampled_ids, "sampled_cluster_sizes": sampled_sizes} if return_samples else {}),
     }
 
 
@@ -515,7 +669,6 @@ def image_cluster_bootstrap(
     factor: str = "sampling",
     *,
     replicates: int = _DEFAULT_BOOTSTRAP_REPLICATES,
-    reps: int | None = None,
     seed: int = _DEFAULT_BOOTSTRAP_SEED,
     confidence: float = 0.95,
     return_samples: bool = False,
@@ -523,42 +676,31 @@ def image_cluster_bootstrap(
     """Bootstrap raw natural Spearman by unique image ID."""
 
     factor = _validate_factor(factor)
-    if reps is not None:
-        replicates = reps
     rows = _validated_observations(observations)
     natural = _natural_rows(rows)
-
-    def statistic(sample: tuple[NaturalFactorObservation, ...]) -> dict[str, object]:
-        sample_natural = _natural_rows(sample)
-        return spearman(
-            tuple(_factor_natural(row, factor) for row in sample_natural),
-            tuple(_factor_prediction(row, factor) for row in sample_natural),
-        )
-
-    result = _cluster_bootstrap(
-        natural,
-        statistic,
+    images, moments = _raw_image_moments(natural, factor)
+    estimate_result = spearman(
+        tuple(_factor_natural(row, factor) for row in natural),
+        tuple(_factor_prediction(row, factor) for row in natural),
+    )
+    estimate = estimate_result.get("rho")
+    estimate_value = float(estimate) if isinstance(estimate, Real) and math.isfinite(float(estimate)) else None
+    row_counts = moments[:, 0].copy() if len(images) else np.empty(0, dtype=np.float64)
+    result = _moment_bootstrap(
+        images=images,
+        moments=moments,
+        statistic=_raw_moment_rho,
+        estimate=estimate_value,
         replicates=replicates,
         seed=seed,
         confidence=confidence,
+        row_counts=row_counts,
+        return_samples=return_samples,
     )
     # ``image_cluster_bootstrap`` historically reads naturally as a raw
     # estimate, so preserve that label alongside the generic estimate key.
     result["factor"] = factor
     result["metric"] = "raw_spearman"
-    if return_samples:
-        samples = bootstrap_image_ids(
-            tuple(sorted({row.image_id for row in natural})),
-            replicates=replicates,
-            seed=seed,
-        )
-        counts: dict[str, int] = defaultdict(int)
-        for row in natural:
-            counts[row.image_id] += 1
-        result["sampled_image_ids"] = [list(sample) for sample in samples]
-        result["sampled_cluster_sizes"] = [
-            [counts[image_id] for image_id in sample] for sample in samples
-        ]
     return result
 
 
@@ -579,18 +721,45 @@ def controlled_monotonicity(
     rows = _natural_rows(_validated_observations(observations))
     n = len(rows)
     if n < 6:
+        empty_bins = tuple(
+            {
+                "bin": bin_index,
+                "count": 0,
+                "lower_count": 0,
+                "upper_count": 0,
+                "lower_prediction_mean": None,
+                "upper_prediction_mean": None,
+                "success": None,
+            }
+            for bin_index in range(4)
+        )
         return {
             "success": False,
             "status": "insufficient",
             "reason": "at least six natural observations are required",
             "eligible": 0,
+            "eligible_bins": 0,
             "successful": 0,
             "rate": None,
-            "bins": (),
+            "bins": empty_bins,
+            "factor": factor,
+            "control_factor": control_factor,
         }
     target_values = tuple(_factor_natural(row, factor) for row in rows)
     control_values = tuple(_factor_natural(row, control_factor) for row in rows)
     if len(set(control_values)) < 4:
+        empty_bins = tuple(
+            {
+                "bin": bin_index,
+                "count": 0,
+                "lower_count": 0,
+                "upper_count": 0,
+                "lower_prediction_mean": None,
+                "upper_prediction_mean": None,
+                "success": None,
+            }
+            for bin_index in range(4)
+        )
         return {
             "success": False,
             "status": "insufficient",
@@ -599,7 +768,7 @@ def controlled_monotonicity(
             "eligible_bins": 0,
             "successful": 0,
             "rate": None,
-            "bins": (),
+            "bins": empty_bins,
             "factor": factor,
             "control_factor": control_factor,
         }
@@ -621,6 +790,15 @@ def controlled_monotonicity(
         ]
         lower = [index for index in selected if target_ranks[index] <= n / 3.0]
         upper = [index for index in selected if target_ranks[index] > 2.0 * n / 3.0]
+        bin_result: dict[str, object] = {
+            "bin": bin_index,
+            "count": len(selected),
+            "lower_count": len(lower),
+            "upper_count": len(upper),
+            "lower_prediction_mean": None,
+            "upper_prediction_mean": None,
+            "success": None,
+        }
         if lower and upper:
             eligible += 1
             lower_mean = float(target_predictions[lower].mean())
@@ -628,17 +806,14 @@ def controlled_monotonicity(
             passed = upper_mean > lower_mean
             if passed:
                 successful += 1
-            bins.append(
+            bin_result.update(
                 {
-                    "bin": bin_index,
-                    "count": len(selected),
-                    "lower_count": len(lower),
-                    "upper_count": len(upper),
                     "lower_prediction_mean": lower_mean,
                     "upper_prediction_mean": upper_mean,
                     "success": passed,
                 }
             )
+        bins.append(bin_result)
     rate = successful / eligible if eligible else None
     status = "ok" if eligible >= 2 else "insufficient"
     return {
@@ -692,8 +867,8 @@ def intervention_statistics(
     target_responses: list[float] = []
     background_responses: list[float] = []
     paired_effects: list[float] = []
-    pair_details: list[dict[str, object]] = []
     malformed_details: list[dict[str, object]] = []
+    unordered_details: list[dict[str, object]] = []
     eligible_by_seed_node: dict[str, int] = defaultdict(int)
     eligible = 0
     ordered = 0
@@ -709,7 +884,8 @@ def intervention_statistics(
             lambda: {"target": [], "background": []}
         )
         for candidate in candidates:
-            by_severity[candidate.intervention_severity][candidate.region_role].append(candidate)
+            severity = _canonical_severity(candidate.intervention_severity, expected_severities)
+            by_severity[severity][candidate.region_role].append(candidate)
 
         reasons: list[str] = []
         if len(clean_target) != 1:
@@ -758,19 +934,22 @@ def intervention_statistics(
                 )
         if reasons:
             malformed += 1
-            malformed_details.append(
-                {
-                    "seed": key[0],
-                    "node_id": key[1],
-                    "image_id": key[2],
-                    "object_id": key[3],
-                    "pair_id": key[4],
-                    "factor": factor,
-                    "expected_severities": tuple(expected_severities),
-                    "reasons": tuple(reasons),
-                    "severity_counts": severity_counts,
-                }
-            )
+            if len(malformed_details) < _MAX_EVIDENCE_EXAMPLES:
+                severity_items = sorted(severity_counts.items())
+                malformed_details.append(
+                    {
+                        "seed": key[0],
+                        "node_id": key[1],
+                        "image_id": key[2],
+                        "object_id": key[3],
+                        "pair_id": key[4],
+                        "factor": factor,
+                        "expected_severities": tuple(expected_severities),
+                        "reasons": tuple(reasons),
+                        "severity_counts": dict(severity_items[:_MAX_EVIDENCE_EXAMPLES]),
+                        "severity_counts_truncated": len(severity_items) > _MAX_EVIDENCE_EXAMPLES,
+                    }
+                )
             # A malformed group contributes no response or ordering evidence.
             continue
 
@@ -779,7 +958,6 @@ def intervention_statistics(
         effects: list[float] = []
         pair_target: list[float] = []
         pair_background: list[float] = []
-        severities: list[float] = []
         for severity in sorted(by_severity):
             target = by_severity[severity]["target"]
             background = by_severity[severity]["background"]
@@ -788,7 +966,6 @@ def intervention_statistics(
             pair_target.append(target_response)
             pair_background.append(background_response)
             effects.append(target_response - background_response)
-            severities.append(float(severity))
         eligible += 1
         eligible_by_seed_node[f"{key[0]}:{key[1]}"] += 1
         is_ordered = all(
@@ -800,18 +977,27 @@ def intervention_statistics(
         target_responses.extend(pair_target)
         background_responses.extend(pair_background)
         paired_effects.extend(effects)
-        pair_details.append(
-            {
-                "seed": key[0],
-                "node_id": key[1],
-                "image_id": key[2],
-                "object_id": key[3],
-                "pair_id": key[4],
-                "severities": tuple(severities),
-                "paired_effects": tuple(effects),
-                "ordered": is_ordered,
-            }
-        )
+        if not is_ordered and len(unordered_details) < _MAX_EVIDENCE_EXAMPLES:
+            unordered_details.append(
+                {
+                    "seed": key[0],
+                    "node_id": key[1],
+                    "image_id": key[2],
+                    "object_id": key[3],
+                    "pair_id": key[4],
+                    "effects": tuple(effects),
+                }
+            )
+    malformed_evidence = {
+        "items": tuple(malformed_details),
+        "total": malformed,
+        "truncated": malformed > len(malformed_details),
+    }
+    unordered_evidence = {
+        "items": tuple(unordered_details),
+        "total": eligible - ordered,
+        "truncated": (eligible - ordered) > len(unordered_details),
+    }
     if not eligible:
         return {
             "factor": factor,
@@ -825,17 +1011,13 @@ def intervention_statistics(
             "eligible": 0,
             "ordered": 0,
             "ordered_pair_rate": None,
-            "ordered_rate": None,
             "target_mean_response": None,
-            "target_mean": None,
             "background_mean_response": None,
-            "background_mean": None,
             "paired_mean": None,
             "malformed": malformed,
-            "malformed_details": tuple(malformed_details),
-            "malformed_pairs": tuple(malformed_details),
+            "malformed_examples": malformed_evidence,
+            "unordered_examples": unordered_evidence,
             "eligible_by_seed_node": dict(eligible_by_seed_node),
-            "pairs": tuple(pair_details),
         }
     return {
         "factor": factor,
@@ -845,17 +1027,13 @@ def intervention_statistics(
         "eligible": eligible,
         "ordered": ordered,
         "ordered_pair_rate": ordered / eligible,
-        "ordered_rate": ordered / eligible,
         "target_mean_response": float(np.mean(target_responses)),
-        "target_mean": float(np.mean(target_responses)),
         "background_mean_response": float(np.mean(background_responses)),
-        "background_mean": float(np.mean(background_responses)),
         "paired_mean": float(np.mean(paired_effects)),
         "malformed": malformed,
-        "malformed_details": tuple(malformed_details),
-        "malformed_pairs": tuple(malformed_details),
+        "malformed_examples": malformed_evidence,
+        "unordered_examples": unordered_evidence,
         "eligible_by_seed_node": dict(eligible_by_seed_node),
-        "pairs": tuple(pair_details),
     }
 
 
@@ -864,15 +1042,12 @@ def natural_factor_alignment(
     *,
     factor: str,
     bootstrap_replicates: int = _DEFAULT_BOOTSTRAP_REPLICATES,
-    bootstrap_reps: int | None = None,
     bootstrap_seed: int = _DEFAULT_BOOTSTRAP_SEED,
     confidence: float = 0.95,
 ) -> dict[str, object]:
     """Return pooled and seed/node natural alignment statistics."""
 
     factor = _validate_factor(factor)
-    if bootstrap_reps is not None:
-        bootstrap_replicates = bootstrap_reps
     rows = _validated_observations(observations)
     natural = _natural_rows(rows)
 
@@ -893,16 +1068,36 @@ def natural_factor_alignment(
 
     pooled_raw = raw_statistic(natural)
     pooled_residual = residual_statistic(natural)
-    pooled_raw_ci = _cluster_bootstrap(
-        natural,
-        raw_statistic,
+    raw_images, raw_moments = _raw_image_moments(natural, factor)
+    residual_images, residual_cross, residual_response = _residual_image_moments(natural, factor)
+    raw_estimate = pooled_raw.get("rho")
+    raw_estimate = (
+        float(raw_estimate)
+        if isinstance(raw_estimate, Real) and math.isfinite(float(raw_estimate))
+        else None
+    )
+    residual_estimate = pooled_residual.get("rho")
+    residual_estimate = (
+        float(residual_estimate)
+        if isinstance(residual_estimate, Real) and math.isfinite(float(residual_estimate))
+        else None
+    )
+    pooled_raw_ci = _moment_bootstrap(
+        images=raw_images,
+        moments=raw_moments,
+        statistic=_raw_moment_rho,
+        estimate=raw_estimate,
         replicates=bootstrap_replicates,
         seed=bootstrap_seed,
         confidence=confidence,
     )
-    pooled_residual_ci = _cluster_bootstrap(
-        natural,
-        residual_statistic,
+    pooled_residual_ci = _moment_bootstrap(
+        images=residual_images,
+        moments=(residual_cross, residual_response),  # type: ignore[arg-type]
+        statistic=lambda packed, weights: _residual_moment_rho(
+            packed[0], packed[1], weights
+        ),
+        estimate=residual_estimate,
         replicates=bootstrap_replicates,
         seed=bootstrap_seed,
         confidence=confidence,
@@ -923,34 +1118,15 @@ def natural_factor_alignment(
     return {
         "factor": factor,
         "natural_count": len(natural),
-        "raw": pooled_raw,
-        "residual": pooled_residual,
         "pooled_raw": pooled_raw,
         "pooled_residual": pooled_residual,
-        "raw_ci": pooled_raw_ci,
-        "residual_ci": pooled_residual_ci,
         "pooled_raw_ci": pooled_raw_ci,
         "pooled_residual_ci": pooled_residual_ci,
-        "raw_ci_lower": pooled_raw_ci.get("ci_lower"),
-        "raw_ci_upper": pooled_raw_ci.get("ci_upper"),
-        "residual_ci_lower": pooled_residual_ci.get("ci_lower"),
-        "residual_ci_upper": pooled_residual_ci.get("ci_upper"),
         "seed_node": seed_node,
     }
 
-
-# Names used by the CLI and by downstream callers are intentionally explicit.
-compute_natural_alignment = natural_factor_alignment
-compute_controlled_monotonicity = controlled_monotonicity
-compute_intervention_statistics = intervention_statistics
-spearman_correlation = spearman
-partial_spearman_correlation = partial_spearman
-bootstrap_spearman = image_cluster_bootstrap
-compute_intervention_effects = intervention_statistics
-
-
 def _json_safe(value: object) -> object:
-    if isinstance(value, dict):
+    if isinstance(value, Mapping):
         return {str(key): _json_safe(item) for key, item in value.items()}
     if isinstance(value, (tuple, list)):
         return [_json_safe(item) for item in value]
@@ -959,16 +1135,39 @@ def _json_safe(value: object) -> object:
     return value
 
 
+def _freeze(value: object) -> object:
+    if isinstance(value, Mapping):
+        return MappingProxyType({key: _freeze(item) for key, item in value.items()})
+    if isinstance(value, (tuple, list)):
+        return tuple(_freeze(item) for item in value)
+    if isinstance(value, (set, frozenset)):
+        return frozenset(_freeze(item) for item in value)
+    return value
+
+
+def _thaw(value: object) -> object:
+    if isinstance(value, Mapping):
+        return {key: _thaw(item) for key, item in value.items()}
+    if isinstance(value, (tuple, list)):
+        return [_thaw(item) for item in value]
+    if isinstance(value, (set, frozenset)):
+        return [_thaw(item) for item in value]
+    return value
+
+
 @dataclass(frozen=True)
 class NaturalFactorGateDecision:
     """Auditable result of the two-factor natural-transfer gate."""
 
     passed: bool
-    factor_results: dict[str, dict[str, object]]
+    factor_results: Mapping[str, Mapping[str, object]]
     reasons: tuple[str, ...]
     required_seeds: tuple[int, ...]
     required_nodes: tuple[int, ...]
     monotonic_threshold: float
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "factor_results", _freeze(self.factor_results))
 
     @property
     def gate_passed(self) -> bool:
@@ -983,11 +1182,11 @@ class NaturalFactorGateDecision:
         return bool(self.factor_results.get("visibility", {}).get("passed", False))
 
     @property
-    def sampling(self) -> dict[str, object]:
+    def sampling(self) -> Mapping[str, object]:
         return self.factor_results.get("sampling", {})
 
     @property
-    def visibility(self) -> dict[str, object]:
+    def visibility(self) -> Mapping[str, object]:
         return self.factor_results.get("visibility", {})
 
     def to_dict(self) -> dict[str, object]:
@@ -997,10 +1196,8 @@ class NaturalFactorGateDecision:
             "required_seeds": list(self.required_seeds),
             "required_nodes": list(self.required_nodes),
             "monotonic_threshold": self.monotonic_threshold,
-            "factors": _json_safe(self.factor_results),
+            "factors": _json_safe(_thaw(self.factor_results)),
         }
-
-    as_dict = to_dict
 
 
 def audit_natural_factors(
@@ -1010,7 +1207,6 @@ def audit_natural_factors(
     required_nodes: Sequence[int] = _DEFAULT_NODES,
     monotonic_threshold: float = _DEFAULT_MONOTONIC_THRESHOLD,
     bootstrap_replicates: int = _DEFAULT_BOOTSTRAP_REPLICATES,
-    bootstrap_reps: int | None = None,
     bootstrap_seed: int = _DEFAULT_BOOTSTRAP_SEED,
     confidence: float = 0.95,
     expected_intervention_severities: Sequence[float] = DEFAULT_INTERVENTION_SEVERITIES,
@@ -1018,14 +1214,16 @@ def audit_natural_factors(
     """Run alignment, monotonicity, intervention, and stability checks."""
 
     rows = _validated_observations(observations)
-    if bootstrap_reps is not None:
-        bootstrap_replicates = bootstrap_reps
     seeds = tuple(required_seeds)
     nodes = tuple(required_nodes)
     if not seeds or any(not _is_integer(value) or int(value) < 0 for value in seeds):
         raise ValueError("required_seeds must contain non-negative integers")
     if not nodes or any(not _is_integer(value) or int(value) < 0 for value in nodes):
         raise ValueError("required_nodes must contain non-negative integers")
+    if len(set(int(value) for value in seeds)) != len(seeds):
+        raise ValueError("required_seeds must not contain duplicates")
+    if len(set(int(value) for value in nodes)) != len(nodes):
+        raise ValueError("required_nodes must not contain duplicates")
     threshold = _unit(monotonic_threshold, "monotonic_threshold")
     if threshold <= 0.0:
         raise ValueError("monotonic_threshold must be greater than zero")
@@ -1095,10 +1293,10 @@ def audit_natural_factors(
             intervention.get("status") != "ok"
             or not isinstance(target_mean, Real)
             or not isinstance(background_mean, Real)
-            or float(target_mean) <= float(background_mean)
+            or float(target_mean) <= float(background_mean) + 1e-12
         ):
             reasons.append(f"{factor}_target_response_not_stronger_than_background")
-        if not isinstance(paired_mean, Real) or float(paired_mean) <= 0.0:
+        if not isinstance(paired_mean, Real) or float(paired_mean) <= 1e-12:
             reasons.append(f"{factor}_paired_response_not_positive")
         if not isinstance(ordered_rate, Real) or float(ordered_rate) < threshold:
             reasons.append(f"{factor}_intervention_order_below_threshold")
@@ -1126,34 +1324,17 @@ def audit_natural_factors(
         monotonic_threshold=threshold,
     )
 
-
-evaluate_natural_factor_gate = audit_natural_factors
-run_natural_factor_audit = audit_natural_factors
-evaluate_gate = audit_natural_factors
-
-
 __all__ = [
     "DEFAULT_INTERVENTION_SEVERITIES",
     "NaturalFactorObservation",
     "NaturalFactorGateDecision",
     "average_tie_rank",
-    "average_tie_ranks",
     "spearman",
-    "spearman_correlation",
     "partial_spearman",
-    "partial_spearman_correlation",
     "bootstrap_image_ids",
     "image_cluster_bootstrap",
-    "bootstrap_spearman",
     "controlled_monotonicity",
-    "compute_controlled_monotonicity",
     "intervention_statistics",
-    "compute_intervention_statistics",
-    "compute_intervention_effects",
     "natural_factor_alignment",
-    "compute_natural_alignment",
     "audit_natural_factors",
-    "evaluate_natural_factor_gate",
-    "run_natural_factor_audit",
-    "evaluate_gate",
 ]

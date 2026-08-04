@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import FrozenInstanceError, replace
-from collections import Counter
 import json
 import unittest
 from unittest.mock import patch
+
+import numpy as np
 
 from ifdr_yolo.eval.natural_factor_audit import (
     NaturalFactorObservation,
@@ -192,6 +193,29 @@ class NaturalFactorObservationTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "sum"):
             _observation(branch_weights=(0.2, 0.2))
 
+    def test_numpy_scalars_are_normalized_to_json_native_values(self) -> None:
+        row = _observation(
+            seed=np.int64(17),
+            node_id=np.int64(11),
+            object_id=np.int64(0),
+            class_id=np.int64(1),
+            box_height=np.float64(32.0),
+            intervention_severity=np.float64(0.0),
+            natural_sampling=np.float64(0.3),
+            natural_visibility=np.float64(0.7),
+            predicted_sampling=np.float64(0.3),
+            predicted_visibility=np.float64(0.7),
+            branch_weights=(np.float64(0.6), np.float64(0.4)),
+        )
+        self.assertIs(type(row.seed), int)
+        self.assertIs(type(row.node_id), int)
+        self.assertIs(type(row.object_id), int)
+        self.assertIs(type(row.class_id), int)
+        self.assertIs(type(row.box_height), float)
+        self.assertIs(type(row.natural_sampling), float)
+        self.assertEqual(row.branch_weights, (0.6, 0.4))
+        json.dumps(row.__dict__)
+
 
 class CorrelationTest(unittest.TestCase):
     def test_average_tie_spearman(self) -> None:
@@ -328,6 +352,7 @@ class FactorAuditTest(unittest.TestCase):
         self.assertFalse(result["success"])
         self.assertEqual(result["status"], "insufficient")
         self.assertEqual(result["eligible"], 1)
+        self.assertEqual(len(result["bins"]), 4)
 
     def test_local_tertile_mutant_cannot_replace_global_target_tertiles(self) -> None:
         rows = tuple(
@@ -350,6 +375,59 @@ class FactorAuditTest(unittest.TestCase):
         first = intervention_statistics(rows, factor="visibility")
         second = intervention_statistics(tuple(reversed(rows)), factor="visibility")
         self.assertEqual(first, second)
+
+    def test_intervention_severity_matches_expected_with_float_tolerance(self) -> None:
+        rows = []
+        for severity in (0.1 + 0.2, 0.6):
+            for role in ("target", "background"):
+                rows.append(
+                    _observation(
+                        image_id="float-severity",
+                        region_role=role,
+                        intervention_kind="sampling",
+                        intervention_factor="sampling",
+                        intervention_severity=severity,
+                        pair_id="float-pair",
+                        predicted_sampling=0.25 + severity * (0.4 if role == "target" else 0.1),
+                        predicted_visibility=0.25,
+                    )
+                )
+        rows.extend(
+            _observation(
+                image_id="float-severity",
+                region_role=role,
+                intervention_kind="clean",
+                intervention_factor="sampling",
+                pair_id="float-pair",
+                predicted_sampling=0.25,
+                predicted_visibility=0.25,
+            )
+            for role in ("target", "background")
+        )
+        stats = intervention_statistics(
+            tuple(rows), factor="sampling", expected_intervention_severities=(0.3, 0.6)
+        )
+        self.assertEqual(stats["status"], "ok")
+        self.assertEqual(stats["eligible"], 1)
+        self.assertEqual(stats["expected_severities"], (0.3, 0.6))
+
+    def test_intervention_evidence_examples_are_bounded(self) -> None:
+        rows = tuple(
+            _observation(
+                image_id=f"malformed-{index}",
+                region_role=role,
+                intervention_kind="clean",
+                intervention_factor="sampling",
+                pair_id=f"malformed-pair-{index}",
+            )
+            for index in range(101)
+            for role in ("target", "background")
+        )
+        stats = intervention_statistics(rows, factor="sampling")
+        examples = stats["malformed_examples"]
+        self.assertEqual(examples["total"], 101)
+        self.assertTrue(examples["truncated"])
+        self.assertLessEqual(len(examples["items"]), 100)
 
     def test_missing_middle_severity_is_malformed_even_with_two_remaining(self) -> None:
         rows = list(_fixture(image_count=2))
@@ -554,6 +632,114 @@ class FactorAuditTest(unittest.TestCase):
         self.assertEqual(first["sampling_unit"], "image_id")
         self.assertEqual(first["unique_image_count"], 4 * len(SEEDS) * len(NODES))
 
+    def test_moment_bootstrap_matches_fixed_rank_row_expansion_raw_and_residual(self) -> None:
+        import numpy as np
+        import ifdr_yolo.eval.natural_factor_audit as audit_module
+
+        rows = tuple(
+            _observation(
+                image_id=image_id,
+                object_id=index,
+                class_id=index % 3,
+                box_height=10.0 + index * 3.0,
+                natural_sampling=natural,
+                natural_visibility=0.2 + index * 0.1,
+                predicted_sampling=prediction,
+                predicted_visibility=0.3 + index * 0.08,
+            )
+            for index, (image_id, natural, prediction) in enumerate(
+                (
+                    ("image-a", 0.1, 0.2),
+                    ("image-a", 0.7, 0.5),
+                    ("image-b", 0.3, 0.8),
+                    ("image-b", 0.9, 0.4),
+                    ("image-c", 0.2, 0.1),
+                    ("image-c", 0.8, 0.9),
+                )
+            )
+        )
+        sampled_images = ("image-a", "image-b", "image-a", "image-c")
+        by_image = {image_id: [] for image_id in {row.image_id for row in rows}}
+        for index, row in enumerate(rows):
+            by_image[row.image_id].append(index)
+        expanded_indices = [index for image_id in sampled_images for index in by_image[image_id]]
+        weights = np.asarray(
+            [sampled_images.count(image_id) for image_id in sorted(by_image)], dtype=np.float64
+        )
+
+        images, raw_moments = audit_module._raw_image_moments(rows, "sampling")
+        self.assertEqual(images, tuple(sorted(by_image)))
+        raw_value = audit_module._raw_moment_rho(raw_moments, weights)
+        target_rank = audit_module.average_tie_rank(
+            tuple(row.natural_sampling for row in rows)
+        )
+        prediction_rank = audit_module.average_tie_rank(
+            tuple(row.predicted_sampling for row in rows)
+        )
+        raw_reference = audit_module._pearson(
+            tuple(target_rank[index] for index in expanded_indices),
+            tuple(prediction_rank[index] for index in expanded_indices),
+        )["rho"]
+        self.assertAlmostEqual(raw_value, raw_reference, places=12)
+
+        residual_images, cross_products, response_moments = audit_module._residual_image_moments(
+            rows, "sampling"
+        )
+        residual_value = audit_module._residual_moment_rho(
+            cross_products, response_moments, weights
+        )
+        height_rank = audit_module.average_tie_rank(tuple(row.box_height for row in rows))
+        classes = tuple(row.class_id for row in rows)
+        class_dummies = sorted(set(classes))[1:]
+        design = np.column_stack(
+            [
+                np.ones(len(rows)),
+                np.asarray(height_rank),
+                *[np.asarray([float(value == klass) for value in classes]) for klass in class_dummies],
+            ]
+        )
+        expanded_design = design[expanded_indices]
+        expanded_target = np.asarray([target_rank[index] for index in expanded_indices])
+        expanded_prediction = np.asarray([prediction_rank[index] for index in expanded_indices])
+        target_residual = expanded_target - expanded_design @ np.linalg.lstsq(
+            expanded_design, expanded_target, rcond=None
+        )[0]
+        prediction_residual = expanded_prediction - expanded_design @ np.linalg.lstsq(
+            expanded_design, expanded_prediction, rcond=None
+        )[0]
+        residual_reference = audit_module._pearson(
+            target_residual, prediction_residual
+        )["rho"]
+        self.assertEqual(residual_images, images)
+        self.assertAlmostEqual(residual_value, residual_reference, places=12)
+
+    def test_bootstrap_requires_two_replicates_and_rejects_insufficient_valid_replicates(self) -> None:
+        with self.assertRaises(ValueError):
+            image_cluster_bootstrap((_observation(),), factor="sampling", replicates=1)
+        invalid = image_cluster_bootstrap((_observation(),), factor="sampling", replicates=5)
+        self.assertEqual(invalid["valid_replicates"], 0)
+        self.assertEqual(invalid["status"], "insufficient")
+        valid = image_cluster_bootstrap(
+            _fixture(image_count=2), factor="sampling", replicates=5, seed=3
+        )
+        self.assertGreaterEqual(valid["valid_replicates"], 5)
+        self.assertEqual(valid["status"], "ok")
+
+    def test_gate_decision_recursively_freezes_nested_results(self) -> None:
+        decision = audit_natural_factors(
+            _fixture(image_count=2),
+            required_seeds=(17,),
+            required_nodes=(11,),
+            bootstrap_replicates=5,
+        )
+        with self.assertRaises(TypeError):
+            decision.factor_results["sampling"] = {}  # type: ignore[index]
+        with self.assertRaises(TypeError):
+            decision.factor_results["sampling"]["passed"] = False  # type: ignore[index]
+        with self.assertRaises(TypeError):
+            decision.factor_results["sampling"]["alignment"]["seed_node"]["17:11"]["raw"]["rho"] = 0.0  # type: ignore[index]
+        json.dumps(decision.to_dict())
+
     def test_same_source_image_across_seeds_nodes_and_objects_is_one_cluster(self) -> None:
         import ifdr_yolo.eval.natural_factor_audit as audit_module
 
@@ -599,19 +785,7 @@ class FactorAuditTest(unittest.TestCase):
             self.assertEqual(
                 [expected_count[image_id] for image_id in image_sample], count_sample
             )
-        self.assertEqual(len(captured), 40)
-        for sampled_images, sampled_rows in captured:
-            sampled_counts = Counter(sampled_images)
-            returned_counts = Counter(row.image_id for row in sampled_rows)
-            self.assertEqual(
-                returned_counts,
-                Counter(
-                    {
-                        image_id: expected_count[image_id] * draw_count
-                        for image_id, draw_count in sampled_counts.items()
-                    }
-                ),
-            )
+        self.assertEqual(captured, [])
 
     def test_missing_required_seed_node_intervention_evidence_fails(self) -> None:
         rows = tuple(
