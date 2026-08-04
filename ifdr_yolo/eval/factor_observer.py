@@ -112,6 +112,60 @@ def _condition_sort_key(condition: "ObservationCondition") -> tuple[object, ...]
     )
 
 
+def _canonical_pair_id(
+    *,
+    image_id: str,
+    object_id: int,
+    factor: str,
+    seed: int,
+    source_sha256: str,
+) -> str:
+    return _digest(
+        {
+            "kind": "pair",
+            "image_id": image_id,
+            "object_id": object_id,
+            "factor": factor,
+            "seed": seed,
+            "source_sha256": source_sha256,
+        }
+    )
+
+
+def _canonical_condition_id(
+    *,
+    image_id: str,
+    object_id: int,
+    class_id: int,
+    class_name: str,
+    bbox_xyxy: Sequence[float],
+    region_role: str,
+    intervention_kind: str,
+    intervention_factor: str | None,
+    intervention_severity: float,
+    pair_id: str | None,
+    source_sha256: str,
+    seed: int,
+) -> str:
+    return _digest(
+        {
+            "kind": "condition",
+            "image_id": image_id,
+            "object_id": object_id,
+            "class_id": class_id,
+            "class_name": class_name,
+            "bbox_xyxy": list(bbox_xyxy),
+            "region_role": region_role,
+            "intervention_kind": intervention_kind,
+            "intervention_factor": intervention_factor,
+            "intervention_severity": intervention_severity,
+            "pair_id": pair_id,
+            "source_sha256": source_sha256,
+            "seed": seed,
+        }
+    )
+
+
 def _canonical_transform_id(
     *,
     image_id: str,
@@ -237,6 +291,8 @@ class ObservationCondition:
         expected_class_name = ("Car", "Pedestrian", "Cyclist")[self.class_id]
         if self.class_name != expected_class_name:
             raise ValueError("class_name must correspond to class_id")
+        source = _sha256_hex(self.source_sha256, "source_sha256")
+        object.__setattr__(self, "source_sha256", source)
         bbox = _box(self.bbox_xyxy)
         object.__setattr__(self, "bbox_xyxy", bbox)
         box_height = _finite(self.box_height, "box_height")
@@ -279,6 +335,15 @@ class ObservationCondition:
             if not isinstance(self.pair_id, str):
                 raise ValueError("controlled conditions require a pair_id")
             _sha256_hex(self.pair_id, "pair_id")
+            expected_pair_id = _canonical_pair_id(
+                image_id=self.image_id,
+                object_id=self.object_id,
+                factor=self.intervention_factor,
+                seed=self.seed,
+                source_sha256=source,
+            )
+            if self.pair_id != expected_pair_id:
+                raise ValueError("pair_id is inconsistent with condition metadata")
             if matched_background is None:
                 raise ValueError("controlled conditions require a matched_background_bbox")
             if self.intervention_kind == "clean":
@@ -292,8 +357,23 @@ class ObservationCondition:
             if self.region_role == "background" and self.bbox_xyxy != matched_background:
                 raise ValueError("background bbox must equal matched_background_bbox")
         _sha256_hex(self.condition_id, "condition_id")
+        expected_condition_id = _canonical_condition_id(
+            image_id=self.image_id,
+            object_id=self.object_id,
+            class_id=self.class_id,
+            class_name=self.class_name,
+            bbox_xyxy=bbox,
+            region_role=self.region_role,
+            intervention_kind=self.intervention_kind,
+            intervention_factor=self.intervention_factor,
+            intervention_severity=severity,
+            pair_id=self.pair_id,
+            source_sha256=source,
+            seed=self.seed,
+        )
+        if self.condition_id != expected_condition_id:
+            raise ValueError("condition_id is inconsistent with condition metadata")
         _sha256_hex(self.transform_id, "transform_id")
-        object.__setattr__(self, "source_sha256", _sha256_hex(self.source_sha256, "source_sha256"))
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -490,9 +570,12 @@ class FactorObservationManifest:
         object.__setattr__(self, "plans", plans)
         object.__setattr__(self, "required_nodes", nodes)
         object.__setattr__(self, "checkpoint_sha256", _sha256_hex(self.checkpoint_sha256, "checkpoint_sha256"))
-        object.__setattr__(self, "seed", _integer(self.seed, "seed"))
+        manifest_seed = _integer(self.seed, "seed")
+        object.__setattr__(self, "seed", manifest_seed)
         object.__setattr__(self, "input_size", _integer(self.input_size, "input_size", minimum=1))
         for plan in plans:
+            if any(condition.seed != manifest_seed for condition in plan.conditions):
+                raise ValueError(f"condition seed does not match manifest seed for {plan.image_id}")
             expected_for_plan = tuple(
                 _digest({"condition_id": condition.condition_id, "node_id": node})
                 for condition in plan.conditions
@@ -608,21 +691,20 @@ def _condition(
     pair_id: str | None,
     seed: int,
 ) -> ObservationCondition:
-    common = {
-        "image_id": record.image_id,
-        "object_id": record.object_id,
-        "class_id": record.class_id,
-        "class_name": record.class_name,
-        "bbox_xyxy": list(bbox_xyxy),
-        "region_role": region_role,
-        "intervention_kind": intervention_kind,
-        "intervention_factor": intervention_factor,
-        "intervention_severity": intervention_severity,
-        "pair_id": pair_id,
-        "source_sha256": source_sha256,
-        "seed": seed,
-    }
-    condition_id = _digest({"kind": "condition", **common})
+    condition_id = _canonical_condition_id(
+        image_id=record.image_id,
+        object_id=record.object_id,
+        class_id=record.class_id,
+        class_name=record.class_name,
+        bbox_xyxy=bbox_xyxy,
+        region_role=region_role,
+        intervention_kind=intervention_kind,
+        intervention_factor=intervention_factor,
+        intervention_severity=intervention_severity,
+        pair_id=pair_id,
+        source_sha256=source_sha256,
+        seed=seed,
+    )
     transform_id = _canonical_transform_id(
         image_id=record.image_id,
         source_sha256=source_sha256,
@@ -762,15 +844,12 @@ def build_factor_observation_manifest(
             )
             for factor in _FACTORS:
                 for kind, severity in (("clean", 0.0), *( (factor, level) for level in REGISTERED_SEVERITIES )):
-                    pair_id = _digest(
-                        {
-                            "kind": "pair",
-                            "image_id": image_id,
-                            "object_id": record.object_id,
-                            "factor": factor,
-                            "seed": seed,
-                            "source_sha256": source_sha,
-                        }
+                    pair_id = _canonical_pair_id(
+                        image_id=image_id,
+                        object_id=record.object_id,
+                        factor=factor,
+                        seed=seed,
+                        source_sha256=source_sha,
                     )
                     for role, bbox in (("target", tuple(record.bbox_xyxy)), ("background", background)):
                         conditions.append(

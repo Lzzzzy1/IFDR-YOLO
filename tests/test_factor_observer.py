@@ -51,6 +51,8 @@ def _record(image_id: str, object_id: int, bbox=(10.0, 10.0, 30.0, 30.0)) -> Nat
 class FactorObserverFoundationTest(unittest.TestCase):
     @staticmethod
     def _condition_kwargs(**overrides):
+        from ifdr_yolo.eval.factor_observer import _canonical_condition_id, _canonical_pair_id
+
         values = {
             "image_id": "a",
             "seed": 17,
@@ -72,7 +74,65 @@ class FactorObserverFoundationTest(unittest.TestCase):
             "matched_background_bbox": None,
         }
         values.update(overrides)
+        if values["intervention_kind"] != "natural" and values["pair_id"] is None:
+            values["pair_id"] = _canonical_pair_id(
+                image_id=values["image_id"],
+                object_id=values["object_id"],
+                factor=values["intervention_factor"],
+                seed=values["seed"],
+                source_sha256=values["source_sha256"],
+            )
+        if "condition_id" not in overrides:
+            values["condition_id"] = _canonical_condition_id(
+                image_id=values["image_id"],
+                object_id=values["object_id"],
+                class_id=values["class_id"],
+                class_name=values["class_name"],
+                bbox_xyxy=values["bbox_xyxy"],
+                region_role=values["region_role"],
+                intervention_kind=values["intervention_kind"],
+                intervention_factor=values["intervention_factor"],
+                intervention_severity=values["intervention_severity"],
+                pair_id=values["pair_id"],
+                source_sha256=values["source_sha256"],
+                seed=values["seed"],
+            )
         return values
+
+    @staticmethod
+    def _condition_id(condition, **overrides):
+        from ifdr_yolo.eval.factor_observer import _canonical_condition_id
+
+        values = {
+            "image_id": condition.image_id,
+            "object_id": condition.object_id,
+            "class_id": condition.class_id,
+            "class_name": condition.class_name,
+            "bbox_xyxy": condition.bbox_xyxy,
+            "region_role": condition.region_role,
+            "intervention_kind": condition.intervention_kind,
+            "intervention_factor": condition.intervention_factor,
+            "intervention_severity": condition.intervention_severity,
+            "pair_id": condition.pair_id,
+            "source_sha256": condition.source_sha256,
+            "seed": condition.seed,
+        }
+        values.update(overrides)
+        return _canonical_condition_id(**values)
+
+    @staticmethod
+    def _pair_id(condition, **overrides):
+        from ifdr_yolo.eval.factor_observer import _canonical_pair_id
+
+        values = {
+            "image_id": condition.image_id,
+            "object_id": condition.object_id,
+            "factor": condition.intervention_factor,
+            "seed": condition.seed,
+            "source_sha256": condition.source_sha256,
+        }
+        values.update(overrides)
+        return _canonical_pair_id(**values)
 
     def test_direct_condition_schema_rejects_bad_ids_and_class_names(self) -> None:
         from ifdr_yolo.eval.factor_observer import ObservationCondition
@@ -92,14 +152,21 @@ class FactorObserverFoundationTest(unittest.TestCase):
             intervention_kind="sampling",
             intervention_factor="sampling",
             intervention_severity=0.5,
-            pair_id="12" * 32,
             matched_background_bbox=(40.0, 10.0, 60.0, 30.0),
         )
         with self.assertRaisesRegex(ValueError, "lowercase|hex"):
             ObservationCondition(**{**controlled, "pair_id": "A" * 64})
 
+        canonical_severity = 0.1 + 0.15
         canonical = ObservationCondition(
-            **{**controlled, "intervention_severity": 0.1 + 0.15}
+            **{
+                **controlled,
+                "intervention_severity": canonical_severity,
+                "condition_id": self._condition_id(
+                    ObservationCondition(**controlled),
+                    intervention_severity=canonical_severity,
+                ),
+            }
         )
         self.assertEqual(canonical.intervention_severity, 0.25)
         with self.assertRaisesRegex(ValueError, "registered"):
@@ -124,7 +191,6 @@ class FactorObserverFoundationTest(unittest.TestCase):
             intervention_kind="clean",
             intervention_factor="sampling",
             intervention_severity=0.0,
-            pair_id="12" * 32,
             matched_background_bbox=(40.0, 10.0, 60.0, 30.0),
         )
         ObservationCondition(**clean)
@@ -199,7 +265,12 @@ class FactorObserverFoundationTest(unittest.TestCase):
                     conditions=tuple(reversed(plan.conditions)),
                     expected_observation_ids=plan.expected_observation_ids,
                 )
-            outside = replace(natural, bbox_xyxy=(-1.0, 10.0, 30.0, 30.0))
+            outside_bbox = (-1.0, 10.0, 30.0, 30.0)
+            outside = replace(
+                natural,
+                bbox_xyxy=outside_bbox,
+                condition_id=self._condition_id(natural, bbox_xyxy=outside_bbox),
+            )
             altered = (outside,) + plan.conditions[1:]
             with self.assertRaisesRegex(ValueError, "image bounds"):
                 ImageObservationPlan(
@@ -223,10 +294,12 @@ class FactorObserverFoundationTest(unittest.TestCase):
                 if condition.intervention_kind == "sampling"
             )
             controlled = plan.conditions[controlled_index]
+            wrong_background_bbox = plan.conditions[0].bbox_xyxy
             wrong_background = replace(
                 controlled,
-                bbox_xyxy=plan.conditions[0].bbox_xyxy,
-                matched_background_bbox=plan.conditions[0].bbox_xyxy,
+                bbox_xyxy=wrong_background_bbox,
+                matched_background_bbox=wrong_background_bbox,
+                condition_id=self._condition_id(controlled, bbox_xyxy=wrong_background_bbox),
             )
             altered = list(plan.conditions)
             altered[controlled_index] = wrong_background
@@ -250,8 +323,19 @@ class FactorObserverFoundationTest(unittest.TestCase):
                     source_sha256=plan.source_sha256,
                     conditions=missing,
                     expected_observation_ids=plan.expected_observation_ids,
-                )
-            inconsistent = replace(controlled, source_sha256="cd" * 32)
+            )
+            inconsistent_source = "cd" * 32
+            inconsistent_pair = self._pair_id(controlled, source_sha256=inconsistent_source)
+            inconsistent = replace(
+                controlled,
+                source_sha256=inconsistent_source,
+                pair_id=inconsistent_pair,
+                condition_id=self._condition_id(
+                    controlled,
+                    source_sha256=inconsistent_source,
+                    pair_id=inconsistent_pair,
+                ),
+            )
             altered = list(plan.conditions)
             altered[controlled_index] = inconsistent
             with self.assertRaisesRegex(ValueError, "source|consistent"):
@@ -493,6 +577,31 @@ class FactorObserverFoundationTest(unittest.TestCase):
                             required_nodes=nodes,
                             input_size=manifest.input_size,
                         )
+
+    def test_manifest_seed_is_bound_to_every_condition(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            manifest = self._manifest(Path(directory))
+            with self.assertRaisesRegex(ValueError, "seed"):
+                replace(manifest, seed=manifest.seed + 1)
+
+    def test_condition_and_pair_ids_are_canonical_derived_values(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            manifest = self._manifest(Path(directory))
+            plan = manifest.plans[0]
+            natural = next(
+                condition
+                for condition in plan.conditions
+                if condition.intervention_kind == "natural"
+            )
+            controlled = next(
+                condition
+                for condition in plan.conditions
+                if condition.intervention_kind == "sampling"
+            )
+            with self.assertRaisesRegex(ValueError, "condition_id"):
+                replace(natural, condition_id="12" * 32)
+            with self.assertRaisesRegex(ValueError, "pair_id"):
+                replace(controlled, pair_id="34" * 32)
 
     def test_letterbox_edges_and_multiple_feature_maps_are_clipped(self) -> None:
         from ifdr_yolo.eval.factor_observer import letterbox_image, map_box_to_feature_roi
