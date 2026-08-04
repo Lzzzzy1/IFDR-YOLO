@@ -717,6 +717,46 @@ class FactorObserverFoundationTest(unittest.TestCase):
             self.assertEqual(output.read_bytes(), before_output)
             self.assertEqual(progress.read_bytes(), before_progress)
 
+    def test_journal_finalize_rejects_external_progress_without_overwrite(self) -> None:
+        from ifdr_yolo.eval.factor_observer import FactorObservationJournal
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = self._manifest(root)
+            output, progress = root / "rows.jsonl", root / "progress.json"
+            journal = FactorObservationJournal(manifest, output, progress)
+            for plan in manifest.plans:
+                rows = [{"observation_id": item, "image_id": plan.image_id} for item in plan.expected_observation_ids]
+                journal.commit_image(plan.image_id, rows)
+            forged = json.loads(progress.read_text(encoding="utf-8"))
+            forged["status"] = "external-writer"
+            progress.write_text(json.dumps(forged, sort_keys=True) + "\n", encoding="utf-8")
+            before_output = output.read_bytes()
+            before_progress = progress.read_bytes()
+            with self.assertRaisesRegex(ValueError, "progress JSON changed"):
+                journal.finalize()
+            self.assertEqual(output.read_bytes(), before_output)
+            self.assertEqual(progress.read_bytes(), before_progress)
+
+    def test_journal_finalize_rejects_external_output_suffix_without_overwrite(self) -> None:
+        from ifdr_yolo.eval.factor_observer import FactorObservationJournal
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = self._manifest(root)
+            output, progress = root / "rows.jsonl", root / "progress.json"
+            journal = FactorObservationJournal(manifest, output, progress)
+            for plan in manifest.plans:
+                rows = [{"observation_id": item, "image_id": plan.image_id} for item in plan.expected_observation_ids]
+                journal.commit_image(plan.image_id, rows)
+            before_progress = progress.read_bytes()
+            output.write_bytes(output.read_bytes() + b'{"external":true}\n')
+            before_output = output.read_bytes()
+            with self.assertRaisesRegex(ValueError, "output JSONL changed"):
+                journal.finalize()
+            self.assertEqual(output.read_bytes(), before_output)
+            self.assertEqual(progress.read_bytes(), before_progress)
+
     def test_journal_rejects_hash_drift_identity_variants_and_missing_finalize(self) -> None:
         from ifdr_yolo.eval.factor_observer import FactorObservationJournal, build_factor_observation_manifest
 

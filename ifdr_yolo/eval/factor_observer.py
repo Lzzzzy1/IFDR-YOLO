@@ -1054,7 +1054,6 @@ class FactorObservationJournal:
             self._recover_inflight(last_completed_end)
         self._validate_file_and_progress()
         self._committed_end = self.output_path.stat().st_size
-        self._progress_snapshot = _canonical_json(self._state)
         self._progress_signature = self._progress_file_signature()
 
     def _progress_file_signature(self) -> tuple[int, int, int, int, int]:
@@ -1070,8 +1069,7 @@ class FactorObservationJournal:
             int(getattr(stat, "st_ctime_ns", 0)),
         )
 
-    def _refresh_progress_snapshot(self) -> None:
-        self._progress_snapshot = _canonical_json(self._state)
+    def _refresh_progress_signature(self) -> None:
         self._progress_signature = self._progress_file_signature()
 
     def _assert_commit_state(self) -> None:
@@ -1381,7 +1379,7 @@ class FactorObservationJournal:
             "expected_row_count": len(observation_ids),
         }
         _atomic_write_json(self.progress_path, self._state)
-        self._refresh_progress_snapshot()
+        self._refresh_progress_signature()
         with self.output_path.open("ab") as handle:
             handle.write(payload)
             handle.flush()
@@ -1399,12 +1397,13 @@ class FactorObservationJournal:
         self._state["status"] = "running"
         _atomic_write_json(self.progress_path, self._state)
         self._committed_end = end_offset
-        self._refresh_progress_snapshot()
+        self._refresh_progress_signature()
         return True
 
     def finalize(self) -> dict[str, object]:
         """Require exact manifest identity coverage and atomically mark complete."""
 
+        self._assert_commit_state()
         by_image, _ = self._scan_file()
         expected_by_image = {plan.image_id: set(plan.expected_observation_ids) for plan in self.manifest.plans}
         if set(by_image) != set(expected_by_image):
@@ -1425,10 +1424,11 @@ class FactorObservationJournal:
             "expected_observation_count": self.manifest.expected_observation_count,
             "observed_observation_count": sum(len(rows) for rows in by_image.values()),
         }
+        self._assert_commit_state()
         self._state["status"] = "complete"
         self._state["summary"] = summary
         _atomic_write_json(self.progress_path, self._state)
-        self._refresh_progress_snapshot()
+        self._refresh_progress_signature()
         return summary
 
 
