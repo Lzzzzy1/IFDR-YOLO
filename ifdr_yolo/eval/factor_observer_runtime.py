@@ -7,21 +7,38 @@ on top of these primitives.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections import defaultdict
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 import hashlib
 import io
+import json
 import math
 from pathlib import Path
 
+import cv2
+import numpy as np
 import torch
 from torch import nn
 
+from ifdr_yolo.data.interventions import (
+    InterventionKind,
+    InterventionRole,
+    InterventionSpec,
+    apply_intervention,
+    factor_target_for_spec,
+)
 from ifdr_yolo.eval.factor_observer import (
     DEFAULT_REQUIRED_NODES,
+    FactorObservationJournal,
+    FactorObservationManifest,
+    ImageObservationPlan,
     LetterboxGeometry,
+    ObservationCondition,
     map_box_to_feature_roi,
+    letterbox_image,
 )
+from ifdr_yolo.eval.natural_factor_audit import NaturalFactorObservation
 
 
 def _sha256_hex(value: object, field: str) -> str:
@@ -87,7 +104,7 @@ def load_ifdr_checkpoint(
     try:
         payload = torch.load(
             io.BytesIO(raw),
-            map_location=device,
+            map_location="cpu",
             weights_only=False,
         )
     except Exception as exc:
@@ -271,9 +288,586 @@ def pool_reliability_contexts(
     return tuple(pooled)
 
 
+def _model_device(model: nn.Module) -> torch.device:
+    for parameter in model.parameters():
+        return parameter.device
+    for buffer in model.buffers():
+        return buffer.device
+    return torch.device("cpu")
+
+
+def _read_png_once(path: str | Path) -> tuple[np.ndarray, int, int, str]:
+    """Read and decode one PNG while retaining the bytes used for hashing."""
+
+    image_path = Path(path)
+    try:
+        raw = image_path.read_bytes()
+    except OSError as exc:
+        raise ValueError(f"unable to read image path: {image_path}") from exc
+    if not raw:
+        raise ValueError(f"image is empty: {image_path}")
+    image = cv2.imdecode(np.frombuffer(raw, dtype=np.uint8), cv2.IMREAD_COLOR)
+    if image is None or image.ndim != 3 or image.shape[2] != 3:
+        raise ValueError(f"image is not a readable PNG: {image_path}")
+    return image, int(image.shape[1]), int(image.shape[0]), hashlib.sha256(raw).hexdigest()
+
+
+def _normalized_bbox(
+    bbox_xyxy: Sequence[float],
+    *,
+    width: int,
+    height: int,
+) -> tuple[float, float, float, float]:
+    x1, y1, x2, y2 = (float(value) for value in bbox_xyxy)
+    return (x1 / width, y1 / height, x2 / width, y2 / height)
+
+
+_OBSERVATION_ROW_FIELDS = frozenset(
+    {
+        "schema_version",
+        "manifest_sha256",
+        "observation_id",
+        "condition_id",
+        "transform_id",
+        "checkpoint_sha256",
+        "source_sha256",
+        "seed",
+        "transform_seed",
+        "node_id",
+        "image_id",
+        "object_id",
+        "class_id",
+        "class_name",
+        "bbox_xyxy",
+        "box_height",
+        "natural_sampling",
+        "natural_visibility",
+        "region_xyxy",
+        "region_role",
+        "intervention_kind",
+        "intervention_factor",
+        "intervention_severity",
+        "pair_id",
+        "matched_background_bbox",
+        "predicted_sampling",
+        "predicted_visibility",
+        "branch_weights",
+        "gate_strength",
+        "feature_roi_xyxy",
+        "feature_shape",
+        "input_shape",
+    }
+)
+
+
+def _transform_seed_for_condition(condition: ObservationCondition) -> int | None:
+    """Derive the fixed common-random-number seed for one intervention pair.
+
+    The protocol is the first eight digest bytes, interpreted big-endian and
+    masked to 63 bits, over ``b"ifdr-observer-transform-v1\\0" + pair_id``.
+    Natural and clean source transforms deliberately have no random seed.
+    """
+
+    if condition.intervention_kind in {"natural", "clean"}:
+        return None
+    pair_id = condition.pair_id
+    if not isinstance(pair_id, str) or not pair_id:
+        raise ValueError("intervention condition must have a pair_id")
+    digest = hashlib.sha256(
+        b"ifdr-observer-transform-v1\0" + pair_id.encode("utf-8")
+    ).digest()
+    return int.from_bytes(digest[:8], "big") & ((1 << 63) - 1)
+
+
+def _plan_letterbox_geometry(plan: ImageObservationPlan, input_size: int) -> LetterboxGeometry:
+    scale = min(input_size / plan.width, input_size / plan.height)
+    resized_width = max(1, int(round(plan.width * scale)))
+    resized_height = max(1, int(round(plan.height * scale)))
+    pad_width = input_size - resized_width
+    pad_height = input_size - resized_height
+    pad_left = pad_width // 2
+    pad_top = pad_height // 2
+    return LetterboxGeometry(
+        original_width=plan.width,
+        original_height=plan.height,
+        input_size=input_size,
+        scale=scale,
+        resized_width=resized_width,
+        resized_height=resized_height,
+        pad_left=pad_left,
+        pad_top=pad_height // 2,
+        pad_right=pad_width - pad_left,
+        pad_bottom=pad_height - pad_top,
+    )
+
+
+def _condition_observation_ids(
+    plan: ImageObservationPlan,
+    nodes: Sequence[int],
+) -> dict[tuple[str, int], str]:
+    expected: dict[tuple[str, int], str] = {}
+    width = len(tuple(nodes))
+    if len(plan.expected_observation_ids) != len(plan.conditions) * width:
+        raise ValueError("plan expected observation IDs have an invalid count")
+    for condition_index, condition in enumerate(plan.conditions):
+        for node_index, node in enumerate(nodes):
+            expected[(condition.condition_id, node)] = plan.expected_observation_ids[
+                condition_index * width + node_index
+            ]
+    return expected
+
+
+def _require_row_mapping(row: object) -> Mapping[str, object]:
+    if not isinstance(row, Mapping) or any(not isinstance(key, str) for key in row):
+        raise ValueError("observation row must be a JSON object with string keys")
+    return row
+
+
+def _row_number(value: object, field: str, *, unit: bool = False) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{field} must be a finite number")
+    result = float(value)
+    if not math.isfinite(result) or (unit and not 0.0 <= result <= 1.0):
+        if unit:
+            raise ValueError(f"{field} must be finite and within [0, 1]")
+        raise ValueError(f"{field} must be finite")
+    return result
+
+
+def _row_integer(value: object, field: str, *, minimum: int = 0) -> int:
+    if isinstance(value, bool) or type(value) is not int or value < minimum:
+        raise ValueError(f"{field} must be an integer >= {minimum}")
+    return value
+
+
+def _row_box(value: object, field: str) -> tuple[float, float, float, float]:
+    if not isinstance(value, (tuple, list)) or len(value) != 4:
+        raise ValueError(f"{field} must contain four coordinates")
+    result = tuple(_row_number(item, f"{field}[{index}]") for index, item in enumerate(value))
+    if result[2] <= result[0] or result[3] <= result[1]:
+        raise ValueError(f"{field} must have positive area")
+    return result
+
+
+def _row_equal(actual: object, expected: object, field: str) -> None:
+    if actual != expected:
+        raise ValueError(f"observation {field} does not match manifest")
+
+
+def validate_observation_row(
+    row: Mapping[str, object],
+    *,
+    manifest: FactorObservationManifest,
+    plan: ImageObservationPlan,
+    condition: ObservationCondition,
+    node_id: int,
+    observation_id: str,
+    checkpoint_sha256: str,
+) -> dict[str, object]:
+    """Validate one JSON-native row against its immutable plan identity."""
+
+    value = _require_row_mapping(row)
+    if set(value) != _OBSERVATION_ROW_FIELDS:
+        raise ValueError("observation row fields do not match schema")
+    if value.get("schema_version") != 1:
+        raise ValueError("observation schema_version must be 1")
+    _row_equal(value.get("manifest_sha256"), manifest.hash(), "manifest_sha256")
+    _row_equal(value.get("observation_id"), observation_id, "observation_id")
+    for field, expected in (
+        ("condition_id", condition.condition_id),
+        ("transform_id", condition.transform_id),
+        ("checkpoint_sha256", checkpoint_sha256),
+        ("source_sha256", condition.source_sha256),
+        ("image_id", condition.image_id),
+        ("seed", condition.seed),
+        ("transform_seed", _transform_seed_for_condition(condition)),
+        ("object_id", condition.object_id),
+        ("class_id", condition.class_id),
+        ("class_name", condition.class_name),
+        ("region_role", condition.region_role),
+        ("intervention_kind", condition.intervention_kind),
+        ("intervention_factor", condition.intervention_factor),
+        ("pair_id", condition.pair_id),
+    ):
+        _row_equal(value.get(field), expected, field)
+    if _row_integer(value.get("node_id"), "node_id") != node_id:
+        raise ValueError("observation node_id does not match manifest")
+    bbox = _row_box(value.get("bbox_xyxy"), "bbox_xyxy")
+    if bbox != condition.bbox_xyxy:
+        raise ValueError("observation bbox does not match manifest")
+    if not math.isclose(
+        _row_number(value.get("box_height"), "box_height"),
+        condition.box_height,
+        rel_tol=0.0,
+        abs_tol=1e-6,
+    ):
+        raise ValueError("observation box_height does not match manifest")
+    for field, expected in (
+        ("natural_sampling", condition.natural_sampling),
+        ("natural_visibility", condition.natural_visibility),
+        ("intervention_severity", condition.intervention_severity),
+    ):
+        if not math.isclose(
+            _row_number(value.get(field), field),
+            expected,
+            rel_tol=0.0,
+            abs_tol=1e-9,
+        ):
+            raise ValueError(f"observation {field} does not match manifest")
+    matched = value.get("matched_background_bbox")
+    expected_matched = condition.matched_background_bbox
+    if expected_matched is None:
+        if matched is not None:
+            raise ValueError("observation matched background must be null")
+    elif _row_box(matched, "matched_background_bbox") != expected_matched:
+        raise ValueError("observation matched background does not match manifest")
+
+    region = _row_box(value.get("region_xyxy"), "region_xyxy")
+    expected_region = _normalized_bbox(
+        condition.bbox_xyxy,
+        width=plan.width,
+        height=plan.height,
+    )
+    if any(not math.isclose(left, right, rel_tol=0.0, abs_tol=1e-9) for left, right in zip(region, expected_region)):
+        raise ValueError("observation region does not match manifest")
+    input_shape = value.get("input_shape")
+    expected_input_shape = [3, manifest.input_size, manifest.input_size]
+    if input_shape != expected_input_shape:
+        raise ValueError("input_shape does not match manifest input_size")
+    roi_values = _row_box(value.get("feature_roi_xyxy"), "feature_roi_xyxy")
+    roi_int = tuple(_row_integer(int(item), "feature ROI coordinate") for item in roi_values)
+    if any(float(item) != value for item, value in zip(roi_int, roi_values)):
+        raise ValueError("feature ROI coordinates must be integers")
+    shape = value.get("feature_shape")
+    if not isinstance(shape, (tuple, list)) or len(shape) != 2:
+        raise ValueError("feature_shape must contain height and width")
+    feature_shape = tuple(_row_integer(item, "feature_shape", minimum=1) for item in shape)
+    if roi_int[2] <= roi_int[0] or roi_int[3] <= roi_int[1]:
+        raise ValueError("feature ROI must have positive area")
+    sampling = _row_number(value.get("predicted_sampling"), "predicted_sampling", unit=True)
+    visibility = _row_number(value.get("predicted_visibility"), "predicted_visibility", unit=True)
+    branch_value = value.get("branch_weights")
+    if not isinstance(branch_value, (tuple, list)) or len(branch_value) != 2:
+        raise ValueError("branch_weights must contain two values")
+    branches = tuple(_row_number(item, f"branch_weights[{index}]", unit=True) for index, item in enumerate(branch_value))
+    if abs(sum(branches) - 1.0) > 1e-6:
+        raise ValueError("branch_weights must sum to 1")
+    gate = _row_number(value.get("gate_strength"), "gate_strength", unit=True)
+    geometry = _plan_letterbox_geometry(plan, manifest.input_size)
+    expected_roi = map_box_to_feature_roi(condition.bbox_xyxy, geometry, feature_shape)
+    if roi_int != expected_roi:
+        raise ValueError("feature ROI does not match letterbox geometry")
+    NaturalFactorObservation(
+        seed=condition.seed,
+        node_id=node_id,
+        image_id=condition.image_id,
+        object_id=condition.object_id,
+        class_id=condition.class_id,
+        class_name=condition.class_name,
+        box_height=condition.box_height,
+        region_role=condition.region_role,
+        intervention_kind=condition.intervention_kind,
+        intervention_severity=condition.intervention_severity,
+        pair_id=condition.pair_id,
+        natural_sampling=condition.natural_sampling,
+        natural_visibility=condition.natural_visibility,
+        predicted_sampling=sampling,
+        predicted_visibility=visibility,
+        branch_weights=branches,
+        intervention_factor=condition.intervention_factor,
+    )
+    normalized = dict(value)
+    normalized.update(
+        {
+            "feature_roi_xyxy": list(roi_int),
+            "feature_shape": list(feature_shape),
+            "predicted_sampling": sampling,
+            "predicted_visibility": visibility,
+            "branch_weights": list(branches),
+            "gate_strength": gate,
+        }
+    )
+    return normalized
+
+
+def validate_observation_rows(
+    rows: Iterable[Mapping[str, object]],
+    *,
+    manifest: FactorObservationManifest,
+    plan: ImageObservationPlan,
+    checkpoint_sha256: str,
+) -> tuple[dict[str, object], ...]:
+    """Validate all rows for one image and require exact condition×node coverage."""
+
+    materialized = tuple(rows)
+    expected = _condition_observation_ids(plan, DEFAULT_REQUIRED_NODES)
+    if len(materialized) != len(expected):
+        raise ValueError("observation row count does not match manifest")
+    condition_by_id = {condition.condition_id: condition for condition in plan.conditions}
+    node_set = set(DEFAULT_REQUIRED_NODES)
+    seen: set[str] = set()
+    validated: list[dict[str, object]] = []
+    for row in materialized:
+        value = _require_row_mapping(row)
+        condition_id = value.get("condition_id")
+        condition = condition_by_id.get(condition_id) if isinstance(condition_id, str) else None
+        node_id = value.get("node_id")
+        if condition is None or isinstance(node_id, bool) or not isinstance(node_id, int) or node_id not in node_set:
+            raise ValueError("observation condition/node does not match manifest")
+        observation_id = expected[(condition_id, node_id)]
+        if observation_id in seen:
+            raise ValueError("duplicate observation_id in image rows")
+        seen.add(observation_id)
+        validated.append(
+            validate_observation_row(
+                value,
+                manifest=manifest,
+                plan=plan,
+                condition=condition,
+                node_id=node_id,
+                observation_id=observation_id,
+                checkpoint_sha256=checkpoint_sha256,
+            )
+        )
+    if seen != set(expected.values()):
+        raise ValueError("observation rows do not match manifest identities")
+    return tuple(validated)
+
+
+def _read_existing_rows(
+    journal: FactorObservationJournal,
+    manifest: FactorObservationManifest,
+    checkpoint_sha256: str,
+) -> dict[str, tuple[dict[str, object], ...]]:
+    by_image: dict[str, list[dict[str, object]]] = defaultdict(list)
+    try:
+        handle = journal.output_path.open("rb")
+    except OSError as exc:
+        raise ValueError("unable to read observation JSONL") from exc
+    with handle:
+        for raw_line in handle:
+            if not raw_line.endswith(b"\n"):
+                raise ValueError("observation JSONL contains an unterminated line")
+            try:
+                row = json.loads(
+                    raw_line.decode("utf-8"),
+                    parse_constant=lambda value: (_ for _ in ()).throw(ValueError(value)),
+                )
+            except (UnicodeDecodeError, TypeError, ValueError) as exc:
+                raise ValueError("observation JSONL contains malformed JSON") from exc
+            value = _require_row_mapping(row)
+            image_id = value.get("image_id")
+            if not isinstance(image_id, str):
+                raise ValueError("observation row image_id is invalid")
+            by_image[image_id].append(dict(value))
+    plan_by_image = {plan.image_id: plan for plan in manifest.plans}
+    if any(image_id not in plan_by_image for image_id in by_image):
+        raise ValueError("observation JSONL contains an unknown image")
+    validated: dict[str, tuple[dict[str, object], ...]] = {}
+    for image_id, plan in plan_by_image.items():
+        rows = by_image.get(image_id, [])
+        if rows:
+            validated[image_id] = validate_observation_rows(
+                rows,
+                manifest=manifest,
+                plan=plan,
+                checkpoint_sha256=checkpoint_sha256,
+            )
+        elif journal.is_completed(image_id):
+            raise ValueError("completed image has no observation rows")
+    return validated
+
+
+def _intervention_spec(
+    condition: ObservationCondition,
+    *,
+    width: int,
+    height: int,
+) -> InterventionSpec:
+    role = (
+        InterventionRole.OBJECT
+        if condition.region_role == "target"
+        else InterventionRole.BACKGROUND
+    )
+    kind = (
+        InterventionKind.SAMPLING
+        if condition.intervention_kind == "sampling"
+        else InterventionKind.VISIBILITY
+    )
+    return InterventionSpec(
+        image_id=condition.image_id,
+        kind=kind,
+        role=role,
+        strength=condition.intervention_severity,
+        seed=_transform_seed_for_condition(condition),
+        object_id=condition.object_id if role is InterventionRole.OBJECT else None,
+        region_xyxy=_normalized_bbox(
+            condition.bbox_xyxy,
+            width=width,
+            height=height,
+        ),
+    )
+
+
+def _observation_row(
+    *,
+    manifest: FactorObservationManifest,
+    plan: ImageObservationPlan,
+    condition: ObservationCondition,
+    node: PooledReliability,
+    observation_id: str,
+    checkpoint_sha256: str,
+) -> dict[str, object]:
+    region = _normalized_bbox(condition.bbox_xyxy, width=plan.width, height=plan.height)
+    matched = condition.matched_background_bbox
+    row: dict[str, object] = {
+        "schema_version": 1,
+        "manifest_sha256": manifest.hash(),
+        "observation_id": observation_id,
+        "condition_id": condition.condition_id,
+        "transform_id": condition.transform_id,
+        "checkpoint_sha256": checkpoint_sha256,
+        "source_sha256": condition.source_sha256,
+        "seed": condition.seed,
+        "transform_seed": _transform_seed_for_condition(condition),
+        "node_id": node.node,
+        "image_id": condition.image_id,
+        "object_id": condition.object_id,
+        "class_id": condition.class_id,
+        "class_name": condition.class_name,
+        "bbox_xyxy": list(condition.bbox_xyxy),
+        "box_height": condition.box_height,
+        "natural_sampling": condition.natural_sampling,
+        "natural_visibility": condition.natural_visibility,
+        "region_xyxy": list(region),
+        "region_role": condition.region_role,
+        "intervention_kind": condition.intervention_kind,
+        "intervention_factor": condition.intervention_factor,
+        "intervention_severity": condition.intervention_severity,
+        "pair_id": condition.pair_id,
+        "matched_background_bbox": None if matched is None else list(matched),
+        "predicted_sampling": node.sampling,
+        "predicted_visibility": node.visibility,
+        "branch_weights": list(node.branch_weights),
+        "gate_strength": node.gate_strength,
+        "feature_roi_xyxy": list(node.roi_xyxy),
+        "feature_shape": list(node.feature_shape),
+        "input_shape": [3, manifest.input_size, manifest.input_size],
+    }
+    return row
+
+
+def run_factor_observer(
+    loaded: LoadedIFDRCheckpoint,
+    manifest: FactorObservationManifest,
+    journal: FactorObservationJournal,
+    *,
+    transform_batch_size: int = 8,
+) -> dict[str, object]:
+    """Execute deterministic transform-level IFDR observations exactly once."""
+
+    if not isinstance(loaded, LoadedIFDRCheckpoint):
+        raise ValueError("loaded must be a LoadedIFDRCheckpoint")
+    if not isinstance(manifest, FactorObservationManifest):
+        raise ValueError("manifest must be a FactorObservationManifest")
+    if not isinstance(journal, FactorObservationJournal):
+        raise ValueError("journal must be a FactorObservationJournal")
+    if loaded.checkpoint_sha256 != manifest.checkpoint_sha256:
+        raise ValueError("checkpoint hash does not match manifest")
+    if journal.manifest.hash() != manifest.hash():
+        raise ValueError("journal manifest does not match manifest")
+    if journal.manifest.checkpoint_sha256 != loaded.checkpoint_sha256:
+        raise ValueError("journal checkpoint hash does not match checkpoint")
+    if isinstance(transform_batch_size, bool) or type(transform_batch_size) is not int or transform_batch_size <= 0:
+        raise ValueError("transform_batch_size must be a positive integer")
+
+    _read_existing_rows(journal, manifest, loaded.checkpoint_sha256)
+    model = loaded.model
+    device = _model_device(model)
+    model.eval()
+    nodes = manifest.required_nodes
+    for plan in manifest.plans:
+        if journal.is_completed(plan.image_id):
+            continue
+        image, width, height, source_sha256 = _read_png_once(plan.image_path)
+        if width != plan.width or height != plan.height:
+            raise ValueError(f"image dimensions do not match manifest for {plan.image_id}")
+        if source_sha256 != plan.source_sha256:
+            raise ValueError(f"image source hash does not match manifest for {plan.image_id}")
+        grouped: dict[str, list[ObservationCondition]] = defaultdict(list)
+        for condition in plan.conditions:
+            grouped[condition.transform_id].append(condition)
+        transform_ids = sorted(grouped)
+        rows: list[dict[str, object]] = []
+        expected_ids = _condition_observation_ids(plan, nodes)
+        for start in range(0, len(transform_ids), transform_batch_size):
+            chunk_ids = transform_ids[start : start + transform_batch_size]
+            chunk: list[tuple[LetterboxGeometry, tuple[ObservationCondition, ...]]] = []
+            tensors: list[torch.Tensor] = []
+            for transform_id in chunk_ids:
+                conditions = tuple(grouped[transform_id])
+                if any(condition.image_id != plan.image_id or condition.source_sha256 != plan.source_sha256 for condition in conditions):
+                    raise ValueError("transform group metadata does not match image plan")
+                representative = conditions[0]
+                transformed_image = image
+                if representative.intervention_kind in {"sampling", "visibility"}:
+                    spec = _intervention_spec(representative, width=width, height=height)
+                    target = factor_target_for_spec(
+                        spec,
+                        natural_sampling=representative.natural_sampling,
+                        natural_occlusion=representative.natural_visibility,
+                    )
+                    transformed_image = apply_intervention(image, spec, target).image
+                elif representative.intervention_kind not in {"natural", "clean"}:
+                    raise ValueError("unsupported condition intervention kind")
+                tensor, geometry = letterbox_image(transformed_image, manifest.input_size)
+                tensors.append(tensor)
+                chunk.append((geometry, conditions))
+            batch = torch.stack(tensors, dim=0).to(device=device, dtype=torch.float32)
+            del tensors
+            with torch.inference_mode():
+                model(batch)
+            contexts = model.consume_reliability_context()
+            for batch_index, (geometry, conditions) in enumerate(chunk):
+                for condition in conditions:
+                    pooled = pool_reliability_contexts(
+                        contexts,
+                        batch_index=batch_index,
+                        bbox_xyxy=condition.bbox_xyxy,
+                        geometry=geometry,
+                        required_nodes=nodes,
+                    )
+                    for node in pooled:
+                        rows.append(
+                            _observation_row(
+                                manifest=manifest,
+                                plan=plan,
+                                condition=condition,
+                                node=node,
+                                observation_id=expected_ids[(condition.condition_id, node.node)],
+                                checkpoint_sha256=loaded.checkpoint_sha256,
+                            )
+                        )
+            del contexts, chunk
+            del batch
+        validated = validate_observation_rows(
+            rows,
+            manifest=manifest,
+            plan=plan,
+            checkpoint_sha256=loaded.checkpoint_sha256,
+        )
+        if len(validated) != len(plan.expected_observation_ids):
+            raise ValueError("generated observation rows do not match manifest")
+        journal.commit_image(plan.image_id, validated)
+    return journal.finalize()
+
+
 __all__ = [
     "LoadedIFDRCheckpoint",
     "PooledReliability",
     "load_ifdr_checkpoint",
     "pool_reliability_contexts",
+    "run_factor_observer",
+    "validate_observation_row",
+    "validate_observation_rows",
 ]

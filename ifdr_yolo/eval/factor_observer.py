@@ -1056,6 +1056,22 @@ class FactorObservationJournal:
         self._committed_end = self.output_path.stat().st_size
         self._progress_signature = self._progress_file_signature()
 
+    @property
+    def completed_image_ids(self) -> frozenset[str]:
+        """Return the immutable set of images already committed."""
+
+        completed = self._state.get("completed")
+        if not isinstance(completed, dict):
+            raise ValueError("progress completed must be an object")
+        return frozenset(completed)
+
+    def is_completed(self, image_id: str) -> bool:
+        """Return whether ``image_id`` has a committed JSONL block."""
+
+        if not isinstance(image_id, str):
+            raise ValueError("image_id must be text")
+        return image_id in self.completed_image_ids
+
     def _progress_file_signature(self) -> tuple[int, int, int, int, int]:
         try:
             stat = self.progress_path.stat()
