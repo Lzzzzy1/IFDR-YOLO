@@ -128,6 +128,11 @@ class NaturalFactorObservation:
                 raise ValueError("intervention rows require a non-empty pair_id")
             if self.intervention_kind == "clean" and severity != 0.0:
                 raise ValueError("clean intervention rows must have severity 0")
+            if self.intervention_kind in {"sampling", "visibility"} and severity <= 0.0:
+                raise ValueError(
+                    f"{self.intervention_kind} intervention severity must be greater than 0 "
+                    "(severity 0 is reserved for clean/natural)"
+                )
 
 
 def _sort_key(row: NaturalFactorObservation) -> tuple[Any, ...]:
@@ -151,7 +156,21 @@ def _validated_observations(
         return ()
     if any(not isinstance(row, NaturalFactorObservation) for row in rows):
         raise ValueError("observations must contain NaturalFactorObservation records")
-    return tuple(sorted(rows, key=_sort_key))
+    ordered = tuple(sorted(rows, key=_sort_key))
+    natural_identity: dict[tuple[int, int, str, int], NaturalFactorObservation] = {}
+    for row in ordered:
+        if row.intervention_kind != "natural":
+            continue
+        identity = (row.seed, row.node_id, row.image_id, row.object_id)
+        previous = natural_identity.get(identity)
+        if previous is not None:
+            if previous == row:
+                detail = "duplicate natural observation"
+            else:
+                detail = "conflicting natural observation"
+            raise ValueError(f"{detail} for identity {identity}")
+        natural_identity[identity] = row
+    return ordered
 
 
 def _validate_factor(factor: str) -> str:
@@ -304,6 +323,24 @@ def partial_spearman(
         return _result(rho=None, n=n, status="nonfinite", reason="control regression failed")
     target_residual = target_rank - target_fit
     prediction_residual = prediction_rank - prediction_fit
+    # ``lstsq`` leaves machine-scale residue when a ranked response is fully
+    # explained by the registered controls.  Treat that residue as constant,
+    # using a scale-relative tolerance so a genuine (even small) rank signal
+    # is not rounded away.
+    target_centered_residual = target_residual - target_residual.mean()
+    prediction_centered_residual = prediction_residual - prediction_residual.mean()
+    target_tolerance = 1e-12 * max(1.0, float(np.linalg.norm(target_rank)))
+    prediction_tolerance = 1e-12 * max(1.0, float(np.linalg.norm(prediction_rank)))
+    if (
+        float(np.linalg.norm(target_centered_residual)) <= target_tolerance
+        or float(np.linalg.norm(prediction_centered_residual)) <= prediction_tolerance
+    ):
+        return _result(
+            rho=None,
+            n=n,
+            status="constant",
+            reason="residual target or prediction is constant",
+        )
     result = _pearson(target_residual, prediction_residual)
     if result["status"] == "constant":
         result["reason"] = "residual target or prediction is constant"
@@ -470,13 +507,17 @@ def image_cluster_bootstrap(
     result["factor"] = factor
     result["metric"] = "raw_spearman"
     if return_samples:
-        result["sampled_image_ids"] = [
-            list(sample)
-            for sample in bootstrap_image_ids(
-                tuple(sorted({row.image_id for row in natural})),
-                replicates=replicates,
-                seed=seed,
-            )
+        samples = bootstrap_image_ids(
+            tuple(sorted({row.image_id for row in natural})),
+            replicates=replicates,
+            seed=seed,
+        )
+        counts: dict[str, int] = defaultdict(int)
+        for row in natural:
+            counts[row.image_id] += 1
+        result["sampled_image_ids"] = [list(sample) for sample in samples]
+        result["sampled_cluster_sizes"] = [
+            [counts[image_id] for image_id in sample] for sample in samples
         ]
     return result
 
@@ -509,6 +550,19 @@ def controlled_monotonicity(
         }
     target_values = tuple(_factor_natural(row, factor) for row in rows)
     control_values = tuple(_factor_natural(row, control_factor) for row in rows)
+    if len(set(control_values)) < 4:
+        return {
+            "success": False,
+            "status": "insufficient",
+            "reason": "control factor must have at least four distinct values",
+            "eligible": 0,
+            "eligible_bins": 0,
+            "successful": 0,
+            "rate": None,
+            "bins": (),
+            "factor": factor,
+            "control_factor": control_factor,
+        }
     target_ranks = np.asarray(average_tie_rank(target_values), dtype=np.float64)
     control_ranks = np.asarray(average_tie_rank(control_values), dtype=np.float64)
     target_predictions = np.asarray(
@@ -546,10 +600,15 @@ def controlled_monotonicity(
                 }
             )
     rate = successful / eligible if eligible else None
+    status = "ok" if eligible >= 2 else "insufficient"
     return {
-        "success": bool(eligible and rate is not None and rate >= _DEFAULT_MONOTONIC_THRESHOLD),
-        "status": "ok" if eligible else "insufficient",
-        "reason": "" if eligible else "no control quartile had both target tertiles",
+        "success": bool(status == "ok" and rate is not None and rate >= _DEFAULT_MONOTONIC_THRESHOLD),
+        "status": status,
+        "reason": "" if status == "ok" else (
+            "no control quartile had both target tertiles"
+            if eligible == 0
+            else "fewer than two eligible control quartiles"
+        ),
         "eligible": eligible,
         "eligible_bins": eligible,
         "successful": successful,
@@ -569,64 +628,86 @@ def intervention_statistics(
 
     factor = _validate_factor(factor)
     rows = _validated_observations(observations)
+    # Index once by physical pair and by factor group.  In particular, do not
+    # scan ``rows`` for a clean baseline for every group: real audits contain
+    # all six nodes, three seeds, and many objects per image.
+    clean_by_base: dict[tuple[Any, ...], list[NaturalFactorObservation]] = defaultdict(list)
     grouped: dict[tuple[Any, ...], list[NaturalFactorObservation]] = defaultdict(list)
     for row in rows:
-        if row.intervention_kind != factor or row.pair_id is None:
+        if row.pair_id is None:
             continue
-        grouped[
-            (
-                row.seed,
-                row.node_id,
-                row.image_id,
-                row.object_id,
-                row.pair_id,
-                row.intervention_kind,
-            )
-        ].append(row)
+        base = (row.seed, row.node_id, row.image_id, row.object_id, row.pair_id)
+        if row.intervention_kind == "clean":
+            clean_by_base[base].append(row)
+        elif row.intervention_kind == factor:
+            grouped[base + (row.intervention_kind,)].append(row)
 
     target_responses: list[float] = []
     background_responses: list[float] = []
     paired_effects: list[float] = []
     pair_details: list[dict[str, object]] = []
+    malformed_details: list[dict[str, object]] = []
+    eligible_by_seed_node: dict[str, int] = defaultdict(int)
     eligible = 0
     ordered = 0
     malformed = 0
     for key in sorted(grouped):
         candidates = grouped[key]
-        clean_candidates = [
-            candidate
-            for candidate in rows
-            if (
-                candidate.seed,
-                candidate.node_id,
-                candidate.image_id,
-                candidate.object_id,
-                candidate.pair_id,
-            )
-            == key[:5]
-            and candidate.intervention_kind == "clean"
-        ]
+        base = key[:5]
+        clean_candidates = clean_by_base.get(base, [])
         clean_target = [row for row in clean_candidates if row.region_role == "target"]
         clean_background = [row for row in clean_candidates if row.region_role == "background"]
-        # A manifest may intentionally share one clean target/background pair
-        # between the sampling and visibility interventions.  Repeated clean
-        # rows are therefore accepted only when the channel being measured is
-        # identical; conflicting baselines remain an auditable malformed pair.
-        if not clean_target or not clean_background:
-            malformed += 1
-            continue
-        clean_target_values = {_factor_prediction(row, factor) for row in clean_target}
-        clean_background_values = {_factor_prediction(row, factor) for row in clean_background}
-        if len(clean_target_values) != 1 or len(clean_background_values) != 1:
-            malformed += 1
-            continue
-        clean_target_value = next(iter(clean_target_values))
-        clean_background_value = next(iter(clean_background_values))
         by_severity: dict[float, dict[str, list[NaturalFactorObservation]]] = defaultdict(
             lambda: {"target": [], "background": []}
         )
         for candidate in candidates:
             by_severity[candidate.intervention_severity][candidate.region_role].append(candidate)
+
+        reasons: list[str] = []
+        if len(clean_target) != 1:
+            reasons.append(f"clean_target_count={len(clean_target)} expected=1")
+        if len(clean_background) != 1:
+            reasons.append(f"clean_background_count={len(clean_background)} expected=1")
+        if len(by_severity) < 2:
+            reasons.append(
+                f"positive_severity_count={len(by_severity)} expected_at_least=2"
+            )
+        severity_counts: dict[str, dict[str, int]] = {}
+        for severity in sorted(by_severity):
+            target_count = len(by_severity[severity]["target"])
+            background_count = len(by_severity[severity]["background"])
+            severity_key = f"{severity:.12g}"
+            severity_counts[severity_key] = {
+                "target": target_count,
+                "background": background_count,
+            }
+            if target_count != 1:
+                reasons.append(
+                    f"severity={severity:.12g}_target_count={target_count} expected=1"
+                )
+            if background_count != 1:
+                reasons.append(
+                    f"severity={severity:.12g}_background_count={background_count} expected=1"
+                )
+        if reasons:
+            malformed += 1
+            malformed_details.append(
+                {
+                    "seed": key[0],
+                    "node_id": key[1],
+                    "image_id": key[2],
+                    "object_id": key[3],
+                    "pair_id": key[4],
+                    "factor": factor,
+                    "reasons": tuple(reasons),
+                    "severity_counts": severity_counts,
+                }
+            )
+            # A malformed group contributes no response or ordering evidence.
+            continue
+
+        clean_target_value = _factor_prediction(clean_target[0], factor)
+        clean_background_value = _factor_prediction(clean_background[0], factor)
         effects: list[float] = []
         pair_target: list[float] = []
         pair_background: list[float] = []
@@ -634,18 +715,14 @@ def intervention_statistics(
         for severity in sorted(by_severity):
             target = by_severity[severity]["target"]
             background = by_severity[severity]["background"]
-            if len(target) != 1 or len(background) != 1:
-                continue
             target_response = _factor_prediction(target[0], factor) - clean_target_value
             background_response = _factor_prediction(background[0], factor) - clean_background_value
             pair_target.append(target_response)
             pair_background.append(background_response)
             effects.append(target_response - background_response)
             severities.append(float(severity))
-        if len(effects) < 2:
-            malformed += 1
-            continue
         eligible += 1
+        eligible_by_seed_node[f"{key[0]}:{key[1]}"] += 1
         is_ordered = all(
             effects[index + 1] >= effects[index] - 1e-12
             for index in range(len(effects) - 1)
@@ -670,8 +747,12 @@ def intervention_statistics(
     if not eligible:
         return {
             "factor": factor,
-            "status": "insufficient",
-            "reason": "no complete pairs with at least two severities",
+            "status": "malformed" if malformed else "insufficient",
+            "reason": (
+                f"{malformed} malformed intervention pairs"
+                if malformed
+                else "no complete pairs with at least two severities"
+            ),
             "eligible": 0,
             "ordered": 0,
             "ordered_pair_rate": None,
@@ -682,12 +763,15 @@ def intervention_statistics(
             "background_mean": None,
             "paired_mean": None,
             "malformed": malformed,
+            "malformed_details": tuple(malformed_details),
+            "malformed_pairs": tuple(malformed_details),
+            "eligible_by_seed_node": dict(eligible_by_seed_node),
             "pairs": tuple(pair_details),
         }
     return {
         "factor": factor,
-        "status": "ok",
-        "reason": "",
+        "status": "malformed" if malformed else "ok",
+        "reason": "" if not malformed else f"{malformed} malformed intervention pairs",
         "eligible": eligible,
         "ordered": ordered,
         "ordered_pair_rate": ordered / eligible,
@@ -698,6 +782,9 @@ def intervention_statistics(
         "background_mean": float(np.mean(background_responses)),
         "paired_mean": float(np.mean(paired_effects)),
         "malformed": malformed,
+        "malformed_details": tuple(malformed_details),
+        "malformed_pairs": tuple(malformed_details),
+        "eligible_by_seed_node": dict(eligible_by_seed_node),
         "pairs": tuple(pair_details),
     }
 
@@ -758,7 +845,11 @@ def natural_factor_alignment(
         subset = tuple(by_seed_node[key])
         raw = raw_statistic(subset)
         residual = residual_statistic(subset)
-        seed_node[key] = {"raw": raw, "residual": residual, "direction": raw.get("rho")}
+        seed_node[f"{key[0]}:{key[1]}"] = {
+            "raw": raw,
+            "residual": residual,
+            "direction": raw.get("rho"),
+        }
     return {
         "factor": factor,
         "natural_count": len(natural),
@@ -891,7 +982,7 @@ def audit_natural_factors(
         seed_node_results = alignment["seed_node"]
         assert isinstance(seed_node_results, dict)
         for seed, node in expected_pairs:
-            result = seed_node_results.get((seed, node))
+            result = seed_node_results.get(f"{seed}:{node}")
             if result is None:
                 reasons.append(f"{factor}_missing_seed_{seed}_node_{node}")
                 continue
@@ -911,6 +1002,15 @@ def audit_natural_factors(
         mono_rate = monotonic.get("rate")
         if monotonic.get("status") != "ok" or not isinstance(mono_rate, Real) or float(mono_rate) < threshold:
             reasons.append(f"{factor}_controlled_monotonicity_below_threshold")
+        malformed_count = intervention.get("malformed", 0)
+        if isinstance(malformed_count, Integral) and int(malformed_count) > 0:
+            reasons.append(f"{factor}_malformed_intervention_pairs")
+        eligible_by_seed_node = intervention.get("eligible_by_seed_node", {})
+        if not isinstance(eligible_by_seed_node, dict):
+            eligible_by_seed_node = {}
+        for seed, node in expected_pairs:
+            if int(eligible_by_seed_node.get(f"{seed}:{node}", 0)) < 1:
+                reasons.append(f"{factor}_missing_intervention_seed_{seed}_node_{node}")
         target_mean = intervention.get("target_mean_response")
         background_mean = intervention.get("background_mean_response")
         paired_mean = intervention.get("paired_mean")
