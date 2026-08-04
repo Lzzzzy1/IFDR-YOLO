@@ -159,9 +159,20 @@ class NaturalDegradationLoaderTest(unittest.TestCase):
 
     def test_non_positive_training_depth_becomes_unavailable_and_is_counted(self) -> None:
         rows = [
-            object_row(location_xyz=(0.0, 0.0, 0.0)),
-            object_row(image_id="000002", location_xyz=(0.0, 0.0, -1.0)),
-            object_row(image_id="000003", location_xyz=None),
+            object_row(
+                bbox={"x1": 0.0, "y1": 0.0, "x2": 10.0, "y2": 34.0},
+                location_xyz=(0.0, 0.0, 0.0),
+            ),
+            object_row(
+                image_id="000002",
+                bbox={"x1": 0.0, "y1": 0.0, "x2": 10.0, "y2": 34.0},
+                location_xyz=(0.0, 0.0, -60.0),
+            ),
+            object_row(
+                image_id="000003",
+                bbox={"x1": 0.0, "y1": 0.0, "x2": 10.0, "y2": 34.0},
+                location_xyz=None,
+            ),
         ]
 
         result = load_natural_degradation_records(write_jsonl(rows))
@@ -169,11 +180,11 @@ class NaturalDegradationLoaderTest(unittest.TestCase):
         self.assertEqual(result.invalid_depth_count, 2)
         self.assertEqual(len(result.records), 3)
         for record in result.records:
+            self.assertEqual(record.sampling_score, 0.5)
             if record.image_id == "000003":
                 continue
             self.assertIsNone(record.depth_m)
             self.assertFalse(record.depth_available)
-            self.assertEqual(record.sampling_score, 0.0)
 
     def test_non_training_rows_are_skipped_but_keep_per_image_positions(self) -> None:
         rows = [
