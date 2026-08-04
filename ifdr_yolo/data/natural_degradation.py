@@ -34,6 +34,7 @@ class NaturalDegradationRecord:
 class NaturalDegradationLoadResult:
     records: tuple[NaturalDegradationRecord, ...]
     skipped_non_training_count: int
+    invalid_depth_count: int
 
 
 def _finite_number(value: Any, name: str) -> float:
@@ -100,25 +101,39 @@ def _require_bbox(value: Any, line_number: int) -> tuple[float, float, float, fl
     except ValueError as exc:
         _line_error(line_number, str(exc))
     x1, y1, x2, y2 = coordinates
-    if x2 <= x1 or y2 <= y1:
+    width = x2 - x1
+    height = y2 - y1
+    if not isfinite(width) or not isfinite(height):
+        _line_error(line_number, "bbox width and height must be finite")
+    if width <= 0.0 or height <= 0.0:
         _line_error(line_number, "bbox width and height must be positive")
     return coordinates
 
 
-def _require_truncation(value: Any, line_number: int) -> float:
+def _require_truncation(
+    value: Any,
+    line_number: int,
+    *,
+    enforce_range: bool,
+) -> float:
     try:
         truncation = _finite_number(value, "truncated")
     except ValueError as exc:
         _line_error(line_number, str(exc))
-    if not 0.0 <= truncation <= 1.0:
+    if enforce_range and not 0.0 <= truncation <= 1.0:
         _line_error(line_number, "truncated must be within [0, 1]")
     return truncation
 
 
-def _require_occlusion(value: Any, line_number: int) -> int:
+def _require_occlusion(
+    value: Any,
+    line_number: int,
+    *,
+    enforce_range: bool,
+) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
         _line_error(line_number, "occluded must be an integer")
-    if not 0 <= value <= 3:
+    if enforce_range and not 0 <= value <= 3:
         _line_error(line_number, "occluded must be within [0, 3]")
     return value
 
@@ -139,7 +154,9 @@ def load_natural_degradation_records(
     """Load auditable natural degradation records from KITTI object metadata."""
     records: list[NaturalDegradationRecord] = []
     next_object_ids: dict[str, int] = {}
+    used_object_ids: dict[str, set[int]] = {}
     skipped_non_training_count = 0
+    invalid_depth_count = 0
 
     with Path(jsonl_path).open(encoding="utf-8") as handle:
         for line_number, raw_line in enumerate(handle, start=1):
@@ -154,18 +171,28 @@ def load_natural_degradation_records(
             class_name = _require_text(row.get("kind"), "kind", line_number)
             if class_name not in TRAIN_CLASS_TO_ID and class_name not in _NON_TRAINING_CLASSES:
                 _line_error(line_number, f"unknown class {class_name!r}")
+            is_training = class_name in TRAIN_CLASS_TO_ID
 
             bbox_xyxy = _require_bbox(row.get("bbox"), line_number)
-            truncation = _require_truncation(row.get("truncated"), line_number)
-            occlusion_level = _require_occlusion(row.get("occluded"), line_number)
+            truncation = _require_truncation(
+                row.get("truncated"),
+                line_number,
+                enforce_range=is_training,
+            )
+            occlusion_level = _require_occlusion(
+                row.get("occluded"),
+                line_number,
+                enforce_range=is_training,
+            )
             location = (
                 _optional_location(row["location_xyz"], line_number)
                 if "location_xyz" in row
                 else None
             )
             depth_m = None if location is None else location[2]
-            if class_name in TRAIN_CLASS_TO_ID and depth_m is not None and depth_m <= 0.0:
-                _line_error(line_number, "depth_m must be finite and positive")
+            if is_training and depth_m is not None and depth_m <= 0.0:
+                invalid_depth_count += 1
+                depth_m = None
 
             if "object_id" in row:
                 object_id = row["object_id"]
@@ -173,6 +200,13 @@ def load_natural_degradation_records(
                     _line_error(line_number, "object_id must be a non-negative integer")
             else:
                 object_id = next_object_ids.get(image_id, 0)
+            image_used_ids = used_object_ids.setdefault(image_id, set())
+            if object_id in image_used_ids:
+                _line_error(
+                    line_number,
+                    f"object_id {object_id} collides within image_id {image_id!r}",
+                )
+            image_used_ids.add(object_id)
             next_object_ids[image_id] = next_object_ids.get(image_id, 0) + 1
 
             if class_name in _NON_TRAINING_CLASSES:
@@ -200,4 +234,5 @@ def load_natural_degradation_records(
     return NaturalDegradationLoadResult(
         records=tuple(records),
         skipped_non_training_count=skipped_non_training_count,
+        invalid_depth_count=invalid_depth_count,
     )

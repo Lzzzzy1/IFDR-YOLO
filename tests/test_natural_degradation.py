@@ -1,3 +1,4 @@
+import atexit
 import json
 from dataclasses import FrozenInstanceError
 from pathlib import Path
@@ -10,6 +11,15 @@ from ifdr_yolo.data.natural_degradation import (
     compute_visibility_score,
     load_natural_degradation_records,
 )
+
+
+_TEMPORARY_DIRECTORIES: list[tempfile.TemporaryDirectory[str]] = []
+
+
+@atexit.register
+def _cleanup_temporary_directories() -> None:
+    while _TEMPORARY_DIRECTORIES:
+        _TEMPORARY_DIRECTORIES.pop().cleanup()
 
 
 def object_row(
@@ -27,7 +37,11 @@ def object_row(
         "kind": kind,
         "truncated": truncated,
         "occluded": occluded,
-        "bbox": bbox or {"x1": 0.0, "y1": 0.0, "x2": 100.0, "y2": 64.0},
+        "bbox": (
+            bbox
+            if bbox is not None
+            else {"x1": 0.0, "y1": 0.0, "x2": 100.0, "y2": 64.0}
+        ),
     }
     if location_xyz is not None:
         row["location_xyz"] = location_xyz
@@ -36,8 +50,9 @@ def object_row(
 
 
 def write_jsonl(lines: list[object]) -> Path:
-    directory = Path(tempfile.mkdtemp())
-    path = directory / "objects.jsonl"
+    temporary_directory = tempfile.TemporaryDirectory()
+    _TEMPORARY_DIRECTORIES.append(temporary_directory)
+    path = Path(temporary_directory.name) / "objects.jsonl"
     with path.open("w", encoding="utf-8") as handle:
         for line in lines:
             if isinstance(line, str):
@@ -91,6 +106,7 @@ class NaturalDegradationLoaderTest(unittest.TestCase):
         result = load_natural_degradation_records(write_jsonl(rows))
 
         self.assertEqual(result.skipped_non_training_count, 0)
+        self.assertEqual(result.invalid_depth_count, 0)
         self.assertEqual(len(result.records), 3)
         self.assertEqual(
             [(record.class_name, record.class_id) for record in result.records],
@@ -139,6 +155,25 @@ class NaturalDegradationLoaderTest(unittest.TestCase):
         self.assertIsNone(record.depth_m)
         self.assertFalse(record.depth_available)
         self.assertEqual(record.sampling_score, 0.5)
+        self.assertEqual(result.invalid_depth_count, 0)
+
+    def test_non_positive_training_depth_becomes_unavailable_and_is_counted(self) -> None:
+        rows = [
+            object_row(location_xyz=(0.0, 0.0, 0.0)),
+            object_row(image_id="000002", location_xyz=(0.0, 0.0, -1.0)),
+            object_row(image_id="000003", location_xyz=None),
+        ]
+
+        result = load_natural_degradation_records(write_jsonl(rows))
+
+        self.assertEqual(result.invalid_depth_count, 2)
+        self.assertEqual(len(result.records), 3)
+        for record in result.records:
+            if record.image_id == "000003":
+                continue
+            self.assertIsNone(record.depth_m)
+            self.assertFalse(record.depth_available)
+            self.assertEqual(record.sampling_score, 0.0)
 
     def test_non_training_rows_are_skipped_but_keep_per_image_positions(self) -> None:
         rows = [
@@ -155,6 +190,62 @@ class NaturalDegradationLoaderTest(unittest.TestCase):
             [(record.image_id, record.object_id) for record in result.records],
             [("000001", 1), ("000001", 3), ("000002", 0)],
         )
+
+    def test_interleaved_images_keep_independent_row_positions(self) -> None:
+        rows = [
+            object_row(image_id="000001", kind="Car"),
+            object_row(image_id="000002", kind="Car"),
+            object_row(image_id="000001", kind="Van"),
+            object_row(image_id="000002", kind="Truck"),
+            object_row(image_id="000001", kind="Pedestrian"),
+            object_row(image_id="000002", kind="Cyclist"),
+        ]
+
+        result = load_natural_degradation_records(write_jsonl(rows))
+
+        self.assertEqual(
+            [(record.image_id, record.object_id) for record in result.records],
+            [("000001", 0), ("000002", 0), ("000001", 2), ("000002", 2)],
+        )
+
+    def test_skips_all_canonical_non_training_classes_including_dontcare_sentinel(
+        self,
+    ) -> None:
+        rows = [
+            object_row(kind="Van"),
+            object_row(kind="Truck"),
+            object_row(kind="Person_sitting"),
+            object_row(kind="Tram"),
+            object_row(kind="Misc"),
+            object_row(
+                kind="DontCare",
+                truncated=-1.0,
+                occluded=-1,
+                location_xyz=(-1000.0, -1000.0, -1000.0),
+            ),
+        ]
+
+        result = load_natural_degradation_records(write_jsonl(rows))
+
+        self.assertEqual(result.records, ())
+        self.assertEqual(result.skipped_non_training_count, 6)
+        self.assertEqual(result.invalid_depth_count, 0)
+
+    def test_rejects_explicit_implicit_object_id_collisions_with_line_context(self) -> None:
+        cases = (
+            [object_row(), object_row(object_id=0)],
+            [object_row(object_id=1), object_row()],
+        )
+        for rows in cases:
+            with self.subTest(rows=rows):
+                with self.assertRaisesRegex(ValueError, r"JSONL line 2"):
+                    load_natural_degradation_records(write_jsonl(rows))
+
+    def test_rejects_explicit_object_id_collisions_with_line_context(self) -> None:
+        with self.assertRaisesRegex(ValueError, r"JSONL line 2"):
+            load_natural_degradation_records(
+                write_jsonl([object_row(object_id=3), object_row(object_id=3)])
+            )
 
     def test_explicit_object_id_must_be_non_negative_integer(self) -> None:
         result = load_natural_degradation_records(
@@ -191,12 +282,27 @@ class NaturalDegradationLoaderTest(unittest.TestCase):
             {"x1": 0, "y1": 0, "x2": 0, "y2": 10},
             {"x1": 0, "y1": 0, "x2": 10, "y2": -1},
             {"x1": float("nan"), "y1": 0, "x2": 10, "y2": 10},
+            {"x1": float("inf"), "y1": 0, "x2": 10, "y2": 10},
         ):
             with self.subTest(bbox=bbox):
                 self.assert_rejected([object_row(bbox=bbox)])
 
+    def test_rejects_floating_point_bbox_width_overflow_with_line_context(self) -> None:
+        self.assert_rejected(
+            [
+                object_row(
+                    bbox={
+                        "x1": -1.7e308,
+                        "y1": -1.7e308,
+                        "x2": 1.7e308,
+                        "y2": 1.7e308,
+                    }
+                )
+            ]
+        )
+
     def test_rejects_invalid_depth_and_location(self) -> None:
-        for location_xyz in ((0.0, 0.0, 0.0), (0.0, 0.0, -1.0), (0.0, 0.0, float("nan")), (0.0, 0.0)):
+        for location_xyz in ((0.0, 0.0, float("nan")), (0.0, 0.0, float("inf")), (0.0, 0.0)):
             with self.subTest(location_xyz=location_xyz):
                 self.assert_rejected([object_row(location_xyz=location_xyz)])
 
@@ -209,6 +315,7 @@ class NaturalDegradationLoaderTest(unittest.TestCase):
             {"truncated": -0.1},
             {"truncated": 1.1},
             {"truncated": float("nan")},
+            {"truncated": float("inf")},
         ):
             with self.subTest(kwargs=kwargs):
                 self.assert_rejected([object_row(**kwargs)])
@@ -219,6 +326,13 @@ class NaturalDegradationLoaderTest(unittest.TestCase):
             object_row(location_xyz=(0.0, 0.0, True)),
         ):
             with self.subTest(row=row):
+                self.assert_rejected([row])
+
+    def test_rejects_missing_required_fields(self) -> None:
+        for field in ("image_id", "kind", "bbox", "truncated", "occluded"):
+            with self.subTest(field=field):
+                row = object_row()
+                del row[field]
                 self.assert_rejected([row])
 
     def test_rejects_malformed_json_with_line_context(self) -> None:
