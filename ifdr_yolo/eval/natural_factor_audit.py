@@ -837,7 +837,7 @@ def natural_factor_alignment(
         seed=bootstrap_seed,
         confidence=confidence,
     )
-    seed_node: dict[tuple[int, int], dict[str, object]] = {}
+    seed_node: dict[str, dict[str, object]] = {}
     by_seed_node: dict[tuple[int, int], list[NaturalFactorObservation]] = defaultdict(list)
     for row in natural:
         by_seed_node[(row.seed, row.node_id)].append(row)
