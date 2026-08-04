@@ -297,13 +297,6 @@ def partial_spearman(
             *[np.asarray([float(value == klass) for value in classes]) for klass in unique_classes],
         ]
     )
-    if n <= design.shape[1]:
-        return _result(
-            rho=None,
-            n=n,
-            status="insufficient",
-            reason="not enough observations for registered controls",
-        )
     try:
         target_fit = design @ np.linalg.lstsq(design, target_rank, rcond=None)[0]
         prediction_fit = design @ np.linalg.lstsq(design, prediction_rank, rcond=None)[0]
