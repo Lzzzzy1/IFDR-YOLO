@@ -134,12 +134,15 @@ Use a tiny fake model exposing six entries from `consume_reliability_context()` 
 - natural images and the existing deterministic matched object/background intervention pairs use the same letterbox and ROI mapping path;
 - restarting skips already committed image ids and never duplicates rows;
 - progress and JSONL are flushed and `fsync`-ed after each image.
+- an immutable expected-condition manifest records every natural row group, selected intervention pair, registered severity, background ROI, source hash, checkpoint hash, and six required reliability nodes before inference starts; observed row identities must match this manifest exactly.
 
 **Step 2: Implement the observer**
 
 Load the checkpoint with `torch.load`, prefer `ema` over `model`, set evaluation mode, run direct model inference, and immediately consume its six-node reliability context. Pool the sampling and visibility maps over each natural object box. In intervention mode, use the existing deterministic sampler/transform to create matched object and background interventions at registered severities and pool the geometrically corresponding ROIs. Write one JSONL row per object/node/condition and an atomic progress JSON containing completed `(seed, image_id, condition)` keys plus input/checkpoint hashes.
 
 Do not use predictor post-processing because this audit measures latent factors, not detections.
+
+The observer receives an explicit deterministic intervention selection from the CLI rather than silently selecting objects itself. It writes one image transaction at a time: progress first records an `inflight` output byte offset, the JSONL rows are appended and `fsync`-ed, then progress atomically moves the image to `completed`. Restart truncates an unfinished transaction back to its recorded offset, so a power loss cannot duplicate or partially commit an image. Completion requires exact expected-row counts and identities for every manifest condition; a pair missing together with its clean rows is therefore detected before Task 2 runs.
 
 **Step 3: Verify and commit**
 
