@@ -102,6 +102,8 @@ Add frozen `NaturalFactorObservation` and `NaturalFactorGateDecision`. Each obse
 
 Clean target/background rows are the internal intervention manifest and declare whether a pair audits sampling or visibility. Registered severities are `(0.25, 0.50, 0.75, 1.0)`; missing, extra, or duplicated rows make the pair malformed and block the gate. Task 3/4 own detection of an entirely absent pair, including its clean manifest, through the observer plan and expected-row progress manifest.
 
+The gate artifact stores aggregate counts and bounded malformed/unordered examples, not one dictionary per successful pair; the source observation JSONL remains the recoverable row-level record. A confidence interval is valid only when at least 95% of registered bootstrap replicates yield finite statistics. Gate decisions deep-freeze nested evidence before they are returned.
+
 The gate passes a factor only when the expected direction holds for every seed, the pooled raw and residual confidence-interval lower bounds exceed zero, target response exceeds matched background response, and controlled intervention severity is ordered for at least `0.80` of eligible pairs. Report all six nodes separately and a pooled result; a single unstable seed blocks the pooled pass. Do not tune these thresholds after observing validation performance.
 
 **Step 3: Verify and commit**
