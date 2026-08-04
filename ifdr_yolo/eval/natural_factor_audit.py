@@ -27,6 +27,7 @@ _DEFAULT_NODES = (11, 14, 17, 20, 23, 26)
 _DEFAULT_BOOTSTRAP_REPLICATES = 2000
 _DEFAULT_BOOTSTRAP_SEED = 20260804
 _DEFAULT_MONOTONIC_THRESHOLD = 0.80
+DEFAULT_INTERVENTION_SEVERITIES = (0.25, 0.50, 0.75, 1.0)
 
 
 def _is_integer(value: object) -> bool:
@@ -78,6 +79,7 @@ class NaturalFactorObservation:
     # useful when JSONL producers already carry it and does not change the
     # registered observation schema.
     class_name: str | None = None
+    intervention_factor: str | None = None
 
     def __post_init__(self) -> None:
         for value, name in (
@@ -88,12 +90,20 @@ class NaturalFactorObservation:
         ):
             if not _is_integer(value) or int(value) < 0:
                 raise ValueError(f"{name} must be a non-negative integer")
+        if self.class_id not in (0, 1, 2):
+            raise ValueError("class_id must be one of 0, 1, or 2")
         if not isinstance(self.image_id, str) or not self.image_id.strip():
             raise ValueError("image_id must be a non-empty string")
         if self.class_name is not None and (
             not isinstance(self.class_name, str) or not self.class_name.strip()
         ):
             raise ValueError("class_name must be a non-empty string when provided")
+        if self.class_name is not None:
+            expected_class_name = ("Car", "Pedestrian", "Cyclist")[self.class_id]
+            if self.class_name != expected_class_name:
+                raise ValueError(
+                    f"class_name {self.class_name!r} conflicts with class_id {self.class_id}"
+                )
         if not isinstance(self.region_role, str) or self.region_role not in _REGION_ROLES:
             raise ValueError("region_role must be target or background")
         if (
@@ -115,6 +125,8 @@ class NaturalFactorObservation:
             raise ValueError("branch_weights must be a two-element tuple")
         for index, weight in enumerate(self.branch_weights):
             _unit(weight, f"branch_weights[{index}]")
+        if abs(float(self.branch_weights[0]) + float(self.branch_weights[1]) - 1.0) > 1e-6:
+            raise ValueError("branch_weights must sum to 1 within 1e-6")
 
         if self.intervention_kind == "natural":
             if self.region_role != "target":
@@ -123,9 +135,22 @@ class NaturalFactorObservation:
                 raise ValueError("natural observations must have severity 0")
             if self.pair_id is not None:
                 raise ValueError("natural observations must not have a pair_id")
+            if self.intervention_factor is not None:
+                raise ValueError("natural observations must have intervention_factor=None")
         else:
             if self.pair_id is None or not isinstance(self.pair_id, str) or not self.pair_id.strip():
                 raise ValueError("intervention rows require a non-empty pair_id")
+            if self.intervention_factor not in {"sampling", "visibility"}:
+                raise ValueError(
+                    "intervention rows require intervention_factor sampling or visibility"
+                )
+            if (
+                self.intervention_kind in {"sampling", "visibility"}
+                and self.intervention_factor != self.intervention_kind
+            ):
+                raise ValueError(
+                    "intervention_factor must match intervention_kind for factor rows"
+                )
             if self.intervention_kind == "clean" and severity != 0.0:
                 raise ValueError("clean intervention rows must have severity 0")
             if self.intervention_kind in {"sampling", "visibility"} and severity <= 0.0:
@@ -177,6 +202,21 @@ def _validate_factor(factor: str) -> str:
     if factor not in _FACTORS:
         raise ValueError("factor must be sampling or visibility")
     return factor
+
+
+def _validate_expected_severities(
+    severities: Sequence[float],
+) -> tuple[float, ...]:
+    values = tuple(_unit(value, "expected intervention severity") for value in severities)
+    if not values:
+        raise ValueError("expected intervention severities must not be empty")
+    if any(value <= 0.0 for value in values):
+        raise ValueError("expected intervention severities must be within (0, 1]")
+    if len(set(values)) != len(values) or any(
+        values[index + 1] <= values[index] for index in range(len(values) - 1)
+    ):
+        raise ValueError("expected intervention severities must be unique and increasing")
+    return values
 
 
 def _validate_bootstrap(replicates: int, seed: int, confidence: float) -> None:
@@ -623,10 +663,12 @@ def intervention_statistics(
     observations: Iterable[NaturalFactorObservation],
     *,
     factor: str,
+    expected_intervention_severities: Sequence[float] = DEFAULT_INTERVENTION_SEVERITIES,
 ) -> dict[str, object]:
     """Compute paired target/background responses for one intervention factor."""
 
     factor = _validate_factor(factor)
+    expected_severities = _validate_expected_severities(expected_intervention_severities)
     rows = _validated_observations(observations)
     # Index once by physical pair and by factor group.  In particular, do not
     # scan ``rows`` for a clean baseline for every group: real audits contain
@@ -637,10 +679,10 @@ def intervention_statistics(
         if row.pair_id is None:
             continue
         base = (row.seed, row.node_id, row.image_id, row.object_id, row.pair_id)
-        if row.intervention_kind == "clean":
+        if row.intervention_kind == "clean" and row.intervention_factor == factor:
             clean_by_base[base].append(row)
         elif row.intervention_kind == factor:
-            grouped[base + (row.intervention_kind,)].append(row)
+            grouped[base].append(row)
 
     target_responses: list[float] = []
     background_responses: list[float] = []
@@ -651,9 +693,10 @@ def intervention_statistics(
     eligible = 0
     ordered = 0
     malformed = 0
-    for key in sorted(grouped):
-        candidates = grouped[key]
-        base = key[:5]
+    all_bases = sorted(set(clean_by_base) | set(grouped))
+    for base in all_bases:
+        key = base + (factor,)
+        candidates = grouped.get(base, [])
         clean_candidates = clean_by_base.get(base, [])
         clean_target = [row for row in clean_candidates if row.region_role == "target"]
         clean_background = [row for row in clean_candidates if row.region_role == "background"]
@@ -668,24 +711,43 @@ def intervention_statistics(
             reasons.append(f"clean_target_count={len(clean_target)} expected=1")
         if len(clean_background) != 1:
             reasons.append(f"clean_background_count={len(clean_background)} expected=1")
-        if len(by_severity) < 2:
+        if len(expected_severities) < 2:
+            reasons.append("expected_severity_count must be at least 2")
+        if not candidates:
+            reasons.append("factor_intervention_rows_missing")
+        observed_severities = set(by_severity)
+        missing_severities = [
+            severity for severity in expected_severities if severity not in observed_severities
+        ]
+        extra_severities = sorted(observed_severities - set(expected_severities))
+        if missing_severities:
             reasons.append(
-                f"positive_severity_count={len(by_severity)} expected_at_least=2"
+                "missing_expected_severities="
+                + ",".join(f"{severity:.12g}" for severity in missing_severities)
+            )
+        if extra_severities:
+            reasons.append(
+                "unexpected_severities="
+                + ",".join(f"{severity:.12g}" for severity in extra_severities)
+            )
+        if len(observed_severities) < 2:
+            reasons.append(
+                f"positive_severity_count={len(observed_severities)} expected_at_least=2"
             )
         severity_counts: dict[str, dict[str, int]] = {}
-        for severity in sorted(by_severity):
-            target_count = len(by_severity[severity]["target"])
-            background_count = len(by_severity[severity]["background"])
+        for severity in sorted(observed_severities | set(expected_severities)):
+            target_count = len(by_severity.get(severity, {}).get("target", []))
+            background_count = len(by_severity.get(severity, {}).get("background", []))
             severity_key = f"{severity:.12g}"
             severity_counts[severity_key] = {
                 "target": target_count,
                 "background": background_count,
             }
-            if target_count != 1:
+            if severity in set(expected_severities) and target_count != 1:
                 reasons.append(
                     f"severity={severity:.12g}_target_count={target_count} expected=1"
                 )
-            if background_count != 1:
+            if severity in set(expected_severities) and background_count != 1:
                 reasons.append(
                     f"severity={severity:.12g}_background_count={background_count} expected=1"
                 )
@@ -699,6 +761,7 @@ def intervention_statistics(
                     "object_id": key[3],
                     "pair_id": key[4],
                     "factor": factor,
+                    "expected_severities": tuple(expected_severities),
                     "reasons": tuple(reasons),
                     "severity_counts": severity_counts,
                 }
@@ -747,6 +810,7 @@ def intervention_statistics(
     if not eligible:
         return {
             "factor": factor,
+            "expected_severities": tuple(expected_severities),
             "status": "malformed" if malformed else "insufficient",
             "reason": (
                 f"{malformed} malformed intervention pairs"
@@ -770,6 +834,7 @@ def intervention_statistics(
         }
     return {
         "factor": factor,
+        "expected_severities": tuple(expected_severities),
         "status": "malformed" if malformed else "ok",
         "reason": "" if not malformed else f"{malformed} malformed intervention pairs",
         "eligible": eligible,
@@ -943,6 +1008,7 @@ def audit_natural_factors(
     bootstrap_reps: int | None = None,
     bootstrap_seed: int = _DEFAULT_BOOTSTRAP_SEED,
     confidence: float = 0.95,
+    expected_intervention_severities: Sequence[float] = DEFAULT_INTERVENTION_SEVERITIES,
 ) -> NaturalFactorGateDecision:
     """Run alignment, monotonicity, intervention, and stability checks."""
 
@@ -960,6 +1026,7 @@ def audit_natural_factors(
         raise ValueError("monotonic_threshold must be greater than zero")
     # Validate bootstrap arguments once even when both factors have no rows.
     _validate_bootstrap(bootstrap_replicates, bootstrap_seed, confidence)
+    expected_severities = _validate_expected_severities(expected_intervention_severities)
 
     factor_results: dict[str, dict[str, object]] = {}
     all_reasons: list[str] = []
@@ -977,7 +1044,11 @@ def audit_natural_factors(
             factor=factor,
             control_factor="visibility" if factor == "sampling" else "sampling",
         )
-        intervention = intervention_statistics(rows, factor=factor)
+        intervention = intervention_statistics(
+            rows,
+            factor=factor,
+            expected_intervention_severities=expected_severities,
+        )
         reasons: list[str] = []
         seed_node_results = alignment["seed_node"]
         assert isinstance(seed_node_results, dict)
@@ -1057,6 +1128,7 @@ evaluate_gate = audit_natural_factors
 
 
 __all__ = [
+    "DEFAULT_INTERVENTION_SEVERITIES",
     "NaturalFactorObservation",
     "NaturalFactorGateDecision",
     "average_tie_rank",

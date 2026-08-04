@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import FrozenInstanceError, replace
+from collections import Counter
 import json
 import unittest
+from unittest.mock import patch
 
 from ifdr_yolo.eval.natural_factor_audit import (
     NaturalFactorObservation,
@@ -35,13 +37,22 @@ def _observation(
     natural_visibility: float = 0.7,
     predicted_sampling: float = 0.3,
     predicted_visibility: float = 0.7,
+    class_id: int | None = None,
+    class_name: str | None = None,
+    branch_weights: tuple[float, float] = (0.6, 0.4),
+    intervention_factor: str | None = None,
 ) -> NaturalFactorObservation:
+    if intervention_factor is None:
+        if intervention_kind in {"sampling", "visibility"}:
+            intervention_factor = intervention_kind
+        elif intervention_kind == "clean":
+            intervention_factor = "sampling"
     return NaturalFactorObservation(
         seed=seed,
         node_id=node_id,
         image_id=image_id,
         object_id=object_id,
-        class_id=object_id % 3,
+        class_id=object_id % 3 if class_id is None else class_id,
         box_height=box_height,
         region_role=region_role,
         intervention_kind=intervention_kind,
@@ -51,7 +62,9 @@ def _observation(
         natural_visibility=natural_visibility,
         predicted_sampling=predicted_sampling,
         predicted_visibility=predicted_visibility,
-        branch_weights=(0.6, 0.4),
+        branch_weights=branch_weights,
+        class_name=class_name,
+        intervention_factor=intervention_factor,
     )
 
 
@@ -110,6 +123,7 @@ def _fixture(
                                     object_id=0,
                                     region_role=role,
                                     intervention_kind=kind,
+                                    intervention_factor=kind,
                                     intervention_severity=severity,
                                     pair_id=pair,
                                     natural_sampling=ns,
@@ -131,6 +145,7 @@ def _fixture(
                                 object_id=0,
                                 region_role=role,
                                 intervention_kind="clean",
+                                intervention_factor=kind,
                                 pair_id=pair,
                                 natural_sampling=ns,
                                 natural_visibility=nv,
@@ -150,6 +165,15 @@ class NaturalFactorObservationTest(unittest.TestCase):
             _observation(region_role="background")
         with self.assertRaisesRegex(ValueError, "pair_id"):
             _observation(intervention_kind="sampling", intervention_severity=0.5)
+        with self.assertRaisesRegex(ValueError, "intervention_factor"):
+            _observation(
+                intervention_kind="sampling",
+                intervention_severity=0.5,
+                pair_id="bad-factor",
+                intervention_factor="visibility",
+            )
+        with self.assertRaisesRegex(ValueError, "intervention_factor"):
+            _observation(intervention_factor="sampling")
         for kwargs, message in (
             ({"seed": -1}, "seed"),
             ({"node_id": -1}, "node_id"),
@@ -160,6 +184,13 @@ class NaturalFactorObservationTest(unittest.TestCase):
             with self.subTest(kwargs=kwargs):
                 with self.assertRaisesRegex(ValueError, message):
                     _observation(**kwargs)
+        with self.assertRaisesRegex(ValueError, "class_id"):
+            _observation(class_id=3)
+        with self.assertRaisesRegex(ValueError, "class_name"):
+            _observation(class_id=0, class_name="Pedestrian")
+        _observation(class_id=0, class_name="Car")
+        with self.assertRaisesRegex(ValueError, "sum"):
+            _observation(branch_weights=(0.2, 0.2))
 
 
 class CorrelationTest(unittest.TestCase):
@@ -341,6 +372,57 @@ class FactorAuditTest(unittest.TestCase):
             .factor_results["sampling"]["passed"]
         )
 
+    def test_missing_both_rows_for_registered_severity_is_malformed(self) -> None:
+        rows = list(_fixture(image_count=2))
+        removed = 0
+        filtered: list[NaturalFactorObservation] = []
+        for row in rows:
+            if (
+                row.intervention_kind == "sampling"
+                and row.intervention_severity == 0.50
+                and removed < 2
+            ):
+                removed += 1
+                continue
+            filtered.append(row)
+        stats = intervention_statistics(tuple(filtered), factor="sampling")
+        self.assertGreater(stats["malformed"], 0)
+        self.assertFalse(
+            audit_natural_factors(tuple(filtered), bootstrap_replicates=30)
+            .factor_results["sampling"]["passed"]
+        )
+
+    def test_orphan_factor_pair_without_clean_manifest_is_malformed(self) -> None:
+        rows = list(_fixture(image_count=2))
+        source = next(
+            row
+            for row in rows
+            if row.intervention_kind == "sampling" and row.intervention_severity == 0.50
+        )
+        orphan_pair = "orphan-pair"
+        rows.append(replace(source, pair_id=orphan_pair))
+        stats = intervention_statistics(tuple(rows), factor="sampling")
+        self.assertGreater(stats["malformed"], 0)
+        self.assertFalse(
+            audit_natural_factors(tuple(rows), bootstrap_replicates=30)
+            .factor_results["sampling"]["passed"]
+        )
+
+    def test_extra_intervention_severity_is_malformed(self) -> None:
+        rows = list(_fixture(image_count=2))
+        source = next(
+            row
+            for row in rows
+            if row.intervention_kind == "sampling" and row.region_role == "target"
+        )
+        rows.append(replace(source, intervention_severity=0.90))
+        stats = intervention_statistics(tuple(rows), factor="sampling")
+        self.assertGreater(stats["malformed"], 0)
+        self.assertFalse(
+            audit_natural_factors(tuple(rows), bootstrap_replicates=30)
+            .factor_results["sampling"]["passed"]
+        )
+
     def test_duplicate_intervention_target_is_malformed(self) -> None:
         rows = list(_fixture(image_count=2))
         duplicate = next(
@@ -431,6 +513,16 @@ class FactorAuditTest(unittest.TestCase):
                 pair_id="bad-zero",
             )
 
+    def test_expected_intervention_severities_must_be_registered_and_increasing(self) -> None:
+        from ifdr_yolo.eval.natural_factor_audit import intervention_statistics
+
+        for expected in ((), (0.5, 0.5), (0.75, 0.25), (0.0, 0.5), (1.1,)):
+            with self.subTest(expected=expected):
+                with self.assertRaises(ValueError):
+                    intervention_statistics(
+                        (), factor="sampling", expected_intervention_severities=expected
+                    )
+
     def test_target_not_stronger_than_background_fails(self) -> None:
         rows = list(_fixture(target_boost=0.02))
         # Background is deliberately larger than target for all sampling rows.
@@ -463,6 +555,8 @@ class FactorAuditTest(unittest.TestCase):
         self.assertEqual(first["unique_image_count"], 4 * len(SEEDS) * len(NODES))
 
     def test_same_source_image_across_seeds_nodes_and_objects_is_one_cluster(self) -> None:
+        import ifdr_yolo.eval.natural_factor_audit as audit_module
+
         rows: list[NaturalFactorObservation] = []
         for image_id, offset in (("shared", 0.0), ("other", 0.2)):
             for seed in (17, 29):
@@ -480,9 +574,21 @@ class FactorAuditTest(unittest.TestCase):
                                 predicted_visibility=0.5 + offset,
                             )
                         )
-        bootstrap = image_cluster_bootstrap(
-            tuple(rows), factor="sampling", replicates=40, seed=20260804, return_samples=True
-        )
+        captured: list[tuple[tuple[str, ...], tuple[NaturalFactorObservation, ...]]] = []
+        original_cluster_rows = audit_module._cluster_rows
+
+        def spy_cluster_rows(
+            observations: tuple[NaturalFactorObservation, ...],
+            sampled_images: tuple[str, ...],
+        ) -> tuple[NaturalFactorObservation, ...]:
+            result = original_cluster_rows(observations, sampled_images)
+            captured.append((tuple(sampled_images), result))
+            return result
+
+        with patch.object(audit_module, "_cluster_rows", side_effect=spy_cluster_rows):
+            bootstrap = image_cluster_bootstrap(
+                tuple(rows), factor="sampling", replicates=40, seed=20260804, return_samples=True
+            )
         self.assertEqual(bootstrap["unique_image_count"], 2)
         self.assertEqual(bootstrap["sampling_unit"], "image_id")
         expected_count = {"shared": 8, "other": 8}
@@ -492,6 +598,19 @@ class FactorAuditTest(unittest.TestCase):
             self.assertEqual(len(image_sample), 2)
             self.assertEqual(
                 [expected_count[image_id] for image_id in image_sample], count_sample
+            )
+        self.assertEqual(len(captured), 40)
+        for sampled_images, sampled_rows in captured:
+            sampled_counts = Counter(sampled_images)
+            returned_counts = Counter(row.image_id for row in sampled_rows)
+            self.assertEqual(
+                returned_counts,
+                Counter(
+                    {
+                        image_id: expected_count[image_id] * draw_count
+                        for image_id, draw_count in sampled_counts.items()
+                    }
+                ),
             )
 
     def test_missing_required_seed_node_intervention_evidence_fails(self) -> None:
