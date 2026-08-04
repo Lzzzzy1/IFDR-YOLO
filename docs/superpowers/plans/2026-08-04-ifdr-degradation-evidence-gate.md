@@ -34,7 +34,7 @@ Cover the following exact behavior:
 - A 4-pixel, 60-metre object maps to sampling `1.0`.
 - KITTI occlusion level 3 and truncation 1.0 map to visibility `1.0`.
 - Intermediate scores are monotonic and clipped to `[0, 1]`.
-- JSONL parsing rejects unsupported class names, non-positive boxes, non-finite depth, occlusion outside `0..3`, and truncation outside `0..1`.
+- JSONL parsing validates canonical non-training KITTI classes and skips them with explicit counts; it rejects unknown class names, non-positive boxes, non-finite depth, occlusion outside `0..3`, and truncation outside `0..1`.
 
 Run:
 
@@ -58,7 +58,7 @@ occlusion_score = occlusion_level / 3.0
 visibility = 1.0 - (1.0 - occlusion_score) * (1.0 - truncation)
 ```
 
-If depth is absent, set `depth_score=0.0`, retain a `depth_available=False` flag, and never silently impute distance. Support only Car, Pedestrian, and Cyclist in the audit output.
+If depth is absent, set `depth_score=0.0`, retain a `depth_available=False` flag, and never silently impute distance. Support only Car, Pedestrian, and Cyclist in the audit output. Canonical KITTI non-training classes (`Van`, `Truck`, `Person_sitting`, `Tram`, `Misc`, and `DontCare`) are validated but skipped; any other class name fails validation. Derive a stable per-image object id from original metadata row order when no explicit object id is present.
 
 **Step 3: Verify and commit**
 
