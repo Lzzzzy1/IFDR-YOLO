@@ -725,6 +725,21 @@ class FactorAuditTest(unittest.TestCase):
         self.assertGreaterEqual(valid["valid_replicates"], 5)
         self.assertEqual(valid["status"], "ok")
 
+    def test_bootstrap_debug_samples_have_a_bounded_draw_budget(self) -> None:
+        rows = tuple(
+            _observation(
+                image_id=f"debug-{index}",
+                object_id=index,
+                natural_sampling=0.2 + index * 0.2,
+                predicted_sampling=0.3 + index * 0.1,
+            )
+            for index in range(2)
+        )
+        with self.assertRaises(ValueError):
+            image_cluster_bootstrap(
+                rows, factor="sampling", replicates=50_001, return_samples=True
+            )
+
     def test_gate_decision_recursively_freezes_nested_results(self) -> None:
         decision = audit_natural_factors(
             _fixture(image_count=2),
@@ -739,6 +754,17 @@ class FactorAuditTest(unittest.TestCase):
         with self.assertRaises(TypeError):
             decision.factor_results["sampling"]["alignment"]["seed_node"]["17:11"]["raw"]["rho"] = 0.0  # type: ignore[index]
         json.dumps(decision.to_dict())
+
+    def test_gate_rejects_duplicate_required_seed_or_node(self) -> None:
+        rows = _fixture(image_count=1)
+        with self.assertRaises(ValueError):
+            audit_natural_factors(
+                rows, required_seeds=(17, 17), required_nodes=(11,), bootstrap_replicates=5
+            )
+        with self.assertRaises(ValueError):
+            audit_natural_factors(
+                rows, required_seeds=(17,), required_nodes=(11, 11), bootstrap_replicates=5
+            )
 
     def test_same_source_image_across_seeds_nodes_and_objects_is_one_cluster(self) -> None:
         import ifdr_yolo.eval.natural_factor_audit as audit_module
