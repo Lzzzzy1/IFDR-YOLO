@@ -20,13 +20,13 @@ class UnprotectedCounterfactualQueueTest(unittest.TestCase):
                 spec.config,
                 repository_root=repository_root,
             )
-            self.assertFalse(config.components.semantic_protection)
-            self.assertTrue(config.components.counterfactual_consistency)
-            self.assertEqual(config.loss.counterfactual_gain, 0.2)
+            self.assertFalse(config.method.components.semantic_protection)
+            self.assertTrue(config.method.components.counterfactual_consistency)
+            self.assertEqual(config.method.loss.counterfactual_gain, 0.2)
             self.assertEqual(config.training.epochs, 300)
-            self.assertTrue(config.components.fusion_gate)
-            self.assertTrue(config.components.dcli)
-            self.assertTrue(config.components.factor_supervision)
+            self.assertTrue(config.method.components.fusion_gate)
+            self.assertTrue(config.method.components.dcli)
+            self.assertTrue(config.method.components.factor_supervision)
 
 
 if __name__ == "__main__":
