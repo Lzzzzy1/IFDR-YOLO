@@ -2,7 +2,11 @@
 
 Built from: `task-a.md`, `task-b.md`, `task-c.md`, `task-d.md`, `task-e.md`, `task-f.md`
 
-AS_OF: 2026-07-28
+AS_OF: 2026-08-04
+
+Paper-facing claim-to-citation commitments are maintained in
+`../citation-commitments.md`. That file is authoritative for methods actually
+used or compared in IFDR-YOLO; this registry retains the broader novelty search.
 
 ## Approved Sources
 
@@ -62,4 +66,3 @@ x CEM-FBGTinyDet | https://arxiv.org/abs/2506.09897 | Source-Type: academic | Au
 - Maximum single-domain share: arxiv.org 5/20 = 25% (pass)
 - Private or privileged sources rejected: 0
 - Duplicate URLs in approved registry: 0
-
