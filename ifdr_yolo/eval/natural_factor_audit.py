@@ -665,7 +665,12 @@ def intervention_statistics(
     factor: str,
     expected_intervention_severities: Sequence[float] = DEFAULT_INTERVENTION_SEVERITIES,
 ) -> dict[str, object]:
-    """Compute paired target/background responses for one intervention factor."""
+    """Compute paired responses using clean rows as the internal manifest.
+
+    A pair absent together with its clean manifest is unobservable here; the
+    upstream observer/progress manifest is responsible for detecting that
+    source-level omission.
+    """
 
     factor = _validate_factor(factor)
     expected_severities = _validate_expected_severities(expected_intervention_severities)
