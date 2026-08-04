@@ -1,4 +1,5 @@
 import unittest
+from pathlib import Path
 
 from ifdr_yolo.experiments.config import load_ifdr_config
 from scripts.run_unprotected_counterfactual_queue import UNPROTECTED_SPECS
@@ -13,8 +14,12 @@ class UnprotectedCounterfactualQueueTest(unittest.TestCase):
         )
 
     def test_controls_disable_only_semantic_protection(self) -> None:
+        repository_root = Path(__file__).resolve().parents[1]
         for spec in UNPROTECTED_SPECS:
-            config = load_ifdr_config(spec.config)
+            config = load_ifdr_config(
+                spec.config,
+                repository_root=repository_root,
+            )
             self.assertFalse(config.components.semantic_protection)
             self.assertTrue(config.components.counterfactual_consistency)
             self.assertEqual(config.loss.counterfactual_gain, 0.2)
