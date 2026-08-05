@@ -408,6 +408,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
+from ifdr_yolo.data.replay_sampler import ReplayDrawJournal
+
 
 class ReplayDrawJournalTest(unittest.TestCase):
     def test_draw_journal_resume_is_exact(self):
@@ -458,7 +460,6 @@ def normalize_replay_distribution(distribution):
         "calibration_checkpoint_sha256":
             distribution.calibration_checkpoint_sha256,
         "metadata_index_sha256": distribution.metadata_index_sha256,
-        "distribution_sha256": distribution.distribution_sha256,
     }
     if sha256_canonical(payload) != distribution.distribution_sha256:
         raise ValueError("distribution digest mismatch")
@@ -1867,6 +1868,7 @@ from tempfile import TemporaryDirectory
 
 from scripts.run_factor_repair_queue import FactorRepairQueue
 from scripts.train_factor_repair import build_factor_repair_run
+from ifdr_yolo.eval.factor_repair_gate import FactorRepairSelectionDecision
 
 # registered_test_config and artifact/decision builders are shared fixtures
 # defined in this test module.
@@ -2027,8 +2029,20 @@ git commit -m "feat: orchestrate recoverable factor repair screens"
 ```python
 import unittest
 
-from ifdr_yolo.eval.factor_repair_gate import gate_decision
+from ifdr_yolo.eval.factor_repair_gate import FactorRepairGateDecision
 from ifdr_yolo.eval.factor_repair_report import evaluate_development_advancement
+
+
+def gate_decision(*, passed):
+    return FactorRepairGateDecision(
+        passed=passed,
+        stage="post_adaptation",
+        primary_nodes=(17, 20, 23, 26),
+        diagnostic_nodes=(11, 14),
+        checks={},
+        failures=() if passed else ("post_adaptation_failure",),
+        evidence_sha256=("a" if passed else "b") * 64,
+    )
 
 
 class FactorRepairReportTest(unittest.TestCase):
