@@ -6,7 +6,7 @@
 
 **Architecture:** Add an immutable KITTI object metadata index shared by Track M and Track F. Track M changes only the training sampler; Track F adds object-balanced natural ROI supervision, target/background specificity, an isolated semantic-calibration phase, and a mandatory post-adaptation audit. Existing P2, detection graph, DCLI inference behavior, KITTI validation annotations, and archived negative evidence remain unchanged.
 
-**Tech Stack:** Python 3.12, PyTorch, Ultralytics YOLOv8, NumPy, PyYAML, `unittest`, existing IFDR run-store/provenance/audit utilities.
+**Tech Stack:** Python 3.11.15, PyTorch, Ultralytics YOLOv8, NumPy, PyYAML, `unittest`, existing IFDR run-store/provenance/audit utilities.
 
 The Chen KITTI train/validation split is a public development benchmark. Recipe
 selection uses only the locked internal development split; external evidence is
@@ -179,12 +179,20 @@ git commit -m "feat: add leakage-free factor development split"
 **Files:**
 - Create: `ifdr_yolo/data/metadata_index.py`
 - Modify: `scripts/build_factor_metadata.py`
+- Create: `configs/experiments/kitti_ifdr_factor_repair_dev_s17.yaml`
 - Test: `tests/test_factor_metadata_index.py`
 
 - [ ] **Step 1: Write identity, score and rejection tests**
 
 ```python
 import unittest
+
+from ifdr_yolo.data.metadata_index import (
+    KittiMetadataObject,
+    build_metadata_index,
+    compute_sampling_score,
+    compute_visibility_score,
+)
 
 class FactorMetadataIndexTest(unittest.TestCase):
     def setUp(self):
@@ -277,7 +285,7 @@ alignment weight or nearest-IoU fallback.
 
 Task 2 owns `scripts/build_factor_metadata.py`; it atomically writes
 `metadata_index.json`, `fit_ids.txt`, `development_ids.txt`, `manifest.json`,
-and the canonical seed-17 YAML only after all required hashes validate.
+and creates the canonical seed-17 YAML only after all required hashes validate.
 Re-running with identical scientific identity is a no-op; any mismatch fails
 before writing.
 
@@ -286,7 +294,7 @@ before writing.
 Run: `D:\ana\envs\yolo\python.exe -m unittest tests.test_factor_metadata_index tests.test_development_split -v`
 
 ```text
-git add ifdr_yolo/data/metadata_index.py scripts/build_factor_metadata.py tests/test_factor_metadata_index.py
+git add ifdr_yolo/data/metadata_index.py scripts/build_factor_metadata.py configs/experiments/kitti_ifdr_factor_repair_dev_s17.yaml tests/test_factor_metadata_index.py
 git commit -m "feat: build immutable KITTI factor metadata"
 ```
 
@@ -300,6 +308,11 @@ git commit -m "feat: build immutable KITTI factor metadata"
 
 ```python
 import unittest
+
+from ifdr_yolo.data.replay_sampler import (
+    build_replay_distribution,
+    replay_eta,
+)
 
 
 class ReplaySamplerTest(unittest.TestCase):
@@ -398,29 +411,99 @@ import unittest
 
 class ReplayDrawJournalTest(unittest.TestCase):
     def test_draw_journal_resume_is_exact(self):
-        identity = {
-            "seed": 17, "distribution_sha256": "a" * 64,
-            "manifest_sha256": "b" * 64,
-            "calibration_checkpoint_sha256": "c" * 64,
-            "metadata_index_sha256": "d" * 64,
-        }
+        distribution = replay_distribution_fixture(epoch=3)
         with TemporaryDirectory() as directory:
             root = Path(directory)
-            first = ReplayDrawJournal.create(root, identity=identity)
+            first = ReplayDrawJournal.create(
+                root, seed=17, distribution=distribution,
+            )
             expected = [first.draw(epoch=3, draw_index=i) for i in range(10)]
-            resumed = ReplayDrawJournal.open(root, identity=identity)
+            resumed = ReplayDrawJournal.open(
+                root, seed=17, distribution=distribution,
+            )
             self.assertEqual(
                 [resumed.draw(epoch=3, draw_index=i) for i in range(10)], expected
             )
+            self.assertTrue(all("image_id" in record for record in expected))
+            self.assertTrue(all("probability" in record for record in expected))
             with self.assertRaisesRegex(ValueError, "scientific identity mismatch"):
                 ReplayDrawJournal.open(
-                    root, identity={
-                        "seed": 29, "distribution_sha256": "a" * 64,
-                        "manifest_sha256": "b" * 64,
-                        "calibration_checkpoint_sha256": "c" * 64,
-                        "metadata_index_sha256": "d" * 64,
-                    }
+                    root, seed=29, distribution=distribution,
                 )
+```
+
+`replay_distribution_fixture` returns a complete `ReplayDistribution` with
+sorted IDs and normalized original/focus/final probability maps, all four
+provenance hashes, and a digest computed by the production serializer. The
+journal API is deliberately distribution-first: `create` and `open` accept
+`(root, seed, distribution)`, never a hand-built identity dictionary.
+
+```python
+def normalize_replay_distribution(distribution):
+    payload = {
+        "mode": distribution.mode,
+        "epoch": distribution.epoch,
+        "eta": distribution.eta,
+        "image_ids": tuple(sorted(distribution.image_ids)),
+        "original_probabilities": tuple(sorted(
+            distribution.original_probabilities.items()
+        )),
+        "focus_probabilities": tuple(sorted(
+            distribution.focus_probabilities.items()
+        )),
+        "probabilities": tuple(sorted(distribution.probabilities.items())),
+        "focus_scores": tuple(sorted(distribution.focus_scores.items())),
+        "source_sha256": distribution.source_sha256,
+        "manifest_sha256": distribution.manifest_sha256,
+        "calibration_checkpoint_sha256":
+            distribution.calibration_checkpoint_sha256,
+        "metadata_index_sha256": distribution.metadata_index_sha256,
+        "distribution_sha256": distribution.distribution_sha256,
+    }
+    if sha256_canonical(payload) != distribution.distribution_sha256:
+        raise ValueError("distribution digest mismatch")
+    return payload
+
+
+class ReplayDrawJournal:
+    @classmethod
+    def create(cls, root, *, seed, distribution):
+        payload = normalize_replay_distribution(distribution)
+        return cls._create(root, scientific_identity={
+            "seed": seed,
+            "distribution": payload,
+            "distribution_sha256": distribution.distribution_sha256,
+            "manifest_sha256": distribution.manifest_sha256,
+            "calibration_checkpoint_sha256":
+                distribution.calibration_checkpoint_sha256,
+            "metadata_index_sha256": distribution.metadata_index_sha256,
+        })
+
+    @classmethod
+    def open(cls, root, *, seed, distribution):
+        payload = normalize_replay_distribution(distribution)
+        return cls._open(root, scientific_identity={
+            "seed": seed,
+            "distribution": payload,
+            "distribution_sha256": distribution.distribution_sha256,
+            "manifest_sha256": distribution.manifest_sha256,
+            "calibration_checkpoint_sha256":
+                distribution.calibration_checkpoint_sha256,
+            "metadata_index_sha256": distribution.metadata_index_sha256,
+        })
+
+    def draw(self, *, epoch, draw_index):
+        image_id, probability = deterministic_choice(
+            self.distribution.probabilities,
+            key=(self.seed, epoch, draw_index,
+                 self.distribution.distribution_sha256),
+        )
+        return {
+            "epoch": epoch, "draw_index": draw_index,
+            "image_id": image_id, "probability": probability,
+            "realized_image_count": 1,
+            "realized_class_counts": realized_class_counts(image_id),
+        }
 ```
 
 Add `test_draw_key_changes_sequence` with one fixed distribution and change
@@ -464,6 +547,18 @@ git commit -m "feat: add recoverable metadata replay sampler"
 
 ```python
 import unittest
+
+from ifdr_yolo.data.learned_factor_manifest import (
+    aggregate_primary_node_factors,
+    average_tie_percentile_rank,
+    build_learned_factor_manifest,
+    build_learned_focus_distribution,
+    build_manifest_from_records,
+)
+
+# The test module's shared fixture section defines manifest_fixture,
+# learned_object, metadata_index_fixture, and
+# validated_metadata_priorities_fixture before this test class.
 
 
 class LearnedFactorManifestTest(unittest.TestCase):
@@ -727,7 +822,7 @@ def build_learned_factor_manifest(*, condition, checkpoint_path, checkpoint_role
         metadata_index_sha256=metadata_index.sha256,
         primary_node_ids=PRIMARY_NODE_IDS,
         expected_object_ids_sha256=digest_ids(expected_objects),
-        objects=tuple(sorted(observed_objects)),
+        objects=tuple(sorted(observed_objects, key=lambda item: (item.image_id, item.object_id))),
     )
 ```
 
@@ -735,7 +830,9 @@ def build_learned_factor_manifest(*, condition, checkpoint_path, checkpoint_role
 resolved provenance path, requires `checkpoint_role="calibration_last"`,
 validates checkpoint/fit/metadata/object-set hashes, stores only eligible
 Cyclist object records, and computes `manifest_sha256` from every manifest field
-and sorted object payload. The builder uses a deterministic no-augmentation
+and sorted object payload. `LearnedObjectFactor` serialization is explicitly
+ordered by `key=(image_id, object_id)` before hashing or writing the manifest.
+The builder uses a deterministic no-augmentation
 loader whose observed image IDs must exactly equal `fit_ids`; it derives the
 expected eligible object IDs from the bound metadata index and requires exact
 set equality with observed `(image_id, object_id)` records. Before inference it
@@ -778,6 +875,11 @@ import unittest
 import math
 import torch
 from torch.nn import functional as F
+
+from ifdr_yolo.losses.factor_alignment import (
+    ObjectFactorTarget,
+    object_balanced_factor_loss,
+)
 
 
 class FactorAlignmentLossTest(unittest.TestCase):
@@ -938,6 +1040,9 @@ import unittest
 
 import torch
 
+from ifdr_yolo.data.ifdr_dataset import build_specificity_pair
+from ifdr_yolo.losses.factor_alignment import factor_specificity_loss
+
 
 class FactorSpecificityTest(unittest.TestCase):
     def test_specificity_margin_uses_delta_from_clean(self):
@@ -975,7 +1080,6 @@ class FactorSpecificityTest(unittest.TestCase):
             "img": view,
             "bboxes": torch.tensor([[0.25, 0.25, 0.50, 0.50]]),
             "cls": torch.tensor([[2.0]]),
-            "batch_idx": torch.zeros(1),
             CLEAN_IMAGE_KEY: view.clone(),
             TARGET_IMAGE_KEY: view.clone(),
             BACKGROUND_IMAGE_KEY: view.clone(),
@@ -1008,7 +1112,10 @@ specificity.
 
 - [ ] **Step 2: Run tests and verify failure**
 
-Run: `D:\ana\envs\yolo\python.exe -m unittest tests.test_factor_specificity -v`
+Run: `D:\ana\envs\yolo\python.exe -m unittest tests.test_factor_specificity tests.test_factor_three_view_loss -v`
+
+Expected: both modules fail at import or assertion because the target-only
+three-view routing and specificity pair contracts are not implemented yet.
 
 - [ ] **Step 3: Implement delta ranking exactly**
 
@@ -1055,9 +1162,10 @@ output before geometry, then emit one clean/target/background tuple with
 `CLEAN_IMAGE_KEY`, `TARGET_IMAGE_KEY`, and `BACKGROUND_IMAGE_KEY`. The target
 and background use the same severity and transform seed; the clean view is
 unmodified. Emit immutable object records under `FACTOR_OBJECT_TARGETS_KEY` with
-`batch_idx`, `class_id`, and normalized `box_xyxy_normalized`. Update
-`collate_ifdr_batch` to stack all three BCHW views, attach the collated
-`batch_idx`, and clip each normalized ROI when mapping it to every P2-P5 node.
+`class_id`, and normalized `box_xyxy_normalized`; the transform/dataset never
+writes the final `batch_idx`. Update `collate_ifdr_batch` to stack all three
+BCHW views and be the only writer of collated `batch_idx` values, then clip
+each normalized ROI when mapping it to every P2-P5 node.
 Update `IFDRDetectionModel.loss` to concatenate the three views as one `3B`
 forward, consume and split all six node contexts into clean/target/background,
 and pass clean-only ROI records plus intervention records to
@@ -1091,6 +1199,10 @@ import unittest
 import torch
 
 from ifdr_yolo.experiments.ultralytics_runtime import bootstrap_ultralytics_config
+from ifdr_yolo.experiments.factor_repair import (
+    semantic_calibration_phase,
+    split_three_view_contexts,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -1418,7 +1530,7 @@ git commit -m "feat: add matched task adaptation phase"
 
 **Files:**
 - Modify: `ifdr_yolo/experiments/config.py`
-- Create: `configs/experiments/kitti_ifdr_factor_repair_dev_s17.yaml`
+- Read/validate: `configs/experiments/kitti_ifdr_factor_repair_dev_s17.yaml` (created by Task 2)
 - Create: `tests/test_factor_repair_config.py`
 
 - [ ] **Step 1: Write strict parsing and budget tests**
@@ -1428,6 +1540,10 @@ import unittest
 
 from pathlib import Path
 from tempfile import TemporaryDirectory
+
+from ifdr_yolo.experiments.config import load_factor_repair_config
+
+# write_valid_config is a shared test fixture defined in this test module.
 
 
 class FactorRepairConfigTest(unittest.TestCase):
@@ -1475,14 +1591,14 @@ fields: the gate module's fixed `FACTOR_GATE_BOOTSTRAP_REPLICATES=10000` and
 
 - [ ] **Step 4: Write the canonical seed-17 development YAML**
 
-The YAML binds fit/development/metadata hashes, accepted initialization checkpoint hash, M/F budgets, image size, schedule, factor weights, nodes `(11, 14, 17, 20, 23, 26)`, primary nodes `(17, 20, 23, 26)`, and output root. Task 2 owns canonical YAML generation through `scripts/build_factor_metadata.py`; Task 7 consumes that generated file and validates that every required 64-hex hash is real before loading it. No second YAML writer or ad-hoc config generator is introduced here.
+The YAML binds fit/development/metadata hashes, accepted initialization checkpoint hash, M/F budgets, image size, schedule, factor weights, nodes `(11, 14, 17, 20, 23, 26)`, primary nodes `(17, 20, 23, 26)`, and output root. Task 2 owns canonical YAML generation through `scripts/build_factor_metadata.py`; Task 7 consumes that generated file and validates that every required 64-hex hash is real before loading it. Task 7 does not create or rewrite the YAML and introduces no second YAML writer or ad-hoc config generator.
 
 - [ ] **Step 5: Run tests and commit**
 
 Run: `D:\ana\envs\yolo\python.exe -m unittest tests.test_factor_repair_config tests.test_experiment_config -v`
 
 ```text
-git add ifdr_yolo/experiments/config.py configs/experiments/kitti_ifdr_factor_repair_dev_s17.yaml tests/test_factor_repair_config.py
+git add ifdr_yolo/experiments/config.py tests/test_factor_repair_config.py
 git commit -m "feat: register factor repair experiment controls"
 ```
 
@@ -1497,6 +1613,14 @@ git commit -m "feat: register factor repair experiment controls"
 ```python
 import unittest
 import numpy
+
+from ifdr_yolo.eval.factor_repair_gate import (
+    FACTOR_GATE_BOOTSTRAP_PERCENTILES,
+    evaluate_factor_repair_gate,
+    require_factor_guided_advancement,
+)
+
+# candidate_rows and gate_decision are shared fixtures defined in this module.
 
 class FactorRepairGateTest(unittest.TestCase):
     def test_seed17_gate_requires_three_of_four_positive_primary_nodes(self):
@@ -1741,6 +1865,12 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from scripts.run_factor_repair_queue import FactorRepairQueue
+from scripts.train_factor_repair import build_factor_repair_run
+
+# registered_test_config and artifact/decision builders are shared fixtures
+# defined in this test module.
+
 
 class FactorRepairRunnerTest(unittest.TestCase):
     def test_runner_rejects_development_id_in_fit_loader(self):
@@ -1897,6 +2027,9 @@ git commit -m "feat: orchestrate recoverable factor repair screens"
 ```python
 import unittest
 
+from ifdr_yolo.eval.factor_repair_gate import gate_decision
+from ifdr_yolo.eval.factor_repair_report import evaluate_development_advancement
+
 
 class FactorRepairReportTest(unittest.TestCase):
     def test_development_advancement_boundaries(self):
@@ -1960,6 +2093,11 @@ git commit -m "feat: report factor repair advancement evidence"
 **Files:**
 - Create: `tests/test_factor_repair_smoke.py`
 - Modify only if a smoke exposes a defect in files owned by Tasks 1-10.
+
+If smoke exposes a defect in Tasks 1-10, fix it only in that owning task's
+files in an independent `fix:` commit (or explicitly add those owned files to
+the Task 11 commit), rerun the focused test, and ensure no unresolved smoke
+failure or owned-file fix remains.
 
 - [ ] **Step 1: Add one-batch CPU dry-run test**
 
@@ -2113,7 +2251,7 @@ CityPersons have not been validated by this package.
 
 - [ ] **Step 5: Freeze environment and legal notices**
 
-Run: `D:\ana\envs\yolo\python.exe -m pip freeze --all > requirements-factor-repair.txt`
+Run (PowerShell, explicit UTF-8 output): `D:\ana\envs\yolo\python.exe -m pip freeze --all | Out-File -Encoding utf8 requirements-factor-repair.txt`
 
 The upstream canonical YAML is labeled AGPL-3.0. Task 13 therefore requires
 an AGPL-3.0-compatible license path and a repository-owner confirmation before
