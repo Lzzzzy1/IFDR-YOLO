@@ -77,7 +77,6 @@ New responsibilities are separated so the existing trainer and dataset do not be
 
 ```python
 import unittest
-import numpy
 
 from ifdr_yolo.data.development_split import build_development_split
 
@@ -1497,6 +1496,7 @@ git commit -m "feat: register factor repair experiment controls"
 
 ```python
 import unittest
+import numpy
 
 class FactorRepairGateTest(unittest.TestCase):
     def test_seed17_gate_requires_three_of_four_positive_primary_nodes(self):
