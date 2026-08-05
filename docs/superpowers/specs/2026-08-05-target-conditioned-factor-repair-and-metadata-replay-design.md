@@ -1,6 +1,6 @@
 # Target-Conditioned Factor Repair and Metadata Replay for IFDR-YOLO
 
-Date: 2026-08-05  
+Date: 2026-08-05
 Status: user-approved design; implementation requires written-spec review
 
 ## Objective
