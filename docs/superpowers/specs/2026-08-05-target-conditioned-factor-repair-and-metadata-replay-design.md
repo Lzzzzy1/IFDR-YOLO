@@ -35,7 +35,15 @@ Every registered condition uses the same initialization checkpoint bytes and
 SHA256, resets optimizer state, uses its fixed compute budget and has no early
 stopping. For every fixed-budget result, `last.pt` is the primary checkpoint;
 `best.pt` is retained as an engineering diagnostic and is never substituted for
-the primary result.
+the primary result. The runner writes
+`primary_checkpoint={path:"last.pt",sha256: string matching ^[0-9a-f]{64}$}` and
+`diagnostic_checkpoint={path:"best.pt",sha256: string matching ^[0-9a-f]{64}$}`.
+Primary AP40 evaluation
+must load `last.pt` and write `metrics_ap40_primary_last.json`; best-checkpoint
+metrics belong only in a separate diagnostic file and cannot enter advancement.
+Reports bind the primary metric filename and SHA256 to the verified `last.pt`
+SHA256; best metrics retain their own diagnostic binding. Missing, empty, or
+hash-mismatched last/best artifacts fail closed.
 
 ## Frozen Evidence and Motivation
 
@@ -108,9 +116,12 @@ Natural scores retain the registered formulas:
 `visibility = 1 - (1 - occlusion_score) * (1 - truncation)`
 
 where height, depth, occlusion, and truncation normalization boundaries remain
-those in `ifdr_yolo.data.natural_degradation`. Missing or invalid depth removes
-the depth contribution and marks that object in provenance; ambiguous metadata
-matching receives zero alignment weight rather than a guessed assignment.
+those in `ifdr_yolo.data.natural_degradation`. Missing or invalid optional depth
+only masks the depth contribution of the sampling score and is recorded in
+provenance; it does not mask the valid height contribution. Zero, multiple, or
+ambiguous object matches, duplicate identities, non-finite metadata, and hash
+mismatches fail closed during preflight rather than continuing with zero weight
+or a guessed assignment.
 
 The raw factor maps are the semantic anchor and are used for the natural audit.
 The existing residual factor adapter is task specific and is evaluated
@@ -142,10 +153,17 @@ geometry or metadata identity.
 
 The dataset obtains the raw image and labels first, then attaches the matched
 object records before any geometry-changing transform. Calibration batches
-carry the original identity and normalized boxes through `collate`; the
-alignment loss maps each box to every registered P2--P5 node, clips it to the
-node map, and rejects empty or non-finite regions. The implementation tests all
-four node sizes plus empty, clipped, and boundary-touching boxes.
+carry the original identity and
+`box_xyxy_normalized: tuple[float, float, float, float]` through `collate`; the
+alignment loss maps each normalized box independently to every registered
+P2--P5 node, clips it to the node map, and rejects non-finite or reversed input.
+For node height `H` and width `W`, `map_normalized_box_to_feature_roi` first
+clips finite coordinates to `[0, 1]`, requires a non-empty box, then computes
+`x1=floor(x1*W)`, `y1=floor(y1*H)`, `x2=ceil(x2*W)`, and `y2=ceil(y2*H)` before
+boundary clipping. An empty ROI contributes zero weight and increments an
+explicit counter. Integer ROIs are never reused across nodes. The
+implementation tests all four node sizes plus empty, clipped, and
+boundary-touching boxes.
 
 ## Leakage-Free Development Protocol
 
@@ -247,7 +265,8 @@ other valid channel.
 ### Controlled target specificity
 
 Synthetic dense supervision remains active so natural regression does not
-replace intervention selectivity. Matched target and empty-background
+replace intervention selectivity. Legacy non-calibration batches retain their
+current synthetic-loss behavior. Matched target and empty-background
 interventions use common randomness and identical severity.
 
 Every calibration sample is an explicit three-view tuple `(clean, target,
@@ -256,7 +275,9 @@ views. The model performs one concatenated `3B` forward and splits the
 reliability contexts back into the three views. Natural ROI supervision is
 computed only from the clean view; synthetic supervision uses the target
 intervention view; specificity compares target and background deltas relative to
-clean. Detection loss is frozen and not counted during semantic calibration.
+clean. During calibration, changing clean or background factors while holding
+target tensors fixed must not change `L_synthetic`; detection loss is not called
+and is excluded from the calibration objective.
 
 For an intervention factor, specificity compares changes from the clean image:
 
@@ -323,17 +344,54 @@ When an F1--F3 candidate passes the development factor audit and beats F0 on
 the registered mechanism evidence, F0 supplies the new-repair-term
 compute-matched adaptation control and that single candidate has its semantic
 parameters frozen for the same 60-epoch focus/recovery adaptation as F0 and
-M3.
-The detector, routers, fusion adapters, localization adapter, and detection
-head are the trainable task path. Factors may condition replay only after the
-audit passes; metadata scores remain a mandatory control. If no F1--F3
-candidate passes, no Track F adaptation is started and Track M is the only
-allowed method claim. The previously accepted full-training checkpoint is
+M3. F0 and the selected candidate must have byte-identical frozen semantic
+parameters: all twelve projections plus shared `shared_core` and `factor_head`.
+Their trainable named-parameter sets must be identical and contain only the
+remaining task path (backbone, C2f blocks, routers, fusion adapters,
+localization adapter, detection head, and any explicitly enumerated gate
+parameters). They use the same optimizer type and hyperparameters after an
+optimizer reset, the same update count and eta schedule, no early stopping,
+and the same `last.pt` primary checkpoint rule. Factors may condition replay
+only after the audit passes; metadata scores remain a mandatory control. If no
+F1--F3 candidate passes, no Track F adaptation is started and Track M is the
+only allowed method claim. The previously accepted full-training checkpoint is
 named `F_ref` and remains a frozen reference, not an ablation condition.
 
 Upstream detector updates can change the frozen factor encoder's inputs, so the
 complete natural audit is repeated after task adaptation. A post-adaptation
 audit failure rejects the factor-guided claim even when AP improves.
+
+### Learned-factor replay contract
+
+After semantic calibration and before task adaptation, each frozen calibration
+checkpoint produces an immutable per-image learned-factor manifest by evaluating
+fit clean images in `no_grad` mode. Only eligible Cyclist object ROIs and the
+primary P2--P5 nodes `(17, 20, 23, 26)` are included; development IDs are
+rejected before evaluation. Each object/factor is first macro-averaged across
+the primary nodes. The learned object score is
+
+`learned_joint = 1 - (1 - learned_sampling) * (1 - learned_visibility)`.
+
+An image's learned priority is the maximum learned joint score over its
+eligible Cyclist objects. Within the eligible focus pool, learned priorities
+become a deterministic average-tie percentile rank: equal numeric priorities
+receive the same rank and are never split by `image_id`. Metadata priority
+continues to use the M3 fit-split 95th-percentile clip and normalization. The
+mandatory safeguard is
+
+`focus_score = 0.5 * metadata_priority + 0.5 * learned_percentile`.
+
+Only inside the focus pool is the `0.05` floor added; the result is normalized
+as `P_focus`, then mixed with uniform `P_original` using the registered M3
+`P_t`, eta schedule, replacement draw count, and draw-key journal.
+
+F0 and the selected candidate use the same formula and independent manifests;
+their only scientific difference is the frozen calibration checkpoint. Each
+manifest binds checkpoint SHA256, fit-ID hash, node list, object records, and
+its own digest and is immutable. A candidate that fails the factor gate cannot
+produce or be used for adaptation. F0 is generated and replayed only as the
+matched control paired with the selected candidate. A post-adaptation audit
+failure revokes the factor-guided claim even if the learned replay improves AP.
 
 ## Pre-Registered Factor Gate
 
@@ -364,6 +422,45 @@ For each factor, a development candidate passes only when:
 All six nodes and all failures remain in the report. The gate threshold may not
 be changed after a repaired checkpoint is observed.
 
+### Pre-registered candidate selection relative to F0
+
+F0 is a complete mechanism-evidence control, not only a compute control. It
+must have finite observations for every required image, factor, primary node,
+residual covariate, target/background pair, and bootstrap cluster. Missing,
+malformed, or non-finite F0 evidence fails closed and prevents every Track F
+adaptation. F0 and each F1--F3 candidate must use exactly the same evidence
+image IDs and image-ID hash; a mismatch is a scientific-identity failure.
+
+For each condition, the four pooled primary-node endpoints are:
+
+1. sampling residual Spearman rho;
+2. visibility residual Spearman rho;
+3. sampling specificity gap
+   `mean(target_delta_sampling - background_delta_sampling)`;
+4. visibility specificity gap
+   `mean(target_delta_visibility - background_delta_visibility)`.
+
+Factor outputs are clipped to `[0, 1]`, so each endpoint is bounded by `[-1, 1]`.
+The pre-registered composite is the equal-weight arithmetic mean
+
+`S = (rho_sampling_residual + rho_visibility_residual + gap_sampling + gap_visibility) / 4`.
+
+For every image-cluster bootstrap replicate, the same resampled image IDs are
+used to recompute all four endpoints for the candidate and F0. The paired
+effect is `DeltaS = S_candidate - S_F0`; its point estimate and 95% bootstrap
+interval are recorded. A candidate is repair-eligible only when it passes the
+absolute factor gate above and the paired `DeltaS` interval has a lower bound
+strictly above zero. No unpaired or per-node significance can make a selection.
+
+If several candidates are eligible, choose the largest paired `DeltaS` lower
+bound. If lower bounds differ by at most `1e-12`, choose the largest `DeltaS`
+point estimate. If those also tie, choose condition-name dictionary order
+`F1 < F2 < F3`. There is no manual condition-string selection and no default
+F3. The immutable gate decision carries `reference_condition=F0`, candidate
+condition, `delta_s_point`, `delta_s_ci95`, selected condition, candidate/F0
+evidence hashes, and the complete endpoint table. The queue consumes only this
+decision object; it cannot construct or override a selection from a string.
+
 ## Detection Screen and Formal Advancement
 
 M1, M2, M3, and the factor-guided candidate use matched development budgets.
@@ -373,7 +470,11 @@ A seed-17 method advances only when:
   reference;
 - three-class Moderate AP40 improves by at least 1.5 points;
 - neither Car nor Pedestrian drops by more than 1.5 points;
-- training remains finite and produces non-empty best and last checkpoints;
+- training remains finite and produces non-empty `last.pt` primary and
+  `best.pt` diagnostic checkpoints;
+- primary metrics are read from `last.pt` and stored in
+  `metrics_ap40_primary_last.json`; `best.pt` metrics remain diagnostic and are
+  excluded from advancement;
 - small, far, and occluded Cyclist slices do not collectively regress;
 - a factor-guided candidate passes both pre- and post-adaptation factor gates.
 
@@ -434,7 +535,7 @@ trade-off, not a successful no-harm method.
 
 ## Required Tests Before Server Launch
 
-Implementation must add tests for:
+Required implementation test coverage includes:
 
 - deterministic stratified fit/development split and exact hash stability;
 - proof that a development checkpoint never sees development IDs;
@@ -444,6 +545,9 @@ Implementation must add tests for:
 - object-balanced ROI loss invariance to object area and class frequency;
 - invalid-channel masking without removing the other channel;
 - matched target/background delta ranking and margin boundaries;
+- target-only synthetic-loss routing: clean/background mutations leave the
+  target-view synthetic loss unchanged, and calibration never calls detection
+  loss;
 - exact 30-epoch F0-F3 calibration budgets, including F0 synthetic-only term
   masking, and the same 60-epoch F0/selected-repair adaptation budget;
 - explicit clean/target/background three-view batches, one `3B` forward and
@@ -458,13 +562,31 @@ Implementation must add tests for:
   mapping across P2-P5, and empty/clipped/boundary ROI handling;
 - draw journaling, interruption, and exactly-once resume;
 - primary/diagnostic node gate thresholds and direction checks;
+- complete F0-relative endpoint composite, paired bootstrap delta, deterministic
+  multi-candidate selection, and incomplete-F0 fail-closed behavior;
+- immutable learned-factor manifests, average-tie percentile ranking, the
+  metadata/learned 0.5/0.5 safeguard, and candidate-gate manifest blocking;
+- equal F0/selected-candidate task-adaptation trainable names, optimizer,
+  schedules, update counts, frozen semantic tensors, and checkpoint policy;
 - post-adaptation audit enforcement;
 - equal-budget experiment configuration checks;
 - identical initialization hash, reset optimizer, fixed `last.pt` primary versus
   `best.pt` engineering checkpoint, and no-early-stopping enforcement;
+- primary evaluator input and hash binding for `last.pt`, separate diagnostic
+  best metrics, and fail-closed missing/empty/mismatched checkpoint cases;
 - one-batch CPU dry run, one-epoch CUDA smoke, checkpoint recovery, and
   non-empty scientific artifacts;
 - all existing tests remaining green.
+
+## Reproducibility package license gate
+
+The upstream canonical YAML is labeled AGPL-3.0. The final reproducibility
+package therefore follows an AGPL-3.0-compatible license path and requires
+repository-owner confirmation before writing a root `LICENSE`. Without
+`license_owner_confirmation=true`, package verification fails closed and no
+final package is published; this legal gate does not block Tasks 1--12.
+`NOTICE` always records Ultralytics 8.4.98 and every upstream file/path/hash/
+license attribution.
 
 ## Contribution and Claim Boundary
 

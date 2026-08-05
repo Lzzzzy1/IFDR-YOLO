@@ -24,8 +24,9 @@ New responsibilities are separated so the existing trainer and dataset do not be
 - Create `ifdr_yolo/data/development_split.py`: deterministic leakage-free 90/10 fit/development split and digest.
 - Create `ifdr_yolo/data/metadata_index.py`: immutable object identities, 0.99-IoU label binding, validity and provenance checks.
 - Create `ifdr_yolo/data/replay_sampler.py`: M1/M2/M3 probabilities, registered eta schedule, deterministic draw journal and resume.
+- Create `ifdr_yolo/data/learned_factor_manifest.py`: no-grad fit-image factor manifests, primary-node object aggregation, average-tie percentile ranking, and metadata/learned focus distribution.
 - Create `ifdr_yolo/losses/factor_alignment.py`: object-balanced ROI pooling, invalid-channel masking, and target/background specificity loss.
-- Create `ifdr_yolo/experiments/factor_repair.py`: phase definitions, exact trainable parameter selection, equal-budget validation, and stage transition rules.
+- Create `ifdr_yolo/experiments/factor_repair.py`: semantic-calibration and task-adaptation phase definitions, exact trainable parameter selection, equal-budget validation, and stage transition rules.
 - Create `ifdr_yolo/eval/factor_repair_gate.py`: primary/diagnostic node gate and post-adaptation enforcement.
 - Create `scripts/build_factor_metadata.py`: fail-closed metadata/split build CLI.
 - Create `scripts/train_factor_repair.py`: development-only M/F runner using existing `RunStore` and IFDR trainer.
@@ -46,15 +47,24 @@ New responsibilities are separated so the existing trainer and dataset do not be
 - F0 is a compute-matched 30-epoch synthetic-only calibration control; F0-F3
   share the same three-view batches, optimizer/update schedule, batch/update
   count, freeze set, and calibration budget.
+- F0 must have complete finite mechanism evidence on the same image-ID hash as
+  every candidate. Selection uses four pooled primary-node endpoints, an
+  equal-weight composite `S`, paired image-bootstrap `DeltaS`, and the fixed
+  lower-bound/point/name tie-break; no manual condition string or default F3.
 - Only F0 and at most one F1-F3 candidate that passes its development factor
   gate receive the matched 60-epoch task adaptation; both start only after that
   candidate is selected, and if none passes, no Track F adaptation starts.
 - Track M must not load raw learned factors and must add no inference parameter.
 - Track F cannot advance to factor-conditioned task adaptation until its development factor gate passes.
 - A post-adaptation gate failure invalidates the factor-guided claim even if AP40 improves.
+- Learned-factor replay is generated only from each frozen calibration
+  checkpoint on fit clean images, uses the metadata/learned 0.5/0.5 safeguard,
+  and cannot run for a candidate that fails its gate.
 - Every output binds clean commit, split hash, metadata hash, checkpoint hash, resolved configuration and seed.
 - Every fixed-budget report uses `last.pt` as the primary checkpoint and keeps
   `best.pt` only as an engineering diagnostic.
+- Runner and evaluator write/consume `last.pt` primary metrics explicitly;
+  best-checkpoint metrics remain diagnostic and cannot advance a method.
 
 ### Task 1: Deterministic leakage-free development split
 
@@ -93,14 +103,19 @@ class DevelopmentSplitTest(unittest.TestCase):
             build_development_split(rows, seed=20260805, fraction=0.10)
 ```
 
-Also test score finiteness/range, zero score for images without Cyclists,
-fixed-seed/fraction rejection, reversed input order, strict round-half-up count,
-fit/development disjointness and full coverage, immutable strata, deterministic
-hashing, feasible small-stratum fit/development guarantees, and an infeasible
-small-sample `quota constraints` rejection. Use a feasible `N=40` fixture with
-four non-trivial strata (`dev_count=4`) and an infeasible `N=20` fixture with
-the same four strata (`dev_count=2`); the latter must raise `ValueError` whose
-message contains `quota constraints` before writing any manifest.
+Add these named tests with explicit outcomes: `test_joint_score_is_finite_and_bounded`
+passes for every score in `[0, 1]`; `test_no_cyclist_joint_score_is_zero`
+returns `0.0`; `test_rejects_unregistered_seed_and_fraction` raises
+`ValueError`; `test_reversed_input_order_keeps_ids_and_sha256` returns identical
+split objects; `test_round_half_up_count` uses `N=15` and expects two development
+IDs; `test_fit_development_are_disjoint_and_complete` checks set equality;
+`test_strata_are_immutable_after_build` rejects mutation; and
+`test_hash_is_stable_for_same_rows` compares two SHA256 values. Use
+`test_feasible_small_strata_have_both_seats` with `N=40`, four non-trivial
+strata, and `dev_count=4`; use
+`test_infeasible_small_strata_raise_quota_constraints` with `N=20`, the same
+four strata, and `dev_count=2`, expecting `ValueError("quota constraints")`
+before any manifest is written.
 
 - [ ] **Step 2: Run the tests and verify failure**
 
@@ -196,7 +211,16 @@ class FactorMetadataIndexTest(unittest.TestCase):
                                  split_sha256="a" * 64, source_sha256="b" * 64)
 ```
 
-Also test: IoU below `0.99`, class mismatch, duplicate object identity, non-finite boxes, negative depth handling, invalid occlusion/truncation, missing source/split hash, and serialization order.
+Add named rejection tests with these exact fixtures: `test_iou_below_099_fails`
+uses IoU `0.989`; `test_class_mismatch_fails` changes only class ID;
+`test_duplicate_object_identity_fails` repeats one `(image_id, object_id)`;
+`test_nonfinite_box_fails` uses `NaN`; `test_invalid_positive_depth_masks_only_depth`
+asserts `depth_m=None`, `sampling_valid=True`, and a height-only score;
+`test_invalid_occlusion_or_truncation_fails` supplies `occlusion=4` and
+`truncation=1.1`; `test_missing_source_or_split_hash_fails` omits each hash in
+turn; and `test_serialization_order_is_stable` compares byte-identical JSON.
+`test_zero_multiple_and_ambiguous_matches_fail_closed` asserts that each
+matching cardinality other than one raises before an index record is emitted.
 
 - [ ] **Step 2: Run the tests and verify failure**
 
@@ -243,11 +267,19 @@ def match_metadata_object(record, candidates, *, minimum_iou: float = 0.99):
     return matches[0]
 ```
 
-Missing/invalid positive depth sets `depth_m=None` and `sampling_valid=True` because height remains valid; it is counted in provenance. Ambiguous identity never falls back to nearest IoU.
+Missing/invalid optional depth sets `depth_m=None`, masks only the depth
+contribution while retaining the valid height score, and increments the
+provenance counter. Zero, multiple, or ambiguous identity matches and duplicate
+identities fail closed before serialization; they never continue with zero
+alignment weight or nearest-IoU fallback.
 
 - [ ] **Step 4: Add deterministic CLI output and hash binding**
 
-`scripts/build_factor_metadata.py` must atomically write `metadata_index.json`, `fit_ids.txt`, `development_ids.txt`, and `manifest.json`. Re-running with identical scientific identity is a no-op; any mismatch fails before writing.
+Task 2 owns `scripts/build_factor_metadata.py`; it atomically writes
+`metadata_index.json`, `fit_ids.txt`, `development_ids.txt`, `manifest.json`,
+and the canonical seed-17 YAML only after all required hashes validate.
+Re-running with identical scientific identity is a no-op; any mismatch fails
+before writing.
 
 - [ ] **Step 5: Run tests and commit**
 
@@ -290,10 +322,14 @@ class ReplaySamplerTest(unittest.TestCase):
         self.assertGreater(sampler.probabilities["c"], 0.0)
 ```
 
-Also test M1 equals the uniform `P_original` over fit IDs, M2 is uniform inside
-the Cyclist pool, M3 uses the fit-split 95th percentile and `0.05` focus-pool
-floor, and all epochs outside 1-60 fail. The sampler draws with replacement
-and emits exactly `len(fit_ids)` draws per epoch.
+Add named tests with fixed expected distributions:
+`test_m1_is_uniform_over_fit_ids` checks every fit ID has probability
+`1/len(fit_ids)`; `test_m2_is_uniform_over_cyclist_pool` checks equal focus
+probabilities and zero non-Cyclist focus probability;
+`test_m3_clips_at_fit_p95_and_adds_floor` checks the fit-only percentile and
+`0.05` floor; `test_replay_eta_rejects_epoch_zero_and_61` expects `ValueError`;
+and `test_sampler_draws_with_replacement_for_fit_count` consumes one epoch,
+asserts exactly `len(fit_ids)` draws, and permits repeated IDs.
 
 - [ ] **Step 2: Run tests and verify failure**
 
@@ -344,9 +380,12 @@ class ReplayDrawJournalTest(unittest.TestCase):
                 )
 ```
 
-Add a draw-count test that consumes one epoch and asserts exactly
-`len(fit_ids)` records, allows repeated IDs (with replacement), and verifies
-that changing any member of the draw key changes the deterministic sequence.
+Add `test_draw_key_changes_sequence` with one fixed distribution and change
+each of `seed`, `epoch`, `draw_index`, and `distribution_sha256` separately;
+each changed key must produce a different deterministic draw. Add
+`test_draw_journal_records_realized_counts` and assert image/class count fields
+for all `len(fit_ids)` records, plus
+`test_duplicate_draw_content_fails_closed` for a conflicting duplicate key.
 
 The journal derives each draw from `(seed, epoch, draw_index,
 distribution_sha256)` so interrupted runs do not depend on mutable RNG state.
@@ -364,6 +403,171 @@ git add ifdr_yolo/data/replay_sampler.py tests/test_replay_sampler.py
 git commit -m "feat: add recoverable metadata replay sampler"
 ```
 
+### Task 3A: Immutable learned-factor manifest and safeguarded replay
+
+**Files:**
+- Create: `ifdr_yolo/data/learned_factor_manifest.py`
+- Modify: `ifdr_yolo/data/replay_sampler.py`
+- Test: `tests/test_learned_factor_manifest.py`
+
+- [ ] **Step 1: Write manifest aggregation and safeguard tests**
+
+```python
+import unittest
+
+
+class LearnedFactorManifestTest(unittest.TestCase):
+    def test_primary_node_macro_average_and_joint(self):
+        record = aggregate_primary_node_factors({
+            17: (0.20, 0.40), 20: (0.40, 0.20),
+            23: (0.60, 0.40), 26: (0.80, 0.60),
+        })
+        self.assertEqual(record.sampling, 0.50)
+        self.assertEqual(record.visibility, 0.40)
+        self.assertAlmostEqual(record.learned_joint, 0.70)
+
+    def test_average_tie_percentile_keeps_equal_priorities_together(self):
+        ranks = average_tie_percentile_rank({"a": 0.2, "b": 0.2, "c": 0.8})
+        self.assertEqual(ranks["a"], ranks["b"])
+        self.assertLess(ranks["a"], ranks["c"])
+
+    def test_focus_score_uses_metadata_and_learned_half_weights(self):
+        distribution = build_learned_focus_distribution(
+            metadata_priority={"a": 1.0, "b": 0.0},
+            learned_percentile={"a": 0.0, "b": 1.0},
+        )
+        self.assertAlmostEqual(distribution.focus_scores["a"], 0.5)
+        self.assertAlmostEqual(distribution.focus_scores["b"], 0.5)
+        self.assertAlmostEqual(sum(distribution.focus_probabilities.values()), 1.0)
+
+    def test_manifest_rejects_development_id_and_binds_checkpoint(self):
+        with self.assertRaisesRegex(ValueError, "development leakage"):
+            build_manifest_from_records(
+                records=("dev-1",), fit_ids=("fit-1",),
+                checkpoint_sha256="a" * 64, node_ids=(17, 20, 23, 26),
+            )
+        manifest = build_manifest_from_records(
+            records=("fit-1",), fit_ids=("fit-1",),
+            checkpoint_sha256="b" * 64, node_ids=(17, 20, 23, 26),
+        )
+        self.assertEqual(manifest.checkpoint_sha256, "b" * 64)
+        self.assertEqual(manifest.node_ids, (17, 20, 23, 26))
+        self.assertEqual(len(manifest.sha256), 64)
+```
+
+Add `test_image_priority_uses_max_eligible_cyclist_joint`, which supplies two
+eligible Cyclist objects and one non-Cyclist object and expects the image
+priority to equal only the larger eligible joint; and
+`test_failed_candidate_gate_blocks_manifest_write`, which expects no manifest
+file or digest when the candidate decision is failed.
+
+- [ ] **Step 2: Run the tests and verify failure**
+
+Run: `D:\ana\envs\yolo\python.exe -m unittest tests.test_learned_factor_manifest -v`
+
+Expected: import failure for `ifdr_yolo.data.learned_factor_manifest`.
+
+- [ ] **Step 3: Implement immutable manifest and focus distribution**
+
+```python
+from dataclasses import dataclass
+from math import isfinite
+
+
+PRIMARY_NODE_IDS = (17, 20, 23, 26)
+
+
+@dataclass(frozen=True)
+class LearnedObjectFactor:
+    image_id: str
+    object_id: str
+    sampling: float
+    visibility: float
+    learned_joint: float
+    eligible_cyclist: bool
+
+
+@dataclass(frozen=True)
+class LearnedFactorManifest:
+    checkpoint_sha256: str
+    fit_ids_sha256: str
+    node_ids: tuple[int, ...]
+    objects: tuple[LearnedObjectFactor, ...]
+    sha256: str
+
+
+def aggregate_primary_node_factors(node_values):
+    if tuple(sorted(node_values)) != PRIMARY_NODE_IDS:
+        raise ValueError("learned manifest requires primary P2-P5 nodes")
+    sampling = sum(node_values[node][0] for node in PRIMARY_NODE_IDS) / 4.0
+    visibility = sum(node_values[node][1] for node in PRIMARY_NODE_IDS) / 4.0
+    if not all(isfinite(value) and 0.0 <= value <= 1.0
+               for value in (sampling, visibility)):
+        raise ValueError("learned factor output must be finite in [0, 1]")
+    return LearnedObjectFactor(
+        image_id="", object_id="", sampling=sampling, visibility=visibility,
+        learned_joint=1.0 - (1.0 - sampling) * (1.0 - visibility),
+        eligible_cyclist=True,
+    )
+
+
+def average_tie_percentile_rank(scores):
+    ordered = sorted(scores.values())
+    result = {}
+    denominator = max(len(ordered) - 1, 1)
+    for value in sorted(set(ordered)):
+        indexes = [index for index, item in enumerate(ordered) if item == value]
+        percentile = sum(indexes) / len(indexes) / denominator
+        for image_id, score in scores.items():
+            if score == value:
+                result[image_id] = percentile
+    return result
+
+
+def build_learned_focus_distribution(*, metadata_priority, learned_percentile):
+    if set(metadata_priority) != set(learned_percentile):
+        raise ValueError("metadata and learned focus IDs differ")
+    focus_scores = {
+        image_id: 0.5 * metadata_priority[image_id]
+        + 0.5 * learned_percentile[image_id]
+        for image_id in metadata_priority
+    }
+    weighted = {image_id: score + 0.05 for image_id, score in focus_scores.items()}
+    total = sum(weighted.values())
+    if total <= 0.0:
+        raise ValueError("learned focus distribution is empty")
+    return ReplayDistribution(
+        focus_scores=focus_scores,
+        focus_probabilities={image_id: value / total for image_id, value in weighted.items()},
+    )
+```
+
+`build_manifest_from_records` rejects any image outside `fit_ids`, validates
+checkpoint and fit-ID SHA256 values, stores only eligible Cyclist object records,
+and computes its digest from checkpoint hash, fit-ID hash, node IDs, and sorted
+object payloads. The loader evaluates each frozen calibration checkpoint on fit
+clean images under `torch.no_grad()`, maps each object ROI independently to
+nodes `(17, 20, 23, 26)`, macro-averages the two channels over nodes, computes
+the learned joint score and image maximum, and writes the immutable manifest
+before adaptation. The sampler uses the manifest's
+`build_learned_focus_distribution` output with the M3 replacement draw and eta
+rules; no candidate manifest is created or consumed after a failed gate, and F0
+is paired only with the selected candidate.
+
+- [ ] **Step 4: Verify manifest and replay integration**
+
+Run: `D:\ana\envs\yolo\python.exe -m unittest tests.test_learned_factor_manifest tests.test_replay_sampler -v`
+
+Expected: all manifest hashes, tie ranks, focus probabilities, fit-ID leakage
+checks, and M3 draw-key tests pass.
+
+- [ ] **Step 5: Commit**
+
+```text
+git add ifdr_yolo/data/learned_factor_manifest.py ifdr_yolo/data/replay_sampler.py tests/test_learned_factor_manifest.py
+git commit -m "feat: bind learned-factor replay manifests"
+```
+
 ### Task 4: Object-balanced natural ROI alignment
 
 **Files:**
@@ -375,6 +579,7 @@ git commit -m "feat: add recoverable metadata replay sampler"
 
 ```python
 import unittest
+import math
 import torch
 from torch.nn import functional as F
 
@@ -388,8 +593,12 @@ class FactorAlignmentLossTest(unittest.TestCase):
         return result
 
     def test_object_balanced_loss_is_invariant_to_roi_area(self):
-        small = ObjectFactorTarget(0, 2, (0, 0, 1, 1), (0.8, 0.4), (True, True))
-        large = ObjectFactorTarget(0, 2, (0, 0, 4, 4), (0.8, 0.4), (True, True))
+        small = ObjectFactorTarget(
+            0, 2, (0.0, 0.0, 0.25, 0.25), (0.8, 0.4), (True, True)
+        )
+        large = ObjectFactorTarget(
+            0, 2, (0.0, 0.0, 1.0, 1.0), (0.8, 0.4), (True, True)
+        )
         factor_map = self.factor_map(0.5, 0.5)
         self.assertTrue(torch.allclose(
             object_balanced_factor_loss([factor_map], [small]),
@@ -397,13 +606,25 @@ class FactorAlignmentLossTest(unittest.TestCase):
         ))
 
     def test_invalid_sampling_keeps_visibility_channel(self):
-        target = ObjectFactorTarget(0, 1, (0, 0, 2, 2), (0.0, 0.9), (False, True))
+        target = ObjectFactorTarget(
+            batch_index=0, class_id=1,
+            box_xyxy_normalized=(0.0, 0.0, 0.5, 0.5),
+            target=(0.0, 0.9), valid=(False, True),
+        )
         loss = object_balanced_factor_loss([self.factor_map(0.7, 0.2)], [target])
         expected = F.smooth_l1_loss(torch.tensor(0.2), torch.tensor(0.9))
         self.assertTrue(torch.allclose(loss, expected))
 ```
 
-Add a test proving 20 Cars plus one Cyclist equals the macro-average of the two present class losses rather than a 21-object mean.
+Add `test_class_macro_average_ignores_object_frequency` with 20 Cars and one
+Cyclist; assert the result equals `(car_loss + cyclist_loss) / 2`, not the
+21-object mean. Add `test_normalized_box_maps_per_node_size` using the same
+normalized box and P2/P3/P4/P5 sizes `(80, 120)`, `(40, 60)`, `(20, 30)`, and
+`(10, 15)`; assert four distinct integer ROIs. Add
+`test_clip_out_of_range_box_then_pool` for `(-0.01, 0.10, 1.01, 0.80)`;
+`test_reverse_or_nonfinite_normalized_box_fails` for reversed and `NaN` input;
+and `test_empty_roi_is_zero_weight_and_counted` with a clipped-to-empty box,
+an output loss of zero, and `empty_roi_count == 1`.
 
 - [ ] **Step 2: Run tests and verify failure**
 
@@ -412,23 +633,57 @@ Run: `D:\ana\envs\yolo\python.exe -m unittest tests.test_factor_alignment_loss -
 - [ ] **Step 3: Implement explicit object -> class -> node reduction**
 
 ```python
+from dataclasses import dataclass
+import math
+from typing import Sequence
+
+import torch
+from torch.nn import functional as F
+
 @dataclass(frozen=True)
 class ObjectFactorTarget:
     batch_index: int
     class_id: int
-    roi_xyxy: tuple[int, int, int, int]
+    box_xyxy_normalized: tuple[float, float, float, float]
     target: tuple[float, float]
     valid: tuple[bool, bool]
 
 
+def map_normalized_box_to_feature_roi(
+    box_xyxy_normalized, height: int, width: int,
+):
+    x1, y1, x2, y2 = (float(value) for value in box_xyxy_normalized)
+    if not all(torch.isfinite(torch.tensor(value)) for value in (x1, y1, x2, y2)):
+        raise ValueError("normalized ROI must be finite")
+    if x1 >= x2 or y1 >= y2:
+        raise ValueError("normalized ROI must be ordered and non-empty")
+    x1, x2 = max(0.0, x1), min(1.0, x2)
+    y1, y2 = max(0.0, y1), min(1.0, y2)
+    left, top = math.floor(x1 * width), math.floor(y1 * height)
+    right, bottom = math.ceil(x2 * width), math.ceil(y2 * height)
+    left, right = max(0, min(width, left)), max(0, min(width, right))
+    top, bottom = max(0, min(height, top)), max(0, min(height, bottom))
+    if left >= right or top >= bottom:
+        return None
+    return left, top, right, bottom
+
+
 def object_balanced_factor_loss(
-    node_maps: Sequence[torch.Tensor], targets: Sequence[ObjectFactorTarget]
+    node_maps: Sequence[torch.Tensor], targets: Sequence[ObjectFactorTarget],
+    *, empty_roi_counter: list[int] | None = None,
 ) -> torch.Tensor:
     node_losses = []
     for factor_map in node_maps:
         class_losses: dict[int, list[torch.Tensor]] = {}
         for item in targets:
-            pooled = pool_object_roi(factor_map[item.batch_index], item.roi_xyxy)
+            roi = map_normalized_box_to_feature_roi(
+                item.box_xyxy_normalized, factor_map.shape[-2], factor_map.shape[-1]
+            )
+            if roi is None:
+                if empty_roi_counter is not None:
+                    empty_roi_counter[0] += 1
+                continue
+            pooled = pool_object_roi(factor_map[item.batch_index], roi)
             mask = torch.as_tensor(item.valid, device=pooled.device, dtype=torch.bool)
             if mask.any():
                 truth = pooled.new_tensor(item.target)
@@ -444,15 +699,22 @@ def object_balanced_factor_loss(
     return torch.stack(node_losses).mean()
 ```
 
-`pool_object_roi` clamps to the map, rejects empty/non-finite ROIs, and averages spatial values before any object/class reduction.
-Add four-node mapping tests for P2/P3/P4/P5 map sizes, an empty ROI that
-contributes zero weight, a clipped ROI that remains finite, and boxes touching
-each map boundary. Assert the same normalized box maps deterministically for
-all four node strides and that no invalid ROI can create a NaN loss.
+`map_normalized_box_to_feature_roi` validates finite coordinates and raw ordering,
+clips explicitly out-of-range coordinates to `[0, 1]`, applies floor/ceil per
+node map, and returns `None` for an empty clipped ROI. `pool_object_roi` then
+averages spatial values; the loss increments `empty_roi_counter` and gives an
+empty ROI zero weight before any object/class reduction. A fresh map call is
+made for each node, so an integer ROI is never reused across P2-P5.
 
-- [ ] **Step 4: Wire the loss without changing legacy batches**
+- [ ] **Step 4: Wire the loss with legacy/non-calibration compatibility**
 
-In `IFDRDetectionLoss`, call the new function only when `batch["factor_object_targets"]` exists. Keep the current dense synthetic loss unchanged and expose separate scalar components: `synthetic_factor_loss`, `natural_factor_loss`, `specificity_loss`.
+In `IFDRDetectionLoss`, call the new function only when
+`batch["factor_object_targets"]` exists. Preserve current behavior for every
+legacy non-calibration batch. In a calibration three-view batch, route natural
+ROI targets to clean contexts, synthetic dense targets to the target context,
+and specificity to target/background deltas relative to clean; expose separate
+scalar components `synthetic_factor_loss`, `natural_factor_loss`, and
+`specificity_loss`, and never call the detection loss in calibration.
 
 - [ ] **Step 5: Run focused and regression tests, then commit**
 
@@ -467,8 +729,11 @@ git commit -m "feat: add object-balanced natural factor alignment"
 
 **Files:**
 - Modify: `ifdr_yolo/data/ifdr_dataset.py` (`IFDRInterventionTransform`, `collate_ifdr_batch`)
+- Modify: `ifdr_yolo/models/ifdr_model.py` (three-view forward and calibration routing)
 - Modify: `ifdr_yolo/losses/factor_alignment.py`
+- Modify: `ifdr_yolo/losses/ifdr_detection.py` (calibration loss routing)
 - Test: `tests/test_factor_specificity.py`
+- Test: `tests/test_factor_three_view_loss.py`
 
 - [ ] **Step 1: Write common-randomness and margin-boundary tests**
 
@@ -532,7 +797,18 @@ class FactorSpecificityTest(unittest.TestCase):
         self.assertEqual(target["box_xyxy_normalized"], (0.25, 0.25, 0.50, 0.50))
 ```
 
-Also test severity below `0.25` receives zero specificity weight, target and background carry identical severity/transform seed, malformed/missing pairs are counted, and empty background has zero IoU with every annotation.
+Add these named tests with explicit fixtures and outcomes: `test_low_severity_gets_zero_specificity_weight` passes a severity of `0.24` and expects a zero contribution; `test_target_background_share_severity_and_transform_seed` compares the emitted pair metadata and expects exact equality; `test_malformed_pair_counts_rejection` supplies missing and duplicate pair fields and expects the registered rejection counter; and `test_empty_background_has_zero_iou_with_annotations` checks IoU `0.0` against every annotated box.
+
+`tests/test_factor_three_view_loss.py` must also define
+`test_synthetic_loss_uses_target_context_only`, which mutates clean and
+background factor tensors while holding the target tensors fixed and expects
+identical synthetic loss, and `test_calibration_does_not_call_detection_loss`,
+which spies on the detection criterion and expects zero calls during
+calibration. These tests pin the ownership boundary: the dataset owns raw-stage
+identity attachment and collated three-view records; the model owns the `3B`
+forward and clean/target/background split; the loss module owns target-only
+synthetic routing, clean-only natural routing, and target/background
+specificity.
 
 - [ ] **Step 2: Run tests and verify failure**
 
@@ -548,6 +824,35 @@ def factor_specificity_loss(clean, target, background, *, margin: float = 0.05):
     background_delta = background - clean
     return torch.relu(background_delta + margin - target_delta).mean()
 ```
+
+The calibration routing interface is explicit and target-only for synthetic
+supervision:
+
+```python
+def route_calibration_losses(*, clean_context, target_context,
+                             background_context, dense_target,
+                             natural_object_targets, intervention):
+    synthetic = synthetic_factor_loss_from_context(
+        target_context, dense_target,
+    )
+    natural = object_balanced_factor_loss(
+        clean_context, natural_object_targets,
+    )
+    specificity = factor_specificity_from_contexts(
+        clean_context, target_context, background_context, intervention,
+    )
+    return {
+        "synthetic_factor_loss": synthetic,
+        "natural_factor_loss": natural,
+        "specificity_loss": specificity,
+    }
+```
+
+`IFDRDetectionModel.loss` calls this route only for a registered calibration
+batch. It must not pass clean or background tensors into
+`synthetic_factor_loss_from_context`, and it must not invoke the detection
+criterion in that phase. Legacy non-calibration batches continue through their
+existing detection and synthetic-loss path unchanged.
 
 Extend `IFDRInterventionTransform.__call__` to bind raw `get_image_and_label`
 output before geometry, then emit one clean/target/background tuple with
@@ -565,12 +870,12 @@ Do not assign a positive degradation target to empty background.
 
 - [ ] **Step 4: Verify legacy behavior and pair accounting**
 
-Run: `D:\ana\envs\yolo\python.exe -m unittest tests.test_factor_specificity tests.test_intervention_sampler tests.test_intervention_targets tests.test_ifdr_data -v`
+Run: `D:\ana\envs\yolo\python.exe -m unittest tests.test_factor_specificity tests.test_factor_three_view_loss tests.test_intervention_sampler tests.test_intervention_targets tests.test_ifdr_data -v`
 
 - [ ] **Step 5: Commit**
 
 ```text
-git add ifdr_yolo/data/ifdr_dataset.py ifdr_yolo/losses/factor_alignment.py tests/test_factor_specificity.py
+git add ifdr_yolo/data/ifdr_dataset.py ifdr_yolo/models/ifdr_model.py ifdr_yolo/losses/ifdr_detection.py ifdr_yolo/losses/factor_alignment.py tests/test_factor_specificity.py tests/test_factor_three_view_loss.py
 git commit -m "feat: enforce target-specific factor response"
 ```
 
@@ -783,6 +1088,90 @@ git add ifdr_yolo/models/ifdr_model.py ifdr_yolo/experiments/factor_repair.py if
 git commit -m "feat: isolate semantic factor calibration"
 ```
 
+### Task 6A: Exact 60-epoch task-adaptation phase
+
+**Files:**
+- Modify: `ifdr_yolo/experiments/factor_repair.py`
+- Modify: `ifdr_yolo/experiments/ifdr_trainer.py`
+- Test: `tests/test_factor_repair_phase.py`
+
+- [ ] **Step 1: Write the matched-adaptation equality test**
+
+Add `test_task_adaptation_phase_matches_f0_and_candidate` to
+`tests/test_factor_repair_phase.py`. Construct independent F0 and selected
+candidate models from the same initialization, call the registered phase
+factory, and assert all of the following:
+
+- the frozen semantic names are exactly the twelve projections plus shared
+  `reliability_estimator.shared_core` and `factor_head`;
+- the F0 and candidate trainable named-parameter sets are equal and contain
+  only the enumerated task path (`backbone`, `C2f`, routers, fusion adapters,
+  localization adapter, detection head, and explicitly registered gate
+  parameters);
+- optimizer class and every hyperparameter are equal after a fresh reset;
+- `epochs == 60`, update count and eta schedule are equal, and early stopping
+  is disabled;
+- both primary checkpoint paths are `last.pt`, and semantic state tensors are
+  byte-identical before the first update.
+
+- [ ] **Step 2: Run the equality test and verify failure**
+
+Run: `D:\ana\envs\yolo\python.exe -m unittest tests.test_factor_repair_phase.FactorRepairPhaseTest.test_task_adaptation_phase_matches_f0_and_candidate -v`
+
+Expected: import or assertion failure until the independent adaptation phase
+contract is implemented.
+
+- [ ] **Step 3: Implement an independent task-adaptation phase factory**
+
+```python
+def task_adaptation_phase(model, *, epochs=60, optimizer_name,
+                          optimizer_hparams, eta_schedule,
+                          primary_checkpoint="last.pt"):
+    if epochs != 60 or primary_checkpoint != "last.pt":
+        raise ValueError("registered task adaptation requires 60 epochs and last.pt")
+    semantic = {
+        name for name, _ in model.factor_semantic_named_parameters()
+    }
+    for name, parameter in model.named_parameters():
+        parameter.requires_grad = name not in semantic
+    trainable = tuple(sorted(
+        name for name, parameter in model.named_parameters()
+        if parameter.requires_grad
+    ))
+    _require_registered_task_path(trainable)
+    optimizer = build_optimizer(
+        optimizer_name, model, trainable, optimizer_hparams,
+    )
+    return TaskAdaptationPhase(
+        epochs=epochs, trainable_parameter_names=trainable,
+        frozen_parameter_names=tuple(sorted(semantic)), optimizer=optimizer,
+        optimizer_hparams=dict(optimizer_hparams), eta_schedule=tuple(eta_schedule),
+        update_count=registered_update_count(epochs), early_stopping=False,
+        primary_checkpoint=primary_checkpoint,
+    )
+```
+
+The factory freezes the semantic parameters by identity, validates the exact
+task-path allowlist, creates a new optimizer with no inherited state, and uses
+the same optimizer hyperparameters, update count, eta schedule, and no-stop
+policy for F0 and the selected candidate. The trainer receives the phase
+object rather than a free-form epoch count; it writes the fixed-budget
+`last.pt` primary checkpoint and cannot substitute `best.pt` for evaluation.
+
+- [ ] **Step 4: Verify adaptation and calibration contracts together**
+
+Run: `D:\ana\envs\yolo\python.exe -m unittest tests.test_factor_repair_phase tests.test_ifdr_trainer -v`
+
+Expected: both phase suites pass, including equal trainable names, optimizer
+reset, schedule, update count, semantic byte identity, and no early stop.
+
+- [ ] **Step 5: Commit**
+
+```text
+git add ifdr_yolo/experiments/factor_repair.py ifdr_yolo/experiments/ifdr_trainer.py tests/test_factor_repair_phase.py
+git commit -m "feat: add matched task adaptation phase"
+```
+
 ### Task 7: Strict M/F configuration and equal-budget controls
 
 **Files:**
@@ -831,7 +1220,7 @@ Define `DevelopmentProtocolConfig`, `MetadataReplayConfig`, `FactorAlignmentConf
 
 - [ ] **Step 4: Write the canonical seed-17 development YAML**
 
-The YAML binds fit/development/metadata hashes, accepted initialization checkpoint hash, M/F budgets, image size, schedule, factor weights, nodes `(11, 14, 17, 20, 23, 26)`, primary nodes `(17, 20, 23, 26)`, and output root. `scripts/build_factor_metadata.py` must generate the file from completed manifests so every hash is real at first write; the command refuses to create the YAML until all required 64-hex hashes validate.
+The YAML binds fit/development/metadata hashes, accepted initialization checkpoint hash, M/F budgets, image size, schedule, factor weights, nodes `(11, 14, 17, 20, 23, 26)`, primary nodes `(17, 20, 23, 26)`, and output root. Task 2 owns canonical YAML generation through `scripts/build_factor_metadata.py`; Task 7 consumes that generated file and validates that every required 64-hex hash is real before loading it. No second YAML writer or ad-hoc config generator is introduced here.
 
 - [ ] **Step 5: Run tests and commit**
 
@@ -872,7 +1261,31 @@ class FactorRepairGateTest(unittest.TestCase):
             require_factor_guided_advancement(pre=passing, post=failing)
 ```
 
-Test the exact 80% severity ordering boundary, positive paired target response, target greater than background, 10/12 three-seed directions, CI lower bound above zero, malformed count zero, missing node/seed rejection, and no threshold mutation.
+Add named tests with concrete fixtures and expected decisions:
+`test_severity_ordering_boundary_at_80_percent` uses exactly 80% valid
+severity ordering and expects the registered check to pass;
+`test_positive_paired_target_response_and_background_gap` expects both
+specificity checks to pass; `test_twelve_primary_directions_requires_ten`
+passes exactly 10/12 three-seed directions and expects success;
+`test_ci_lower_bound_above_zero_is_required` compares intervals whose lower
+bound is `0.0` and `1e-12` and expects only the latter to pass;
+`test_incomplete_f0_evidence_fails_closed` supplies one missing endpoint and
+expects no selection; and `test_missing_node_seed_or_malformed_count_fails`
+expects each omitted node/seed or nonzero malformed count to fail without
+mutating thresholds.
+
+Add the relative-selection tests in the same module. A
+`candidate_evidence(condition, image_ids_hash, endpoint_values, *,
+absolute_gate_passed=True, complete=True)` fixture returns finite endpoint
+rows and an absolute-gate decision. Then assert:
+`test_candidate_requires_complete_f0_and_paired_delta_ci` rejects incomplete
+F0 and a candidate whose paired `DeltaS` lower bound is `0.0`;
+`test_multiple_eligible_candidates_use_lower_point_and_name_ties` selects the
+largest lower bound, then point estimate, then `F1 < F2 < F3` when differences
+are at most `1e-12`; `test_gate_decision_carries_reference_delta_and_hash`
+checks `reference_condition`, point/CI, selected condition, endpoint table,
+and both evidence hashes; and `test_manual_condition_string_is_rejected`
+passes `"F3"` to the queue consumer and expects `ValueError`.
 
 - [ ] **Step 2: Run tests and verify failure**
 
@@ -881,6 +1294,10 @@ Run: `D:\ana\envs\yolo\python.exe -m unittest tests.test_factor_repair_gate -v`
 - [ ] **Step 3: Implement an immutable, fully enumerated decision**
 
 ```python
+from dataclasses import dataclass
+import math
+from typing import Mapping
+
 @dataclass(frozen=True)
 class FactorRepairGateDecision:
     passed: bool
@@ -892,6 +1309,79 @@ class FactorRepairGateDecision:
     evidence_sha256: str
 
 
+@dataclass(frozen=True)
+class FactorRepairSelectionDecision:
+    reference_condition: str
+    selected_condition: str
+    delta_s_point: float
+    delta_s_ci95: tuple[float, float]
+    endpoint_table: Mapping[str, Mapping[str, float]]
+    reference_evidence_sha256: str
+    selected_evidence_sha256: str
+    decision_sha256: str
+
+
+PRIMARY_ENDPOINTS = (
+    "sampling_residual_spearman",
+    "visibility_residual_spearman",
+    "sampling_specificity_gap",
+    "visibility_specificity_gap",
+)
+
+
+def composite_mechanism_score(evidence):
+    values = [float(evidence[name]) for name in PRIMARY_ENDPOINTS]
+    if not all(math.isfinite(value) and -1.0 <= value <= 1.0 for value in values):
+        raise ValueError("factor endpoint must be finite and bounded")
+    return sum(values) / 4.0
+
+
+def select_repair_against_f0(f0, candidates, *, bootstrap_replicates):
+    if not f0.complete:
+        raise ValueError("incomplete F0 evidence")
+    f0_score = composite_mechanism_score(f0.endpoints)
+    if not math.isfinite(f0_score):
+        raise ValueError("non-finite F0 evidence")
+    selected = []
+    for candidate in candidates:
+        if candidate.condition not in ("F1", "F2", "F3"):
+            raise ValueError("selection candidates must be F1, F2, or F3")
+        if (tuple(candidate.image_ids) != tuple(f0.image_ids)
+                or candidate.image_ids_hash != f0.image_ids_hash):
+            raise ValueError("candidate/F0 evidence image IDs mismatch")
+        if not candidate.complete:
+            continue
+        if not candidate.absolute_gate_passed:
+            continue
+        paired = paired_image_cluster_delta(
+            candidate, f0, bootstrap_replicates=bootstrap_replicates,
+        )
+        if paired.ci95[0] > 0.0:
+            selected.append((paired.ci95[0], paired.point, candidate.condition, paired))
+    if not selected:
+        return None
+    best_lower = max(item[0] for item in selected)
+    lower_tied = [item for item in selected
+                  if best_lower - item[0] <= 1e-12]
+    best_point = max(item[1] for item in lower_tied)
+    point_tied = [item for item in lower_tied
+                  if best_point - item[1] <= 1e-12]
+    lower, point, condition, paired = min(point_tied, key=lambda item: item[2])
+    return FactorRepairSelectionDecision(
+        reference_condition="F0", selected_condition=condition,
+        delta_s_point=point, delta_s_ci95=paired.ci95,
+        endpoint_table={"F0": f0.endpoints,
+                        condition: paired.candidate_endpoints},
+        reference_evidence_sha256=f0.evidence_sha256,
+        selected_evidence_sha256=paired.candidate_evidence_sha256,
+        decision_sha256=digest_selection_decision(
+            "F0", condition, point, paired.ci95,
+            {"F0": f0.endpoints, condition: paired.candidate_endpoints},
+            f0.evidence_sha256, paired.candidate_evidence_sha256,
+        ),
+    )
+
+
 def require_factor_guided_advancement(*, pre, post):
     if not pre.passed:
         raise ValueError("pre-adaptation factor gate failed")
@@ -899,7 +1389,20 @@ def require_factor_guided_advancement(*, pre, post):
         raise ValueError("post-adaptation factor gate failed")
 ```
 
-Reuse existing `natural_factor_audit` statistics; do not duplicate Spearman/bootstrap mathematics. The gate layer validates completeness and translates registered evidence into an explicit decision. The pooled primary-node statistic with the formal paired image bootstrap is the only mechanism-selection statistic; per-node confidence intervals are diagnostic, and no uncorrected per-node or per-seed significance may select a repair.
+`paired_image_cluster_delta` receives the shared sorted image IDs and resamples
+the same IDs for F0 and each candidate in every replicate; it recomputes all
+four endpoints before subtracting the composite. Reuse existing
+`natural_factor_audit` statistics; do not duplicate Spearman/bootstrap
+mathematics. The gate layer validates completeness and translates registered
+evidence into an explicit decision. The pooled primary-node statistic with the
+formal paired image bootstrap is the only mechanism-selection statistic;
+per-node confidence intervals are diagnostic, and no uncorrected per-node or
+per-seed significance may select a repair.
+
+`FactorRepairSelectionDecision` deep-freezes the endpoint table into sorted
+tuples before computing `decision_sha256`; the queue reserializes and verifies
+that digest before accepting it, so a caller cannot mutate a nested mapping or
+replace the selected condition after the gate has run.
 
 - [ ] **Step 4: Run tests and commit**
 
@@ -945,9 +1448,23 @@ class FactorRepairRunnerTest(unittest.TestCase):
             queue.complete("F0-calibration", artifacts=passing_control_artifacts())
             self.assertFalse(queue.launchable("F0-adaptation"))
             queue.complete("F3-calibration", artifacts=passing_repair_artifacts())
-            queue.select_repair("F3")
+            decision = FactorRepairSelectionDecision(
+                reference_condition="F0", selected_condition="F3",
+                delta_s_point=0.12, delta_s_ci95=(0.04, 0.20),
+                endpoint_table=passing_repair_endpoint_table(),
+                reference_evidence_sha256="a" * 64,
+                selected_evidence_sha256="b" * 64,
+                decision_sha256="c" * 64,
+            )
+            queue.consume_selection_decision(decision)
             self.assertTrue(queue.launchable("F0-adaptation"))
             self.assertTrue(queue.launchable("selected-repair-adaptation"))
+
+    def test_queue_rejects_manual_condition_string(self):
+        with TemporaryDirectory() as directory:
+            queue = FactorRepairQueue.create(Path(directory), jobs=("F0-calibration",))
+            with self.assertRaisesRegex(ValueError, "selection decision"):
+                queue.consume_selection_decision("F3")
 
     def test_no_factor_candidate_blocks_track_f_adaptation(self):
         with TemporaryDirectory() as directory:
@@ -961,7 +1478,21 @@ class FactorRepairRunnerTest(unittest.TestCase):
             self.assertEqual(queue.track_f_adaptation_status(), "blocked")
 ```
 
-Also test dirty checkout, missing hash, mismatched initialization checkpoint, duplicate process, non-finite loss, empty `best.pt`/`last.pt`, and recovery from an interrupted epoch/draw journal.
+Add named runner tests with isolated temporary artifacts:
+`test_dirty_checkout_fails_closed`, `test_missing_or_nonhex_hash_fails_closed`,
+`test_initialization_checkpoint_mismatch_fails_closed`,
+`test_duplicate_process_lock_fails_closed`,
+`test_nonfinite_loss_marks_run_failed`,
+`test_empty_last_or_best_checkpoint_fails_closed`, and
+`test_interrupted_epoch_draw_journal_resumes_exactly_once`. Each test names
+the expected exception/status and verifies that no queue job is promoted.
+Add `test_primary_metrics_use_last_not_best`, which writes different non-empty
+`last.pt` and `best.pt` bytes, mocks the evaluator, and expects the evaluator
+input to be `last.pt`, output `metrics_ap40_primary_last.json`, and the
+diagnostic best metric to remain separate. Add
+`test_missing_empty_or_mismatched_last_hash_fails_closed`, which expects a
+failure for each missing path, empty file, or SHA256 mismatch before metrics
+are written.
 
 - [ ] **Step 2: Run tests and verify failure**
 
@@ -981,9 +1512,16 @@ def main(argv=None) -> int:
     return run_registered_condition(config, condition)
 ```
 
+The runner writes structured checkpoint roles after every fixed-budget job:
+`primary_checkpoint={"path": "last.pt", "sha256": ...}` and
+`diagnostic_checkpoint={"path": "best.pt", "sha256": ...}`. It refuses missing,
+empty, or mismatched files. The evaluator is called once with the verified
+`last.pt` and writes `metrics_ap40_primary_last.json`; any best-checkpoint
+metrics are diagnostic-only and cannot satisfy a gate or advance the queue.
+
 - [ ] **Step 4: Implement the queue state machine**
 
-Allowed transitions are `pending -> running -> complete`, `pending -> blocked`, and `running -> failed`. Resume changes `failed -> running` only when identity and existing artifacts validate. The queue executes one GPU process at a time, permits the matched F0 control and at most one selected F1-F3 adaptation only after a candidate passes its gate, and blocks Track F adaptation entirely when no candidate passes. It never auto-promotes a method after a failed factor or detection gate.
+Allowed transitions are `pending -> running -> complete`, `pending -> blocked`, and `running -> failed`. Resume changes `failed -> running` only when identity and existing artifacts validate. The queue executes one GPU process at a time, permits the matched F0 control and at most one selected F1-F3 adaptation only after a candidate passes its gate, and blocks Track F adaptation entirely when no candidate passes. Before either adaptation starts, the runner evaluates the frozen calibration checkpoint on fit clean images and persists its immutable learned-factor manifest; a failed candidate gate creates no candidate manifest. `consume_selection_decision` accepts only an immutable `FactorRepairSelectionDecision`, verifies its F0/candidate evidence hashes and digest, and rejects strings, defaults, or any attempt to override the selected condition. It never auto-promotes a method after a failed factor or detection gate.
 
 - [ ] **Step 5: Run tests and commit**
 
@@ -1030,7 +1568,16 @@ class FactorRepairReportTest(unittest.TestCase):
                          "detection_gain_without_valid_factor_guidance")
 ```
 
-Add formal three-seed tests for Cyclist paired-bootstrap CI, Car/Pedestrian no-harm `1.0` AP bound, mean/std, target slices, calibration, efficiency, and negative-result labels.
+Add named tests with fixed inputs and expected labels:
+`test_three_seed_cyclist_paired_bootstrap_ci` checks the registered CI;
+`test_car_pedestrian_no_harm_bound_is_one_ap_point` rejects any bound above
+`1.0`; `test_mean_and_std_are_reported_for_each_class` checks both values;
+`test_target_slice_metrics_include_small_far_occluded` checks all slice keys;
+`test_calibration_and_efficiency_fields_are_machine_bound` rejects missing
+fields; `test_negative_result_gets_explicit_label` expects the registered
+negative label; and `test_advancement_reads_primary_last_metrics_only`
+provides different `metrics_ap40_primary_last.json` and best diagnostics and
+expects advancement to use only the former.
 
 - [ ] **Step 2: Run tests and verify failure**
 
@@ -1038,7 +1585,12 @@ Run: `D:\ana\envs\yolo\python.exe -m unittest tests.test_factor_repair_report -v
 
 - [ ] **Step 3: Implement report objects and reuse evaluators**
 
-Reuse `paired_bootstrap_ap40`, `evaluate_target_slices`, detection reliability, and existing AP40 parsing. The report stores every failed check and never drops a class, seed, node or condition.
+Reuse `paired_bootstrap_ap40`, `evaluate_target_slices`, detection reliability,
+and existing AP40 parsing. The report reads only
+`metrics_ap40_primary_last.json` for primary advancement, binds that file's
+SHA256 and the `last.pt` SHA256, and stores best-checkpoint metrics under a
+separate diagnostic role. The report stores every failed check and never drops
+a class, seed, node or condition.
 
 - [ ] **Step 4: Run tests and commit**
 
@@ -1078,7 +1630,7 @@ Expected: all new focused tests pass and all existing 439 tests plus new tests p
 
 - [ ] **Step 4: Perform one-epoch CUDA smoke on the server**
 
-Only after clean-commit deployment and server identity verification, run one registered seed-17 F0 calibration epoch on smoke data. Validate non-empty `status.json`, resolved config, provenance, draw journal, loss components, `best.pt`, and `last.pt`. Interrupt after a committed batch, resume, and verify exactly-once journal entries and identical scientific identity; do not launch task adaptation from this smoke job.
+Only after clean-commit deployment and server identity verification, run one registered seed-17 F0 calibration epoch on smoke data. Validate non-empty `status.json`, resolved config, provenance, draw journal, loss components, non-empty `last.pt` primary plus its SHA256, non-empty `best.pt` diagnostic plus its SHA256, and `metrics_ap40_primary_last.json` bound to the last hash. Interrupt after a committed batch, resume, and verify exactly-once journal entries and identical scientific identity; do not launch task adaptation from this smoke job.
 
 - [ ] **Step 5: Archive smoke evidence and commit test**
 
@@ -1145,7 +1697,8 @@ class FactorRepairReproPackageTest(unittest.TestCase):
             "condition_budgets", "checkpoint_policy", "results_evidence_path",
             "results_evidence_records",
             "environment_requirements", "license_path", "notice_path",
-            "figure_status_path",
+            "figure_status_path", "primary_metric_file",
+            "primary_checkpoint_sha256",
         }
         self.assertTrue(required.issubset(index))
         self.assertEqual(index["checkpoint_policy"], {
@@ -1157,6 +1710,9 @@ class FactorRepairReproPackageTest(unittest.TestCase):
             self.assertTrue(record["hostname"])
             self.assertTrue(record["gpu"])
             self.assertEqual(len(record["artifact_sha256"]), 64)
+            self.assertEqual(record["primary_metric_file"],
+                             "metrics_ap40_primary_last.json")
+            self.assertEqual(len(record["primary_checkpoint_sha256"]), 64)
         load_and_verify_package(root)
 
     def test_transfer_datasets_are_not_marked_verified_without_evidence(self):
@@ -1186,7 +1742,11 @@ environment/requirements path, LICENSE/NOTICE paths, and figure-status path.
 Each line of `factor-repair-results-evidence.jsonl` records condition,
 seed, hostname, GPU model, CUDA/PyTorch versions, run directory, resolved
 configuration hash, checkpoint filename and role, artifact SHA256, and clean
-implementation commit. Missing or non-64-hex hashes fail closed.
+implementation commit. It also records
+`primary_metric_file=metrics_ap40_primary_last.json` and the matching
+`primary_checkpoint_sha256`;
+the authoritative index repeats those fields. Missing, empty, or non-64-hex
+hashes fail closed.
 
 - [ ] **Step 4: Record figure status without overstating evidence**
 
@@ -1201,8 +1761,15 @@ CityPersons have not been validated by this package.
 
 Run: `D:\ana\envs\yolo\python.exe -m pip freeze --all > requirements-factor-repair.txt`
 
-Write `LICENSE` with the repository's governing license text and `NOTICE` with
-the repository and third-party attribution list. `scripts/verify_factor_repair_package.py`
+The upstream canonical YAML is labeled AGPL-3.0. Task 13 therefore requires
+an AGPL-3.0-compatible license path and a repository-owner confirmation before
+writing a root `LICENSE`. If `license_owner_confirmation=true` is absent, the
+verifier fails closed and no final reproducibility package is published; this
+gate does not block Tasks 1-12. `NOTICE` is always written with the Ultralytics
+8.4.98 version, each upstream file/path/hash/license, and the repository
+attribution. Add `test_license_confirmation_gate`, which omits the confirmation
+and expects a fail-closed verification result, then supplies it and expects the
+license path to be accepted. `scripts/verify_factor_repair_package.py`
 must resolve every path relative to the repository root, recompute all hashes,
 validate the checkpoint policy and budget table, reject dirty or missing
 evidence, and return exit code 0 only when the complete package is internally
@@ -1228,15 +1795,21 @@ git commit -m "docs: add independently verifiable factor repair package"
 2. Retrain the matched seed-17 protected development reference on fit IDs only.
 3. Run M1, M2 and M3 for 60 matched epochs.
 4. Run F0, F1, F2 and F3 calibration for 30 matched epochs.
-5. Audit F0-F3; select at most one F1-F3 repair without changing thresholds.
-6. Run the matched 60-epoch task adaptation for F0 and, only when a repair was selected, that one repair; repeat the complete audit. If no repair passes, do not start Track F adaptation.
+5. Audit F0-F3; compute the registered four-endpoint composite and paired
+   image-cluster `DeltaS` against F0, then select at most one F1-F3 repair
+   without changing thresholds.
+6. For F0 and the selected repair only, generate the immutable fit-image
+   learned-factor manifests after calibration and before adaptation; run the
+   matched 60-epoch task adaptation, then repeat the complete audit. If no
+   repair passes, do not generate a candidate manifest or start Track F
+   adaptation.
 7. Freeze one valid recipe, then run formal seeds 17, 29 and 41 on all training IDs.
 8. Produce paired bootstrap, stratified AP40, calibration, efficiency and failure-case evidence.
 9. Archive all artifacts before any BDD100K transfer experiment.
 
 ## Self-review
 
-- Spec coverage: target-conditioned definitions, object-balanced ROI loss, background specificity, leakage-free split, M1/M2/M3, F0-F3, freeze rules, node gates, advancement, recovery, failure semantics, and independent reproducibility evidence all map to Tasks 1-13.
+- Spec coverage: target-conditioned definitions, object-balanced ROI loss, background specificity, leakage-free split, M1/M2/M3, F0-F3, relative selection, immutable learned replay, freeze rules, exact task adaptation, node gates, advancement, recovery, failure semantics, and independent reproducibility evidence all map to Tasks 1-13 (with Task 6A owning the matched adaptation phase).
 - Completeness scan: every code-changing step names concrete interfaces, commands and expected behavior. Unknown content hashes are generated from completed manifests before the canonical YAML can be written, and Task 13 rejects missing machine-bound evidence.
 - Type consistency: `DevelopmentSplit`, `FactorMetadataIndex`, `ReplayDistribution`, `ObjectFactorTarget`, `FactorRepairGateDecision`, and phase/report interfaces keep the same names across producing and consuming tasks.
 - Scope: no attention module, new backbone, new IoU variant, inference-graph change, validation-label modification, or BDD100K launch is included.
