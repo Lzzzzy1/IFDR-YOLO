@@ -6,6 +6,7 @@ import subprocess
 import sys
 from tempfile import TemporaryDirectory
 import unittest
+from decimal import Decimal
 
 from ifdr_yolo.data.development_split import build_development_split
 
@@ -63,6 +64,19 @@ def _rows_with_uneven_strata() -> list[dict[str, object]]:
                 "image_id": f"image_{34 + index:04d}",
                 "cyclist": True,
                 "cyclist_joint": index / 5,
+            }
+        )
+    return rows
+
+
+def _rows_with_stratum_sizes() -> list[dict[str, object]]:
+    rows = _rows_without_cyclists(37)
+    for index in range(63):
+        rows.append(
+            {
+                "image_id": f"image_{37 + index:04d}",
+                "cyclist": True,
+                "cyclist_joint": index / 62,
             }
         )
     return rows
@@ -133,6 +147,36 @@ class DevelopmentSplitTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "fraction=0.10"):
             build_development_split(input_rows, seed=SEED, fraction=0.20)
 
+    def test_rejects_seed_type_coercion(self) -> None:
+        input_rows = _rows_with_four_strata(40)
+        for seed in (True, 20260805.0):
+            with self.subTest(seed=seed):
+                with self.assertRaisesRegex(ValueError, "seed=20260805"):
+                    build_development_split(
+                        input_rows, seed=seed, fraction=FRACTION
+                    )
+
+    def test_rejects_fraction_type_coercion(self) -> None:
+        input_rows = _rows_with_four_strata(40)
+        for fraction in (
+            True,
+            1,
+            Decimal("0.10"),
+            float("nan"),
+            float("inf"),
+        ):
+            with self.subTest(fraction=fraction):
+                with self.assertRaisesRegex(ValueError, "fraction=0.10"):
+                    build_development_split(
+                        input_rows, seed=SEED, fraction=fraction
+                    )
+
+    def test_rejects_image_id_whitespace(self) -> None:
+        input_rows = _rows_with_four_strata(40)
+        input_rows[0]["image_id"] = " image_0000 "
+        with self.assertRaisesRegex(ValueError, "image_id|whitespace"):
+            build_development_split(input_rows, seed=SEED, fraction=FRACTION)
+
     def test_reversed_input_order_keeps_ids_and_sha256(self) -> None:
         input_rows = _rows_with_four_strata(120)
         first = build_development_split(input_rows, seed=SEED, fraction=FRACTION)
@@ -142,6 +186,29 @@ class DevelopmentSplitTest(unittest.TestCase):
         self.assertEqual(first.fit_ids, second.fit_ids)
         self.assertEqual(first.development_ids, second.development_ids)
         self.assertEqual(first.sha256, second.sha256)
+
+    def test_sha256_seed_image_selection_has_locked_oracle(self) -> None:
+        split = build_development_split(
+            _rows_with_four_strata(40), seed=SEED, fraction=FRACTION
+        )
+        self.assertEqual(
+            split.development_ids,
+            (
+                "image_0003",
+                "image_0016",
+                "image_0020",
+                "image_0036",
+            ),
+        )
+
+    def test_canonical_digest_has_locked_oracle(self) -> None:
+        split = build_development_split(
+            _rows_with_four_strata(40), seed=SEED, fraction=FRACTION
+        )
+        self.assertEqual(
+            split.sha256,
+            "8da99f1ba019921c8cc41cb2a1d396200e95803054d11b4c40aa030b0987742c",
+        )
 
     def test_round_half_up_count(self) -> None:
         split = build_development_split(
@@ -207,6 +274,37 @@ class DevelopmentSplitTest(unittest.TestCase):
             )
             self.assertTrue(set(stratum_ids) & set(split.fit_ids))
 
+    def test_largest_remainder_uses_raw_stratum_quotas(self) -> None:
+        split = build_development_split(
+            _rows_with_stratum_sizes(), seed=SEED, fraction=FRACTION
+        )
+        self.assertEqual(
+            {
+                name: len(stratum_ids)
+                for name, stratum_ids in split.strata.items()
+            },
+            {
+                "no_cyclist": 37,
+                "cyclist_lower": 21,
+                "cyclist_middle": 21,
+                "cyclist_upper": 21,
+            },
+        )
+        development_ids = set(split.development_ids)
+        seats = {
+            name: len(set(stratum_ids) & development_ids)
+            for name, stratum_ids in split.strata.items()
+        }
+        self.assertEqual(
+            seats,
+            {
+                "no_cyclist": 4,
+                "cyclist_lower": 2,
+                "cyclist_middle": 2,
+                "cyclist_upper": 2,
+            },
+        )
+
     def test_duplicate_ids_are_rejected(self) -> None:
         input_rows = _rows_with_four_strata(40)
         input_rows[1]["image_id"] = input_rows[0]["image_id"]
@@ -258,6 +356,26 @@ class DevelopmentSplitTest(unittest.TestCase):
                 "existing output|overwrite",
             )
             self.assertEqual(fit_path.read_bytes(), b"tampered\n")
+
+    def test_cli_refuses_tampered_manifest_without_overwrite(self) -> None:
+        input_rows = _rows_with_four_strata(40)
+        with TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            input_jsonl = root / "rows.jsonl"
+            output_dir = root / "split"
+            _write_rows_jsonl(input_jsonl, input_rows)
+            first = _run_cli(input_jsonl, output_dir)
+            self.assertEqual(first.returncode, 0, first.stderr)
+
+            manifest_path = output_dir / "development_split.json"
+            manifest_path.write_bytes(b"tampered\n")
+            refused = _run_cli(input_jsonl, output_dir)
+            self.assertNotEqual(refused.returncode, 0)
+            self.assertRegex(
+                refused.stdout + refused.stderr,
+                "existing output|overwrite",
+            )
+            self.assertEqual(manifest_path.read_bytes(), b"tampered\n")
 
     def test_cli_help_is_available(self) -> None:
         result = subprocess.run(

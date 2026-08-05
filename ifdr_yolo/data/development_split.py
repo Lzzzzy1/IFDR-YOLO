@@ -41,11 +41,15 @@ class DevelopmentSplit:
 
 
 def _validate_parameters(*, seed: int, fraction: float) -> None:
-    if seed != REGISTERED_SEED:
+    if type(seed) is not int or seed != REGISTERED_SEED:
         raise ValueError(
             "development split requires seed=20260805 and fraction=0.10"
         )
-    if fraction != REGISTERED_FRACTION:
+    if (
+        type(fraction) is not float
+        or not isfinite(fraction)
+        or fraction != REGISTERED_FRACTION
+    ):
         raise ValueError(
             "development split requires seed=20260805 and fraction=0.10"
         )
@@ -69,6 +73,8 @@ def _validate_unique_rows(
         image_id = raw_image_id.strip()
         if not image_id:
             raise ValueError("image_id must be non-empty")
+        if raw_image_id != image_id:
+            raise ValueError("image_id must not contain surrounding whitespace")
         if image_id in seen:
             raise ValueError(f"duplicate image_id: {image_id}")
         seen.add(image_id)
