@@ -471,8 +471,9 @@ replicate-count nor a seed override, and configuration fields attempting to
 provide either are unknown fields and fail closed. Every candidate-vs-F0
 comparison uses common-random-number resamples whose indices are derived only
 from the fixed seed, stage, sorted paired image-ID hash, and replicate index;
-candidate condition names never enter the resample key. The interval uses the
-fixed 2.5/97.5 percentiles with NumPy quantile `method="linear"`.
+candidate condition names never enter the resample key. NumPy quantile uses
+the fixed q tuple `(0.025, 0.975)` (the 2.5th/97.5th percentiles) with
+`method="linear"`.
 
 For each condition, the four pooled primary-node endpoints are:
 
@@ -615,8 +616,9 @@ Required implementation test coverage includes:
 - equal F0/selected-candidate task-adaptation trainable names, optimizer,
   schedules, update counts, per-condition semantic state hashes across epochs,
   resume and final checkpoint, forced semantic eval mode, and checkpoint policy;
-- fixed 10,000-replicate/seeded common-random-number bootstrap keys,
-  quantile method, deterministic repeatability, and rejected override attempts;
+- fixed 10,000-replicate/seeded common-random-number bootstrap keys, q tuple
+  `(0.025, 0.975)`, NumPy linear quantile method, deterministic repeatability,
+  finite example CI, and rejected override attempts;
 - post-adaptation audit enforcement;
 - equal-budget experiment configuration checks;
 - identical initialization hash, reset optimizer, fixed `last.pt` primary versus

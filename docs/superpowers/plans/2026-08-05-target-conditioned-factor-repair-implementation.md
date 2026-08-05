@@ -77,6 +77,7 @@ New responsibilities are separated so the existing trainer and dataset do not be
 
 ```python
 import unittest
+import numpy
 
 from ifdr_yolo.data.development_split import build_development_split
 
@@ -1514,6 +1515,15 @@ class FactorRepairGateTest(unittest.TestCase):
         failing = gate_decision(passed=False)
         with self.assertRaisesRegex(ValueError, "post-adaptation factor gate failed"):
             require_factor_guided_advancement(pre=passing, post=failing)
+
+    def test_bootstrap_quantiles_are_fixed_and_ci_is_finite(self):
+        self.assertEqual(FACTOR_GATE_BOOTSTRAP_PERCENTILES, (0.025, 0.975))
+        delta = numpy.asarray((-0.20, -0.05, 0.10, 0.25), dtype=float)
+        ci = numpy.quantile(
+            delta, FACTOR_GATE_BOOTSTRAP_PERCENTILES, method="linear"
+        )
+        self.assertEqual(tuple(ci.shape), (2,))
+        self.assertTrue(numpy.isfinite(ci).all())
 ```
 
 Add named tests with concrete fixtures and expected decisions:
@@ -1544,9 +1554,9 @@ passes `"F3"` to the queue consumer and expects `ValueError`.
 Add `test_bootstrap_resamples_are_byte_identical_across_repeated_calls`,
 `test_bootstrap_resample_key_is_shared_across_candidate_names`, and
 `test_bootstrap_seed_or_replicate_override_is_rejected`; these assert exactly
-10,000 replicates, seed `20260805`, percentiles `(2.5, 97.5)`, NumPy
-`method="linear"`, candidate-name-independent keys, and a selector API with no
-replicate/seed override parameters.
+10,000 replicates, seed `20260805`, q tuple `(0.025, 0.975)` (the
+2.5th/97.5th percentiles), NumPy `method="linear"`, candidate-name-independent
+keys, and a selector API with no replicate/seed override parameters.
 
 - [ ] **Step 2: Run tests and verify failure**
 
@@ -1593,7 +1603,7 @@ PRIMARY_ENDPOINTS = (
 
 FACTOR_GATE_BOOTSTRAP_REPLICATES = 10_000
 FACTOR_GATE_BOOTSTRAP_SEED = 20260805
-FACTOR_GATE_BOOTSTRAP_PERCENTILES = (2.5, 97.5)
+FACTOR_GATE_BOOTSTRAP_PERCENTILES = (0.025, 0.975)
 
 
 def composite_mechanism_score(evidence):
