@@ -18,7 +18,6 @@ import os
 from pathlib import Path
 import subprocess
 import sys
-from typing import Any
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -48,7 +47,6 @@ from ifdr_yolo.eval.natural_factor_audit import (
 REQUIRED_SEEDS = (17, 29, 41)
 CLASS_NAMES = ("Car", "Pedestrian", "Cyclist")
 SELECTION_STRATEGY = "joint_degradation_max_one_per_class_v1"
-CLI_SCHEMA_VERSION = 1
 
 
 def _canonical_json(value: object) -> str:
@@ -132,6 +130,8 @@ def load_strict_ids(path: str | Path) -> tuple[str, ...]:
     image_ids: list[str] = []
     seen: set[str] = set()
     for line_number, raw in enumerate(lines, start=1):
+        if raw != raw.strip():
+            raise ValueError(f"image_id has surrounding whitespace at {path}:{line_number}")
         image_id = raw.strip()
         if not image_id:
             raise ValueError(f"blank image_id at {path}:{line_number}")
@@ -175,7 +175,7 @@ def select_audit_image_ids(
     ranked = sorted(
         train,
         key=lambda image_id: (
-            hashlib.sha256(f"{int(audit_seed)}\0{image_id}".encode("utf-8")).hexdigest(),
+            hashlib.sha256(f"{int(audit_seed)}{image_id}".encode("utf-8")).hexdigest(),
             image_id,
         ),
     )
@@ -286,8 +286,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--audit-seed", type=int, default=20260804)
     parser.add_argument(
         "--registered-severity",
-        "--registered-severities",
-        "--severity",
         dest="registered_severities",
         action=_SeverityAction,
         metavar="LEVEL",
@@ -343,11 +341,57 @@ def _git_commit() -> str | None:
 
 
 def _manifest_hash_file(path: Path, manifest: FactorObservationManifest) -> None:
+    hash_path = path.with_name("manifest.sha256")
+    if (
+        path.exists()
+        or path.is_symlink()
+        or hash_path.exists()
+        or hash_path.is_symlink()
+    ):
+        _validate_existing_manifest(path.parent, manifest)
+        return
     _atomic_write_json(path, manifest.to_dict())
     _atomic_write_bytes(
-        path.with_name("manifest.sha256"),
+        hash_path,
         (manifest.hash() + "\n").encode("ascii"),
     )
+
+
+def _validate_existing_manifest(seed_dir: Path, manifest: FactorObservationManifest) -> None:
+    manifest_path = seed_dir / "manifest.json"
+    hash_path = seed_dir / "manifest.sha256"
+    manifest_present = manifest_path.exists() or manifest_path.is_symlink()
+    hash_present = hash_path.exists() or hash_path.is_symlink()
+    if not manifest_present and not hash_present:
+        return
+    if (
+        manifest_path.is_symlink()
+        or hash_path.is_symlink()
+        or not manifest_path.is_file()
+        or not hash_path.is_file()
+    ):
+        raise ValueError(f"seed manifest files are incomplete: {seed_dir}")
+    try:
+        raw_manifest = manifest_path.read_bytes()
+        raw_hash = hash_path.read_bytes()
+        payload = json.loads(
+            raw_manifest.decode("utf-8"),
+            parse_constant=lambda value: (_ for _ in ()).throw(ValueError(value)),
+        )
+    except (OSError, UnicodeDecodeError, TypeError, ValueError) as exc:
+        raise ValueError(f"seed manifest is malformed: {seed_dir}") from exc
+    try:
+        matches = _canonical_json(payload) == _canonical_json(manifest.to_dict())
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"seed manifest is malformed: {seed_dir}") from exc
+    if not matches:
+        raise ValueError(f"seed manifest does not match current manifest: {seed_dir}")
+    try:
+        existing_hash = raw_hash.decode("ascii").strip()
+    except UnicodeDecodeError as exc:
+        raise ValueError(f"seed manifest hash is malformed: {seed_dir}") from exc
+    if existing_hash != manifest.hash():
+        raise ValueError(f"seed manifest hash does not match current manifest: {seed_dir}")
 
 
 def _load_observation_rows(
@@ -408,17 +452,42 @@ def _load_observation_rows(
 
 
 def _rebuild_root_observations(output_dir: Path, seeds: Sequence[int]) -> Path:
-    chunks: list[bytes] = []
-    for seed in seeds:
-        path = output_dir / f"seed-{seed}" / "observations.jsonl"
-        if not path.is_file() or path.stat().st_size <= 0:
-            raise ValueError(f"seed observation JSONL is missing or empty: {path}")
-        raw = path.read_bytes()
-        if not raw.endswith(b"\n"):
-            raise ValueError(f"seed observation JSONL is not newline terminated: {path}")
-        chunks.append(raw)
     root = output_dir / "observations.jsonl"
-    _atomic_write_bytes(root, b"".join(chunks))
+    root.parent.mkdir(parents=True, exist_ok=True)
+    temporary = root.with_name(f".{root.name}.{os.getpid()}.tmp")
+    try:
+        with temporary.open("wb") as destination:
+            for seed in seeds:
+                path = output_dir / f"seed-{seed}" / "observations.jsonl"
+                if not path.is_file() or path.stat().st_size <= 0:
+                    raise ValueError(f"seed observation JSONL is missing or empty: {path}")
+                source_size = 0
+                last_byte = b""
+                with path.open("rb") as source:
+                    while True:
+                        chunk = source.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        source_size += len(chunk)
+                        last_byte = chunk[-1:]
+                        destination.write(chunk)
+                if source_size == 0 or last_byte != b"\n":
+                    raise ValueError(f"seed observation JSONL is not newline terminated: {path}")
+            destination.flush()
+            os.fsync(destination.fileno())
+        os.replace(temporary, root)
+        try:
+            directory_fd = os.open(str(root.parent), os.O_RDONLY)
+        except OSError:
+            directory_fd = None
+        if directory_fd is not None:
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
     return root
 
 
@@ -453,14 +522,11 @@ def _observation_summary(
     sampling_pass = bool(isinstance(factors, Mapping) and factors.get("sampling", {}).get("passed", False))
     visibility_pass = bool(isinstance(factors, Mapping) and factors.get("visibility", {}).get("passed", False))
     return {
-        "schema_version": CLI_SCHEMA_VERSION,
+        "schema_version": 1,
         "images": len(images),
         "objects": len(objects),
         "intervention_objects": len(selected_interventions),
         "row_count": len(rows),
-        "image_count": len(images),
-        "object_count": len(objects),
-        "intervention_object_count": len(selected_interventions),
         "per_seed_counts": dict(sorted(seed_counts.items())),
         "per_node_counts": dict(sorted(node_counts.items())),
         "per_class_counts": dict(sorted(class_counts.items())),
@@ -474,7 +540,6 @@ def _observation_summary(
         "skipped_non_training_count": load_result.skipped_non_training_count,
         "invalid_depth_count": load_result.invalid_depth_count,
         "gate_passed": gate_passed,
-        "gate_pass": gate_passed,
         "sampling_pass": sampling_pass,
         "visibility_pass": visibility_pass,
     }
@@ -482,10 +547,6 @@ def _observation_summary(
 
 def _scientific_identity(
     *,
-    metadata_path: Path,
-    train_ids_path: Path,
-    val_ids_path: Path,
-    checkpoint_paths: Mapping[int, Path],
     metadata_sha256: str,
     train_sha256: str,
     val_sha256: str,
@@ -494,23 +555,14 @@ def _scientific_identity(
     val_ids: Sequence[str],
     audit_ids: Sequence[str],
     audit_seed: int,
-    image_dir: Path,
     intervention_identities: Sequence[tuple[str, int]],
     intervention_class_counts: Mapping[str, int],
     manifest_hashes: Mapping[int, str],
     input_size: int,
-    transform_batch_size: int,
     bootstrap_replicates: int,
     severities: Sequence[float],
 ) -> dict[str, object]:
     return {
-        "cli_schema_version": CLI_SCHEMA_VERSION,
-        "metadata_path": _normalized_path(metadata_path),
-        "train_ids_path": _normalized_path(train_ids_path),
-        "val_ids_path": _normalized_path(val_ids_path),
-        "checkpoint_paths": {
-            str(seed): _normalized_path(checkpoint_paths[seed]) for seed in REQUIRED_SEEDS
-        },
         "metadata_sha256": metadata_sha256,
         "train_ids_sha256": train_sha256,
         "val_ids_sha256": val_sha256,
@@ -520,62 +572,47 @@ def _scientific_identity(
         "audit_ids": list(audit_ids),
         "audit_seed": int(audit_seed),
         "split_selection_sha256": _split_selection_hash(train_ids, val_ids, audit_ids, audit_seed),
-        "image_dir": _normalized_path(image_dir),
         "intervention_selection_strategy": SELECTION_STRATEGY,
         "intervention_identities": [[image_id, object_id] for image_id, object_id in intervention_identities],
-        "selected_intervention_objects": [
-            [image_id, object_id] for image_id, object_id in intervention_identities
-        ],
-        "intervention_object_count": len(intervention_identities),
         "intervention_class_counts": dict(sorted(intervention_class_counts.items())),
         "manifest_sha256": {str(seed): manifest_hashes[seed] for seed in REQUIRED_SEEDS},
         "required_seeds": list(REQUIRED_SEEDS),
         "required_nodes": list(DEFAULT_REQUIRED_NODES),
         "input_size": int(input_size),
-        "transform_batch_size": int(transform_batch_size),
         "bootstrap_replicates": int(bootstrap_replicates),
         "registered_severities": list(severities),
     }
 
 
-def _check_or_write_provenance(path: Path, scientific: Mapping[str, object], runtime: Mapping[str, object]) -> None:
-    if path.is_file():
-        try:
-            existing = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError, TypeError) as exc:
-            raise ValueError("provenance.json is malformed") from exc
-        expected_aliases = {
-            "metadata_sha256": scientific.get("metadata_sha256"),
-            "train_ids_sha256": scientific.get("train_ids_sha256"),
-            "val_ids_sha256": scientific.get("val_ids_sha256"),
-            "checkpoint_sha256": scientific.get("checkpoint_sha256"),
-            "audit_ids": scientific.get("audit_ids"),
-            "split_selection_sha256": scientific.get("split_selection_sha256"),
-        }
-        aliases_match = isinstance(existing, dict) and all(
-            key not in existing or existing.get(key) == value
-            for key, value in expected_aliases.items()
+def _validate_existing_provenance(path: Path, scientific: Mapping[str, object]) -> None:
+    if not (path.exists() or path.is_symlink()):
+        return
+    if path.is_symlink() or not path.is_file():
+        raise ValueError("provenance.json is not a regular file")
+    try:
+        existing = json.loads(
+            path.read_text(encoding="utf-8"),
+            parse_constant=lambda value: (_ for _ in ()).throw(ValueError(value)),
         )
-        if (
-            not isinstance(existing, dict)
-            or existing.get("scientific_identity") != dict(scientific)
-            or not aliases_match
-        ):
-            raise ValueError("provenance scientific identity mismatch; refusing to resume")
+    except (OSError, ValueError, TypeError) as exc:
+        raise ValueError("provenance.json is malformed") from exc
+    if not isinstance(existing, dict):
+        raise ValueError("provenance scientific identity mismatch; refusing to resume")
+    try:
+        matches = _canonical_json(existing.get("scientific_identity")) == _canonical_json(dict(scientific))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("provenance.json is malformed") from exc
+    if not matches:
+        raise ValueError("provenance scientific identity mismatch; refusing to resume")
+
+
+def _check_or_write_provenance(path: Path, scientific: Mapping[str, object], runtime: Mapping[str, object]) -> None:
+    _validate_existing_provenance(path, scientific)
     payload = {
-        "schema_version": CLI_SCHEMA_VERSION,
-        "cli_schema_version": CLI_SCHEMA_VERSION,
+        "schema_version": 1,
         "scientific_identity": dict(scientific),
         "runtime": dict(runtime),
         "git_commit": _git_commit(),
-        # Keep the principal bindings discoverable without requiring callers
-        # to know the nested scientific-identity layout.
-        "metadata_sha256": scientific.get("metadata_sha256"),
-        "train_ids_sha256": scientific.get("train_ids_sha256"),
-        "val_ids_sha256": scientific.get("val_ids_sha256"),
-        "checkpoint_sha256": scientific.get("checkpoint_sha256"),
-        "audit_ids": scientific.get("audit_ids"),
-        "split_selection_sha256": scientific.get("split_selection_sha256"),
     }
     _atomic_write_json(path, payload)
 
@@ -584,7 +621,9 @@ def _run(args: argparse.Namespace) -> int:
     output_dir = args.output_dir.expanduser().resolve(strict=False)
     output_dir.mkdir(parents=True, exist_ok=True)
     status_path = output_dir / "status.json"
-    _atomic_write_json(status_path, {"schema_version": 1, "status": "running"})
+    provenance_path = output_dir / "provenance.json"
+    protect_existing = provenance_path.exists() or provenance_path.is_symlink()
+    status_started = False
     try:
         if args.input_size <= 0 or args.transform_batch_size <= 0 or args.bootstrap_replicates < 2:
             raise ValueError("input-size, transform-batch-size must be positive and bootstrap-replicates >= 2")
@@ -636,10 +675,6 @@ def _run(args: argparse.Namespace) -> int:
             manifests[seed] = manifest
             manifest_hashes[seed] = manifest.hash()
         scientific = _scientific_identity(
-            metadata_path=metadata_path,
-            train_ids_path=args.train_ids.expanduser().resolve(strict=False),
-            val_ids_path=args.val_ids.expanduser().resolve(strict=False),
-            checkpoint_paths=checkpoint_paths,
             metadata_sha256=metadata_sha256,
             train_sha256=_sha256_file(args.train_ids.expanduser().resolve(strict=False)),
             val_sha256=_sha256_file(args.val_ids.expanduser().resolve(strict=False)),
@@ -648,20 +683,35 @@ def _run(args: argparse.Namespace) -> int:
             val_ids=val_ids,
             audit_ids=audit_ids,
             audit_seed=args.audit_seed,
-            image_dir=image_dir,
             intervention_identities=intervention_identities,
             intervention_class_counts=class_counts,
             manifest_hashes=manifest_hashes,
             input_size=args.input_size,
-            transform_batch_size=args.transform_batch_size,
             bootstrap_replicates=args.bootstrap_replicates,
             severities=severities,
         )
+        _validate_existing_provenance(provenance_path, scientific)
+        for seed in REQUIRED_SEEDS:
+            _validate_existing_manifest(output_dir / f"seed-{seed}", manifests[seed])
+
         runtime = {
             "device": str(args.device),
+            "transform_batch_size": int(args.transform_batch_size),
             "python_executable": sys.executable,
+            "paths": {
+                "metadata_jsonl": _normalized_path(metadata_path),
+                "train_ids": _normalized_path(args.train_ids),
+                "val_ids": _normalized_path(args.val_ids),
+                "image_dir": _normalized_path(image_dir),
+                "checkpoints": {
+                    str(seed): _normalized_path(checkpoint_paths[seed])
+                    for seed in REQUIRED_SEEDS
+                },
+            },
         }
-        provenance_path = output_dir / "provenance.json"
+
+        _atomic_write_json(status_path, {"schema_version": 1, "status": "running"})
+        status_started = True
         _check_or_write_provenance(provenance_path, scientific, runtime)
         for seed in REQUIRED_SEEDS:
             seed_dir = output_dir / f"seed-{seed}"
@@ -718,19 +768,7 @@ def _run(args: argparse.Namespace) -> int:
         )
         _atomic_write_json(output_dir / "summary.json", summary_payload)
         _atomic_write_json(output_dir / "gate.json", gate_payload)
-        _atomic_write_json(provenance_path, {
-            "schema_version": CLI_SCHEMA_VERSION,
-            "cli_schema_version": CLI_SCHEMA_VERSION,
-            "scientific_identity": scientific,
-            "runtime": runtime,
-            "git_commit": _git_commit(),
-            "metadata_sha256": scientific.get("metadata_sha256"),
-            "train_ids_sha256": scientific.get("train_ids_sha256"),
-            "val_ids_sha256": scientific.get("val_ids_sha256"),
-            "checkpoint_sha256": scientific.get("checkpoint_sha256"),
-            "audit_ids": scientific.get("audit_ids"),
-            "split_selection_sha256": scientific.get("split_selection_sha256"),
-        })
+        _check_or_write_provenance(provenance_path, scientific, runtime)
         required_files = (
             root_observations,
             output_dir / "summary.json",
@@ -743,7 +781,7 @@ def _run(args: argparse.Namespace) -> int:
         _atomic_write_json(status_path, {"schema_version": 1, "status": "complete"})
         return 0
     except Exception as exc:
-        try:
+        if status_started or not protect_existing:
             _atomic_write_json(
                 status_path,
                 {
@@ -753,8 +791,6 @@ def _run(args: argparse.Namespace) -> int:
                     "message": str(exc),
                 },
             )
-        finally:
-            pass
         raise
 
 
