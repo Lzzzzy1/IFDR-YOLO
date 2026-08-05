@@ -8,6 +8,13 @@
 
 **Tech Stack:** Python 3.12, PyTorch, Ultralytics YOLOv8, NumPy, PyYAML, `unittest`, existing IFDR run-store/provenance/audit utilities.
 
+The Chen KITTI train/validation split is a public development benchmark. Recipe
+selection uses only the locked internal development split; external evidence is
+the KITTI test server or a frozen BDD100K transfer result. Every registered
+condition binds identical initialization checkpoint bytes and SHA256, resets
+optimizer state, disables early stopping, and uses a fixed budget. `last.pt` is
+the primary fixed-budget result and `best.pt` is an engineering diagnostic.
+
 ---
 
 ## Locked file map
@@ -23,22 +30,31 @@ New responsibilities are separated so the existing trainer and dataset do not be
 - Create `scripts/build_factor_metadata.py`: fail-closed metadata/split build CLI.
 - Create `scripts/train_factor_repair.py`: development-only M/F runner using existing `RunStore` and IFDR trainer.
 - Create `scripts/run_factor_repair_queue.py`: one-GPU resumable queue, with no automatic method advancement when a gate fails.
-- Modify `ifdr_yolo/data/ifdr_dataset.py`: consume pre-matched object records and construct matched target/background intervention pairs.
+- Modify `ifdr_yolo/data/ifdr_dataset.py`: bind raw labels before geometry, emit clean/target/background views, carry immutable ROI identities, and update `collate_ifdr_batch`.
 - Modify `ifdr_yolo/experiments/ifdr_trainer.py`: accept a registered replay sampler and semantic-calibration phase without changing default behavior.
-- Modify `ifdr_yolo/models/ifdr_model.py`: expose named factor-semantic parameters; do not change forward inference.
-- Modify `ifdr_yolo/losses/ifdr_detection.py`: call the new alignment loss only when registered supervision is present.
+- Modify `ifdr_yolo/models/ifdr_model.py`: split one `3B` forward into clean/target/background contexts and expose named factor-semantic parameters; do not change inference behavior at zero schedule.
+- Modify `ifdr_yolo/losses/ifdr_detection.py`: map normalized ROIs to P2-P5, use clean-only natural targets, target-view synthetic targets, target/background deltas relative to clean, and exclude detection loss during calibration.
 - Modify `ifdr_yolo/experiments/config.py`: parse strict Track M/F configuration with unknown-field rejection.
 - Add focused tests listed below; all existing 439 tests must stay green.
 
 ## Invariants before implementation
 
 - Existing natural audit output at commit `10dc0374f0154068ebc9f49729eafea90abe83af` is immutable.
-- The standard KITTI validation IDs must never enter recipe selection.
-- F1/F2/F3 calibration must have fusion schedule `0.0` and DCLI schedule `0.0` for every batch.
+- The Chen public development benchmark IDs must never enter recipe selection;
+  only internal development IDs may select a recipe.
+- F0/F1/F2/F3 calibration must have fusion schedule `0.0` and DCLI schedule `0.0` for every batch.
+- F0 is a compute-matched 30-epoch synthetic-only calibration control; F0-F3
+  share the same three-view batches, optimizer/update schedule, batch/update
+  count, freeze set, and calibration budget.
+- Only F0 and at most one F1-F3 candidate that passes its development factor
+  gate receive the matched 60-epoch task adaptation; both start only after that
+  candidate is selected, and if none passes, no Track F adaptation starts.
 - Track M must not load raw learned factors and must add no inference parameter.
 - Track F cannot advance to factor-conditioned task adaptation until its development factor gate passes.
 - A post-adaptation gate failure invalidates the factor-guided claim even if AP40 improves.
 - Every output binds clean commit, split hash, metadata hash, checkpoint hash, resolved configuration and seed.
+- Every fixed-budget report uses `last.pt` as the primary checkpoint and keeps
+  `best.pt` only as an engineering diagnostic.
 
 ### Task 1: Deterministic leakage-free development split
 
@@ -59,7 +75,7 @@ class DevelopmentSplitTest(unittest.TestCase):
     def test_split_is_stable_disjoint_and_stratified(self):
         rows = [
             {"image_id": f"{index:06d}", "cyclist": index % 3 == 0,
-             "cyclist_joint": (index % 10) / 10.0}
+             "cyclist_joint": (index % 10) / 10.0 if index % 3 == 0 else 0.0}
             for index in range(120)
         ]
         first = build_development_split(rows, seed=20260805, fraction=0.10)
@@ -76,6 +92,15 @@ class DevelopmentSplitTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "duplicate image_id"):
             build_development_split(rows, seed=20260805, fraction=0.10)
 ```
+
+Also test score finiteness/range, zero score for images without Cyclists,
+fixed-seed/fraction rejection, reversed input order, strict round-half-up count,
+fit/development disjointness and full coverage, immutable strata, deterministic
+hashing, feasible small-stratum fit/development guarantees, and an infeasible
+small-sample `quota constraints` rejection. Use a feasible `N=40` fixture with
+four non-trivial strata (`dev_count=4`) and an infeasible `N=20` fixture with
+the same four strata (`dev_count=2`); the latter must raise `ValueError` whose
+message contains `quota constraints` before writing any manifest.
 
 - [ ] **Step 2: Run the tests and verify failure**
 
@@ -102,14 +127,24 @@ def build_development_split(
         raise ValueError("development split requires seed=20260805 and fraction=0.10")
     normalized = _validate_unique_rows(rows)
     strata = _cyclist_presence_and_tertile_strata(normalized)
-    development = _stable_stratified_selection(strata, seed=seed, fraction=fraction)
+    development = _stable_stratified_selection(
+        strata, seed=seed, fraction=fraction,
+        total_count=round_half_up_tenth(len(normalized)),
+    )
     all_ids = tuple(sorted(row.image_id for row in normalized))
     fit = tuple(image_id for image_id in all_ids if image_id not in development)
     payload = {"seed": seed, "fit_ids": fit, "development_ids": tuple(sorted(development))}
     return DevelopmentSplit(seed, fit, tuple(sorted(development)), _freeze_strata(strata), _digest(payload))
 ```
 
-Small strata with at least two images must contribute at least one fit and one development image. The builder CLI writes exact ID files and one atomic JSON manifest; it refuses to overwrite a non-identical manifest.
+`round_half_up(0.10 * N)` is the strict development count. Tertiles use a
+stable `(cyclist_joint, image_id)` ordering and lower/middle/upper groups whose
+sizes differ by at most one; `no_cyclist` is separate. Largest-remainder
+allocation honors a minimum development and fit seat for every stratum with at
+least two images. If the minimum exceeds the development count or the fit
+capacity, fail closed with `quota constraints`. The builder CLI writes exact ID
+files and one atomic JSON manifest; it refuses to overwrite a non-identical
+manifest.
 
 - [ ] **Step 4: Verify the split tests pass**
 
@@ -255,7 +290,10 @@ class ReplaySamplerTest(unittest.TestCase):
         self.assertGreater(sampler.probabilities["c"], 0.0)
 ```
 
-Also test M1 equals original distribution, M2 is uniform inside the Cyclist pool, M3 uses the fit-split 95th percentile and `0.05` focus-pool floor, and all epochs outside 1-60 fail.
+Also test M1 equals the uniform `P_original` over fit IDs, M2 is uniform inside
+the Cyclist pool, M3 uses the fit-split 95th percentile and `0.05` focus-pool
+floor, and all epochs outside 1-60 fail. The sampler draws with replacement
+and emits exactly `len(fit_ids)` draws per epoch.
 
 - [ ] **Step 2: Run tests and verify failure**
 
@@ -306,7 +344,16 @@ class ReplayDrawJournalTest(unittest.TestCase):
                 )
 ```
 
-The journal derives each draw from `(seed, epoch, draw_index, distribution_sha256)` so interrupted runs do not depend on mutable RNG state. Each committed draw records selected image ID and its probability; duplicate `(epoch, draw_index)` with different content fails closed.
+Add a draw-count test that consumes one epoch and asserts exactly
+`len(fit_ids)` records, allows repeated IDs (with replacement), and verifies
+that changing any member of the draw key changes the deterministic sequence.
+
+The journal derives each draw from `(seed, epoch, draw_index,
+distribution_sha256)` so interrupted runs do not depend on mutable RNG state.
+Each committed draw records selected image ID, probability, and realized image
+and class counts; duplicate `(epoch, draw_index)` with different content fails
+closed. The formal full-training sampler therefore records exactly 3,712 draws
+per epoch on one GPU.
 
 - [ ] **Step 5: Run tests and commit**
 
@@ -398,6 +445,10 @@ def object_balanced_factor_loss(
 ```
 
 `pool_object_roi` clamps to the map, rejects empty/non-finite ROIs, and averages spatial values before any object/class reduction.
+Add four-node mapping tests for P2/P3/P4/P5 map sizes, an empty ROI that
+contributes zero weight, a clipped ROI that remains finite, and boxes touching
+each map boundary. Assert the same normalized box maps deterministically for
+all four node strides and that no invalid ROI can create a NaN loss.
 
 - [ ] **Step 4: Wire the loss without changing legacy batches**
 
@@ -415,7 +466,7 @@ git commit -m "feat: add object-balanced natural factor alignment"
 ### Task 5: Matched target/background specificity supervision
 
 **Files:**
-- Modify: `ifdr_yolo/data/ifdr_dataset.py`
+- Modify: `ifdr_yolo/data/ifdr_dataset.py` (`IFDRInterventionTransform`, `collate_ifdr_batch`)
 - Modify: `ifdr_yolo/losses/factor_alignment.py`
 - Test: `tests/test_factor_specificity.py`
 
@@ -433,7 +484,12 @@ class FactorSpecificityTest(unittest.TestCase):
             clean=torch.tensor([0.20]), target=torch.tensor([0.50]),
             background=torch.tensor([0.26]), margin=0.05,
         )
-        self.assertTrue(torch.allclose(loss, torch.tensor(0.01)))
+        self.assertTrue(torch.allclose(loss, torch.tensor(0.0)))
+        extra_target = factor_specificity_loss(
+            clean=torch.tensor([0.20]), target=torch.tensor([0.30]),
+            background=torch.tensor([0.26]), margin=0.05,
+        )
+        self.assertTrue(torch.allclose(extra_target, torch.tensor(0.01)))
 
     def test_specificity_rejects_overlapping_background(self):
         labels = {"bboxes": torch.tensor([[0.1, 0.1, 0.3, 0.3],
@@ -443,6 +499,37 @@ class FactorSpecificityTest(unittest.TestCase):
                 labels, target_index=0, background_box=(0.6, 0.6, 0.8, 0.8),
                 severity=0.5, transform_seed=7,
             )
+
+    def test_collate_preserves_three_views_and_normalized_roi_identity(self):
+        from ifdr_yolo.data.ifdr_dataset import (
+            BACKGROUND_IMAGE_KEY,
+            CLEAN_IMAGE_KEY,
+            FACTOR_OBJECT_TARGETS_KEY,
+            TARGET_IMAGE_KEY,
+            collate_ifdr_batch,
+        )
+
+        view = torch.zeros(3, 8, 8, dtype=torch.uint8)
+        sample = {
+            "img": view,
+            "bboxes": torch.tensor([[0.25, 0.25, 0.50, 0.50]]),
+            "cls": torch.tensor([[2.0]]),
+            "batch_idx": torch.zeros(1),
+            CLEAN_IMAGE_KEY: view.clone(),
+            TARGET_IMAGE_KEY: view.clone(),
+            BACKGROUND_IMAGE_KEY: view.clone(),
+            FACTOR_OBJECT_TARGETS_KEY: ({
+                "class_id": 2,
+                "box_xyxy_normalized": (0.25, 0.25, 0.50, 0.50),
+            },),
+        }
+        batch = collate_ifdr_batch([sample])
+        self.assertEqual(tuple(batch[CLEAN_IMAGE_KEY].shape), (1, 3, 8, 8))
+        self.assertEqual(tuple(batch[TARGET_IMAGE_KEY].shape), (1, 3, 8, 8))
+        self.assertEqual(tuple(batch[BACKGROUND_IMAGE_KEY].shape), (1, 3, 8, 8))
+        target = batch[FACTOR_OBJECT_TARGETS_KEY][0]
+        self.assertEqual(target["batch_idx"], 0)
+        self.assertEqual(target["box_xyxy_normalized"], (0.25, 0.25, 0.50, 0.50))
 ```
 
 Also test severity below `0.25` receives zero specificity weight, target and background carry identical severity/transform seed, malformed/missing pairs are counted, and empty background has zero IoU with every annotation.
@@ -462,7 +549,19 @@ def factor_specificity_loss(clean, target, background, *, margin: float = 0.05):
     return torch.relu(background_delta + margin - target_delta).mean()
 ```
 
-Extend `IFDRInterventionTransform` to emit one immutable pair record with `pair_id`, target/background boxes, factor channel, severity, transform seed, validity, and rejection reason. Do not assign a positive degradation target to empty background.
+Extend `IFDRInterventionTransform.__call__` to bind raw `get_image_and_label`
+output before geometry, then emit one clean/target/background tuple with
+`CLEAN_IMAGE_KEY`, `TARGET_IMAGE_KEY`, and `BACKGROUND_IMAGE_KEY`. The target
+and background use the same severity and transform seed; the clean view is
+unmodified. Emit immutable object records under `FACTOR_OBJECT_TARGETS_KEY` with
+`batch_idx`, `class_id`, and normalized `box_xyxy_normalized`. Update
+`collate_ifdr_batch` to stack all three BCHW views, attach the collated
+`batch_idx`, and clip each normalized ROI when mapping it to every P2-P5 node.
+Update `IFDRDetectionModel.loss` to concatenate the three views as one `3B`
+forward, consume and split all six node contexts into clean/target/background,
+and pass clean-only ROI records plus intervention records to
+`IFDRDetectionLoss`. Detection loss is frozen/excluded during calibration.
+Do not assign a positive degradation target to empty background.
 
 - [ ] **Step 4: Verify legacy behavior and pair accounting**
 
@@ -505,46 +604,171 @@ class FactorRepairPhaseTest(unittest.TestCase):
 
     def test_semantic_calibration_trainable_names_are_exact(self):
         phase = semantic_calibration_phase(self.model, variant="F3", epochs=30)
-        actual = {name for name, parameter in self.model.named_parameters()
-                  if parameter.requires_grad}
+        actual = {
+            name for name, parameter in self.model.named_parameters()
+            if parameter.requires_grad
+        }
         self.assertEqual(actual, set(phase.trainable_parameter_names))
         self.assertTrue(actual)
+        projection_modules = tuple(
+            projection
+            for index in self.model.fusion_node_indices
+            for projection in self.model.model[index].projections
+        )
+        self.assertEqual(len(projection_modules), 12)
+        expected_ids = {
+            id(parameter)
+            for projection in projection_modules
+            for parameter in projection.parameters()
+        }
+        first_layer = self.model.model[self.model.fusion_node_indices[0]]
+        expected_ids.update(
+            id(parameter)
+            for parameter in first_layer.reliability_estimator.shared_core.parameters()
+        )
+        expected_ids.update(
+            id(parameter)
+            for parameter in first_layer.reliability_estimator.factor_head.parameters()
+        )
+        actual_ids = {
+            id(parameter)
+            for name, parameter in self.model.named_parameters()
+            if name in phase.trainable_parameter_names
+        }
+        self.assertEqual(actual_ids, expected_ids)
         self.assertTrue(all(
-            "input_projection" in name or "shared_core" in name or "factor_head" in name
-            for name in actual
+            ".projections." in name
+            or ".reliability_estimator.shared_core." in name
+            or ".reliability_estimator.factor_head." in name
+            for name in phase.trainable_parameter_names
         ))
         self.assertEqual(phase.fusion_schedule, 0.0)
         self.assertEqual(phase.dcli_schedule, 0.0)
 
     def test_calibration_rejects_detection_or_adapter_parameter(self):
         phase = semantic_calibration_phase(self.model, variant="F3", epochs=30)
-        forbidden = ("detect", "router", "semantic_adapter", "factor_adapter", "localization")
+        forbidden = (
+            "detect", "router", "fusion_adapter", "localization_adapter",
+            "gate_logit",
+        )
         self.assertFalse(any(
             token in name for name in phase.trainable_parameter_names for token in forbidden
         ))
+
+    def test_f0_masks_only_the_new_repair_terms(self):
+        expected = {
+            "F0": {"synthetic": 1.0, "natural": 0.0, "specificity": 0.0},
+            "F1": {"synthetic": 1.0, "natural": 1.0, "specificity": 0.0},
+            "F2": {"synthetic": 1.0, "natural": 0.0, "specificity": 1.0},
+            "F3": {"synthetic": 1.0, "natural": 1.0, "specificity": 1.0},
+        }
+        for variant, mask in expected.items():
+            phase = semantic_calibration_phase(self.model, variant=variant, epochs=30)
+            self.assertEqual(phase.loss_mask, mask)
+
+    def test_three_view_forward_splits_each_node_context(self):
+        from ifdr_yolo.experiments.factor_repair import split_three_view_contexts
+
+        clean = torch.zeros(1, 3, 128, 128)
+        target = torch.ones(1, 3, 128, 128)
+        background = torch.full((1, 3, 128, 128), 2.0)
+        self.model.set_component_schedules(
+            fusion=0.0, dcli=0.0, factor_supervision=1.0
+        )
+        with torch.no_grad():
+            self.model(torch.cat((clean, target, background), dim=0))
+        raw_contexts = self.model.consume_reliability_context()
+        split = split_three_view_contexts(raw_contexts, batch_size=1)
+        self.assertEqual(set(split), {"clean", "target", "background"})
+        for view in split.values():
+            self.assertEqual(tuple(view), self.model.fusion_node_indices)
+            self.assertTrue(all(
+                context.factors.shape[0] == 1 for context in view.values()
+            ))
+
+    def test_semantic_gradient_diagnostics_cover_all_paths(self):
+        groups = self.model.gradient_diagnostic_parameter_groups()
+        self.assertEqual(
+            set(groups),
+            {f"projection_{index:02d}" for index in range(12)}
+            | {"shared_core", "factor_head"},
+        )
 ```
 
 - [ ] **Step 2: Run tests and verify failure**
 
 Run: `D:\ana\envs\yolo\python.exe -m unittest tests.test_factor_repair_phase -v`
 
-- [ ] **Step 3: Expose semantic parameter names and freeze by identity**
+- [ ] **Step 3: Expose three-view context splitting and semantic parameter names**
 
 ```python
+from ifdr_yolo.models.gated_fusion import ReliabilityContext, ReliabilityGatedConcat
+
+
+def split_three_view_contexts(contexts, batch_size):
+    if isinstance(batch_size, bool) or not isinstance(batch_size, int) or batch_size <= 0:
+        raise ValueError("batch_size must be a positive integer")
+    result = {"clean": {}, "target": {}, "background": {}}
+    for index, context in contexts.items():
+        expected = 3 * batch_size
+        if context.factors.shape[0] != expected or context.branch_weights.shape[0] != expected:
+            raise RuntimeError("three-view reliability contexts must have leading dimension 3B")
+        for name, start in (("clean", 0), ("target", batch_size), ("background", 2 * batch_size)):
+            stop = start + batch_size
+            result[name][index] = ReliabilityContext(
+                factors=context.factors[start:stop],
+                branch_weights=context.branch_weights[start:stop],
+                gate_strength=context.gate_strength,
+            )
+    return result
+
+
 def factor_semantic_named_parameters(self):
-    allowed_modules = []
-    seen = set()
-    for module in self.model:
-        if isinstance(module, ReliabilityGatedConcat):
-            allowed_modules.extend((module.input_projection, module.shared_core, module.factor_head))
+    allowed_parameter_ids: set[int] = set()
+    projection_modules = []
+    for index in self.fusion_node_indices:
+        layer = self.model[index]
+        if not isinstance(layer, ReliabilityGatedConcat):
+            raise TypeError(f"fusion node {index} is not ReliabilityGatedConcat")
+        if len(layer.projections) != 2:
+            raise ValueError(f"fusion node {index} must expose two projections")
+        projection_modules.extend(layer.projections)
+        for projection in layer.projections:
+            allowed_parameter_ids.update(
+                id(parameter) for parameter in projection.parameters()
+            )
+        allowed_parameter_ids.update(
+            id(parameter)
+            for parameter in layer.reliability_estimator.shared_core.parameters()
+        )
+        allowed_parameter_ids.update(
+            id(parameter)
+            for parameter in layer.reliability_estimator.factor_head.parameters()
+        )
+    if len(projection_modules) != 12:
+        raise ValueError("semantic calibration requires 12 projection modules")
+    seen_parameter_ids: set[int] = set()
     for name, parameter in self.named_parameters():
-        if any(parameter is owned for module in allowed_modules for owned in module.parameters()):
-            if id(parameter) not in seen:
-                seen.add(id(parameter))
-                yield name, parameter
+        parameter_id = id(parameter)
+        if parameter_id in allowed_parameter_ids and parameter_id not in seen_parameter_ids:
+            seen_parameter_ids.add(parameter_id)
+            yield name, parameter
 ```
 
-The implementation must account for shared reliability modules exactly once. `semantic_calibration_phase` first freezes all parameters, then enables only the yielded identities, resets optimizer state, sets all component schedules explicitly, and records sorted trainable names in provenance.
+The implementation must account for shared reliability modules exactly once. The
+provenance must retain complete semantic paths: all 12 per-node projection
+submodules, the shared `reliability_estimator.shared_core`, and the shared
+`reliability_estimator.factor_head`; report group membership by parameter
+identity so the shared modules are not counted once per node. `semantic_calibration_phase`
+first freezes all parameters, then enables only the yielded identities, resets
+optimizer state, sets all component schedules explicitly, and records sorted
+trainable names in provenance. It also validates the exact loss masks above,
+rejects any calibration epoch other than 30, and disables early stopping for
+all F0-F3 phases. `gradient_diagnostic_parameter_groups` emits
+`projection_00` through `projection_11`, `shared_core`, and `factor_head`; each
+group is built from the same identity-deduplicated parameter set used by the
+phase, so diagnostics cannot silently omit a projection or count shared
+parameters once per node.
 
 - [ ] **Step 4: Add validation no-step and optimizer-reset tests**
 
@@ -579,7 +803,10 @@ class FactorRepairConfigTest(unittest.TestCase):
     def test_registered_conditions_have_equal_budgets(self):
         config = load_factor_repair_config(write_valid_config())
         self.assertEqual({config.conditions[name].epochs for name in ("M1", "M2", "M3")}, {60})
-        self.assertEqual({config.conditions[name].epochs for name in ("F1", "F2", "F3")}, {30})
+        self.assertEqual({config.conditions[name].epochs for name in ("F0", "F1", "F2", "F3")}, {30})
+        self.assertEqual(config.task_adaptation_epochs, 60)
+        self.assertEqual(config.max_selected_factor_repairs, 1)
+        self.assertFalse(config.early_stopping)
         self.assertEqual(config.development.seed, 20260805)
         self.assertEqual(config.development.fraction, 0.10)
         self.assertEqual(config.factor_loss.natural_gain, 1.0)
@@ -600,7 +827,7 @@ Run: `D:\ana\envs\yolo\python.exe -m unittest tests.test_factor_repair_config -v
 
 - [ ] **Step 3: Implement frozen configuration dataclasses**
 
-Define `DevelopmentProtocolConfig`, `MetadataReplayConfig`, `FactorAlignmentConfig`, `FactorGateConfig`, `RepairConditionConfig`, and `FactorRepairConfig`. All fields are required; unknown fields fail. Hard-code validation of registered values from the approved spec rather than accepting alternative thresholds from the command line.
+Define `DevelopmentProtocolConfig`, `MetadataReplayConfig`, `FactorAlignmentConfig`, `FactorGateConfig`, `RepairConditionConfig`, and `FactorRepairConfig`. All fields are required; unknown fields fail. Register M1/M2/M3 at 60 epochs, F0/F1/F2/F3 calibration at 30 epochs, one 60-epoch task-adaptation budget shared by F0 and the single selected F1-F3 candidate, and `max_selected_factor_repairs=1`. F0 masks natural and specificity terms but retains synthetic supervision. Hard-code validation of registered values from the approved spec rather than accepting alternative thresholds from the command line.
 
 - [ ] **Step 4: Write the canonical seed-17 development YAML**
 
@@ -672,7 +899,7 @@ def require_factor_guided_advancement(*, pre, post):
         raise ValueError("post-adaptation factor gate failed")
 ```
 
-Reuse existing `natural_factor_audit` statistics; do not duplicate Spearman/bootstrap mathematics. The gate layer validates completeness and translates registered evidence into an explicit decision.
+Reuse existing `natural_factor_audit` statistics; do not duplicate Spearman/bootstrap mathematics. The gate layer validates completeness and translates registered evidence into an explicit decision. The pooled primary-node statistic with the formal paired image bootstrap is the only mechanism-selection statistic; per-node confidence intervals are diagnostic, and no uncorrected per-node or per-seed significance may select a repair.
 
 - [ ] **Step 4: Run tests and commit**
 
@@ -706,14 +933,32 @@ class FactorRepairRunnerTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "development leakage"):
             build_factor_repair_run(config, loader_ids=("fit-a", "dev-b"))
 
-    def test_queue_does_not_advance_failed_f3_gate(self):
+    def test_queue_runs_f0_control_only_with_selected_repair(self):
         with TemporaryDirectory() as directory:
             queue = FactorRepairQueue.create(
-                Path(directory), jobs=("F3-calibration", "F3-adaptation")
+                Path(directory), jobs=(
+                    "F0-calibration", "F1-calibration", "F2-calibration",
+                    "F3-calibration", "F0-adaptation",
+                    "selected-repair-adaptation",
+                )
             )
-            queue.complete("F3-calibration", artifacts=failed_gate_artifacts())
-            self.assertEqual(queue.status("F3-adaptation"), "blocked")
-            self.assertFalse(queue.launchable("F3-adaptation"))
+            queue.complete("F0-calibration", artifacts=passing_control_artifacts())
+            self.assertFalse(queue.launchable("F0-adaptation"))
+            queue.complete("F3-calibration", artifacts=passing_repair_artifacts())
+            queue.select_repair("F3")
+            self.assertTrue(queue.launchable("F0-adaptation"))
+            self.assertTrue(queue.launchable("selected-repair-adaptation"))
+
+    def test_no_factor_candidate_blocks_track_f_adaptation(self):
+        with TemporaryDirectory() as directory:
+            queue = FactorRepairQueue.create(
+                Path(directory), jobs=("F0-calibration", "F1-calibration",
+                                       "F2-calibration", "F3-calibration")
+            )
+            queue.complete("F0-calibration", artifacts=passing_control_artifacts())
+            for name in ("F1-calibration", "F2-calibration", "F3-calibration"):
+                queue.complete(name, artifacts=failed_gate_artifacts())
+            self.assertEqual(queue.track_f_adaptation_status(), "blocked")
 ```
 
 Also test dirty checkout, missing hash, mismatched initialization checkpoint, duplicate process, non-finite loss, empty `best.pt`/`last.pt`, and recovery from an interrupted epoch/draw journal.
@@ -738,7 +983,7 @@ def main(argv=None) -> int:
 
 - [ ] **Step 4: Implement the queue state machine**
 
-Allowed transitions are `pending -> running -> complete`, `pending -> blocked`, and `running -> failed`. Resume changes `failed -> running` only when identity and existing artifacts validate. The queue executes one GPU process at a time and never auto-promotes a method after a failed factor or detection gate.
+Allowed transitions are `pending -> running -> complete`, `pending -> blocked`, and `running -> failed`. Resume changes `failed -> running` only when identity and existing artifacts validate. The queue executes one GPU process at a time, permits the matched F0 control and at most one selected F1-F3 adaptation only after a candidate passes its gate, and blocks Track F adaptation entirely when no candidate passes. It never auto-promotes a method after a failed factor or detection gate.
 
 - [ ] **Step 5: Run tests and commit**
 
@@ -812,7 +1057,7 @@ git commit -m "feat: report factor repair advancement evidence"
 
 - [ ] **Step 1: Add one-batch CPU dry-run test**
 
-The test builds two synthetic KITTI images with Car, Pedestrian and Cyclist objects, runs F3 calibration forward/backward, and asserts finite synthetic/natural/specificity losses, non-zero gradient only on semantic parameters, and byte-identical frozen parameters.
+The test builds two synthetic KITTI images with Car, Pedestrian and Cyclist objects, runs the F0 and F3 calibration forward/backward paths, and asserts finite synthetic/natural/specificity losses, zero natural/specificity contribution for F0, non-zero gradient only on semantic parameters, and byte-identical frozen parameters.
 
 - [ ] **Step 2: Run the CPU dry run**
 
@@ -833,7 +1078,7 @@ Expected: all new focused tests pass and all existing 439 tests plus new tests p
 
 - [ ] **Step 4: Perform one-epoch CUDA smoke on the server**
 
-Only after clean-commit deployment and server identity verification, run one registered seed-17 F3 calibration epoch on smoke data. Validate non-empty `status.json`, resolved config, provenance, draw journal, loss components, `best.pt`, and `last.pt`. Interrupt after a committed batch, resume, and verify exactly-once journal entries and identical scientific identity.
+Only after clean-commit deployment and server identity verification, run one registered seed-17 F0 calibration epoch on smoke data. Validate non-empty `status.json`, resolved config, provenance, draw journal, loss components, `best.pt`, and `last.pt`. Interrupt after a committed batch, resume, and verify exactly-once journal entries and identical scientific identity; do not launch task adaptation from this smoke job.
 
 - [ ] **Step 5: Archive smoke evidence and commit test**
 
@@ -863,23 +1108,137 @@ git add docs/reports/factor-repair-preflight.md
 git commit -m "docs: record factor repair launch preflight"
 ```
 
+### Task 13: Independent review and reproducibility package (follow-up, no training)
+
+**Files:**
+- Create: `docs/reports/factor-repair-authoritative-index.json`
+- Create: `docs/reports/factor-repair-results-evidence.jsonl`
+- Create: `docs/reports/factor-repair-figure-status.md`
+- Create: `docs/reports/factor-repair-reproducibility-package.md`
+- Create: `requirements-factor-repair.txt`
+- Create: `LICENSE`
+- Create: `NOTICE`
+- Create: `scripts/verify_factor_repair_package.py`
+- Test: `tests/test_factor_repair_repro_package.py`
+
+This follow-up is performed by an independent teacher/reviewer who did not
+implement Tasks 1-12. It consumes only frozen artifacts and performs no
+training, server submission, or dataset download.
+
+- [ ] **Step 1: Write the package-contract test**
+
+```python
+import json
+import unittest
+from pathlib import Path
+
+from scripts.verify_factor_repair_package import load_and_verify_package
+
+
+class FactorRepairReproPackageTest(unittest.TestCase):
+    def test_authoritative_index_requires_machine_bound_evidence(self):
+        root = Path("docs/reports")
+        index = json.loads((root / "factor-repair-authoritative-index.json").read_text())
+        required = {
+            "implementation_commit", "source_files", "config_files",
+            "split_sha256", "metadata_sha256", "initialization_checkpoint_sha256",
+            "condition_budgets", "checkpoint_policy", "results_evidence_path",
+            "results_evidence_records",
+            "environment_requirements", "license_path", "notice_path",
+            "figure_status_path",
+        }
+        self.assertTrue(required.issubset(index))
+        self.assertEqual(index["checkpoint_policy"], {
+            "primary": "last.pt", "diagnostic": "best.pt",
+        })
+        self.assertTrue(index["results_evidence_path"].endswith(".jsonl"))
+        self.assertTrue(index["results_evidence_records"])
+        for record in index["results_evidence_records"]:
+            self.assertTrue(record["hostname"])
+            self.assertTrue(record["gpu"])
+            self.assertEqual(len(record["artifact_sha256"]), 64)
+        load_and_verify_package(root)
+
+    def test_transfer_datasets_are_not_marked_verified_without_evidence(self):
+        index = json.loads(Path(
+            "docs/reports/factor-repair-authoritative-index.json"
+        ).read_text())
+        for name in ("BDD100K", "CityPersons"):
+            self.assertNotEqual(index.get("external_evidence", {}).get(name), "verified")
+```
+
+- [ ] **Step 2: Run the test and verify the package is not silently accepted when incomplete**
+
+Run: `D:\ana\envs\yolo\python.exe -m unittest tests.test_factor_repair_repro_package -v`
+
+Expected: the test fails until every required index field, machine-bound result
+record, and 64-hex artifact hash is present; it must never infer verification
+from a filename or a non-empty directory.
+
+- [ ] **Step 3: Write the authoritative index and machine-bound evidence**
+
+`factor-repair-authoritative-index.json` must enumerate the implementation
+commit, every source/config path and SHA256, split and metadata hashes,
+initialization checkpoint hash, all M/F budgets, the fixed checkpoint policy
+(`last.pt` primary and `best.pt` diagnostic), the exact
+`results_evidence_path` JSONL path and its `results_evidence_records`,
+environment/requirements path, LICENSE/NOTICE paths, and figure-status path.
+Each line of `factor-repair-results-evidence.jsonl` records condition,
+seed, hostname, GPU model, CUDA/PyTorch versions, run directory, resolved
+configuration hash, checkpoint filename and role, artifact SHA256, and clean
+implementation commit. Missing or non-64-hex hashes fail closed.
+
+- [ ] **Step 4: Record figure status without overstating evidence**
+
+`factor-repair-figure-status.md` labels the archived natural-factor negative
+audit as `completed`, labels repaired calibration, replay, adaptation,
+KITTI-test-server, BDD100K, and CityPersons figures as `planned` until their
+machine-bound evidence records exist, and links each completed figure to its
+authoritative index entry. The file must state explicitly that BDD100K and
+CityPersons have not been validated by this package.
+
+- [ ] **Step 5: Freeze environment and legal notices**
+
+Run: `D:\ana\envs\yolo\python.exe -m pip freeze --all > requirements-factor-repair.txt`
+
+Write `LICENSE` with the repository's governing license text and `NOTICE` with
+the repository and third-party attribution list. `scripts/verify_factor_repair_package.py`
+must resolve every path relative to the repository root, recompute all hashes,
+validate the checkpoint policy and budget table, reject dirty or missing
+evidence, and return exit code 0 only when the complete package is internally
+consistent.
+
+- [ ] **Step 6: Independent review and commit**
+
+Run: `D:\ana\envs\yolo\python.exe scripts/verify_factor_repair_package.py --index docs/reports/factor-repair-authoritative-index.json`
+
+Expected: `PACKAGE_OK` with the index SHA256, result-record count, and explicit
+`BDD100K=planned CityPersons=planned` status. The independent reviewer signs
+the report only after the command exits 0; no transfer-dataset validation claim
+is added by this task.
+
+```text
+git add docs/reports/factor-repair-authoritative-index.json docs/reports/factor-repair-results-evidence.jsonl docs/reports/factor-repair-figure-status.md docs/reports/factor-repair-reproducibility-package.md requirements-factor-repair.txt LICENSE NOTICE scripts/verify_factor_repair_package.py tests/test_factor_repair_repro_package.py
+git commit -m "docs: add independently verifiable factor repair package"
+```
+
 ## Formal experiment sequence after implementation acceptance
 
 1. Generate and commit the immutable metadata index and 90/10 development split.
 2. Retrain the matched seed-17 protected development reference on fit IDs only.
 3. Run M1, M2 and M3 for 60 matched epochs.
-4. Run F1, F2 and F3 calibration for 30 matched epochs.
-5. Audit F0-F3; select at most one repair without changing thresholds.
-6. If and only if the repair passes, run 60-epoch task adaptation and repeat the complete audit.
+4. Run F0, F1, F2 and F3 calibration for 30 matched epochs.
+5. Audit F0-F3; select at most one F1-F3 repair without changing thresholds.
+6. Run the matched 60-epoch task adaptation for F0 and, only when a repair was selected, that one repair; repeat the complete audit. If no repair passes, do not start Track F adaptation.
 7. Freeze one valid recipe, then run formal seeds 17, 29 and 41 on all training IDs.
 8. Produce paired bootstrap, stratified AP40, calibration, efficiency and failure-case evidence.
 9. Archive all artifacts before any BDD100K transfer experiment.
 
 ## Self-review
 
-- Spec coverage: target-conditioned definitions, object-balanced ROI loss, background specificity, leakage-free split, M1/M2/M3, F1/F2/F3, freeze rules, node gates, advancement, recovery and failure semantics all map to Tasks 1-12.
-- Completeness scan: every code-changing step names concrete interfaces, commands and expected behavior. Unknown content hashes are generated from completed manifests before the canonical YAML can be written.
+- Spec coverage: target-conditioned definitions, object-balanced ROI loss, background specificity, leakage-free split, M1/M2/M3, F0-F3, freeze rules, node gates, advancement, recovery, failure semantics, and independent reproducibility evidence all map to Tasks 1-13.
+- Completeness scan: every code-changing step names concrete interfaces, commands and expected behavior. Unknown content hashes are generated from completed manifests before the canonical YAML can be written, and Task 13 rejects missing machine-bound evidence.
 - Type consistency: `DevelopmentSplit`, `FactorMetadataIndex`, `ReplayDistribution`, `ObjectFactorTarget`, `FactorRepairGateDecision`, and phase/report interfaces keep the same names across producing and consuming tasks.
 - Scope: no attention module, new backbone, new IoU variant, inference-graph change, validation-label modification, or BDD100K launch is included.
 
-Plan completion condition: this document is approved, then Tasks 1-12 are executed with review after each task. No new GPU experiment begins before Task 12 reports `READY`.
+Plan completion condition: this document is approved, then Tasks 1-12 are executed with review after each task and Task 13 is completed by an independent reviewer. No new GPU experiment begins before Task 12 reports `READY`.
