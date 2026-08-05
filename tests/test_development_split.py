@@ -55,6 +55,19 @@ def _rows_without_cyclists(count: int) -> list[dict[str, object]]:
     ]
 
 
+def _rows_with_uneven_strata() -> list[dict[str, object]]:
+    rows = _rows_without_cyclists(34)
+    for index in range(6):
+        rows.append(
+            {
+                "image_id": f"image_{34 + index:04d}",
+                "cyclist": True,
+                "cyclist_joint": index / 5,
+            }
+        )
+    return rows
+
+
 def _write_rows_jsonl(path: Path, input_rows: list[dict[str, object]]) -> None:
     path.write_text(
         "".join(json.dumps(row, sort_keys=True) + "\n" for row in input_rows),
@@ -182,6 +195,17 @@ class DevelopmentSplitTest(unittest.TestCase):
             build_development_split(
                 _rows_with_four_strata(20), seed=SEED, fraction=FRACTION
             )
+
+    def test_uneven_feasible_strata_remove_multiple_surplus_seats(self) -> None:
+        split = build_development_split(
+            _rows_with_uneven_strata(), seed=SEED, fraction=FRACTION
+        )
+        self.assertEqual(len(split.development_ids), 4)
+        for stratum_ids in split.strata.values():
+            self.assertEqual(
+                len(set(stratum_ids) & set(split.development_ids)), 1
+            )
+            self.assertTrue(set(stratum_ids) & set(split.fit_ids))
 
     def test_duplicate_ids_are_rejected(self) -> None:
         input_rows = _rows_with_four_strata(40)

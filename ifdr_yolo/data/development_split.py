@@ -162,17 +162,13 @@ def _allocate_development_counts(
 
     allocated = sum(counts.values())
     if allocated > development_count:
-        candidates = sorted(
-            (
-                name
-                for name in counts
-                if counts[name] > minimum[name]
-            ),
-            key=lambda name: (remainders[name], name),
-        )
-        for name in candidates:
-            if allocated <= development_count:
+        while allocated > development_count:
+            candidates = [
+                name for name in counts if counts[name] > minimum[name]
+            ]
+            if not candidates:
                 break
+            name = min(candidates, key=lambda item: (remainders[item], item))
             counts[name] -= 1
             allocated -= 1
     elif allocated < development_count:
