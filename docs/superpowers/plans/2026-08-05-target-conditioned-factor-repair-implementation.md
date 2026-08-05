@@ -330,6 +330,9 @@ probabilities and zero non-Cyclist focus probability;
 `0.05` floor; `test_replay_eta_rejects_epoch_zero_and_61` expects `ValueError`;
 and `test_sampler_draws_with_replacement_for_fit_count` consumes one epoch,
 asserts exactly `len(fit_ids)` draws, and permits repeated IDs.
+`test_factor_guided_distribution_has_full_provenance` checks mode,
+manifest/checkpoint/metadata hashes, sorted IDs, all probability maps, and a
+64-hex distribution digest.
 
 - [ ] **Step 2: Run tests and verify failure**
 
@@ -338,6 +341,31 @@ Run: `D:\ana\envs\yolo\python.exe -m unittest tests.test_replay_sampler -v`
 - [ ] **Step 3: Implement the registered schedule and distribution**
 
 ```python
+from dataclasses import dataclass, field
+from typing import Mapping
+
+
+@dataclass(frozen=True)
+class ReplayDistribution:
+    mode: str
+    epoch: int
+    eta: float
+    image_ids: tuple[str, ...]
+    original_probabilities: Mapping[str, float]
+    focus_probabilities: Mapping[str, float]
+    probabilities: Mapping[str, float]
+    source_sha256: str
+    manifest_sha256: str | None
+    calibration_checkpoint_sha256: str | None
+    metadata_index_sha256: str | None
+    distribution_sha256: str
+    focus_scores: Mapping[str, float] = field(default_factory=dict)
+
+    @property
+    def focus_ids(self):
+        return tuple(sorted(self.focus_probabilities))
+
+
 def replay_eta(epoch: int) -> float:
     if not 1 <= epoch <= 60:
         raise ValueError("replay epoch must be in [1, 60]")
@@ -353,7 +381,12 @@ def mixture_probability(original: float, focus: float, epoch: int) -> float:
     return (1.0 - eta) * original + eta * focus
 ```
 
-Use a frozen `ReplayDistribution` containing mode, epoch, eta, sorted IDs, original/focus/final probabilities, source hash, and distribution hash.
+Use this frozen `ReplayDistribution` for M1/M2/M3 and factor-guided replay.
+For factor-guided mode, all four provenance hashes are required; for legacy
+metadata-only modes, manifest/checkpoint hashes are `None` and the source hash
+still binds the metadata/split identity. The canonical serializer covers every
+field, including sorted IDs and all probability maps, when computing
+`distribution_sha256`.
 
 - [ ] **Step 4: Add exactly-once draw journaling tests and implementation**
 
@@ -365,7 +398,12 @@ import unittest
 
 class ReplayDrawJournalTest(unittest.TestCase):
     def test_draw_journal_resume_is_exact(self):
-        identity = {"seed": 17, "distribution_sha256": "a" * 64}
+        identity = {
+            "seed": 17, "distribution_sha256": "a" * 64,
+            "manifest_sha256": "b" * 64,
+            "calibration_checkpoint_sha256": "c" * 64,
+            "metadata_index_sha256": "d" * 64,
+        }
         with TemporaryDirectory() as directory:
             root = Path(directory)
             first = ReplayDrawJournal.create(root, identity=identity)
@@ -376,7 +414,12 @@ class ReplayDrawJournalTest(unittest.TestCase):
             )
             with self.assertRaisesRegex(ValueError, "scientific identity mismatch"):
                 ReplayDrawJournal.open(
-                    root, identity={"seed": 29, "distribution_sha256": "a" * 64}
+                    root, identity={
+                        "seed": 29, "distribution_sha256": "a" * 64,
+                        "manifest_sha256": "b" * 64,
+                        "calibration_checkpoint_sha256": "c" * 64,
+                        "metadata_index_sha256": "d" * 64,
+                    }
                 )
 ```
 
@@ -386,13 +429,20 @@ each changed key must produce a different deterministic draw. Add
 `test_draw_journal_records_realized_counts` and assert image/class count fields
 for all `len(fit_ids)` records, plus
 `test_duplicate_draw_content_fails_closed` for a conflicting duplicate key.
+Add `test_distribution_hash_changes_with_epoch_and_manifest_identity`, which
+expects different hashes for different eta epochs or any changed manifest,
+checkpoint, or metadata hash, and
+`test_draw_journal_rejects_missing_provenance_hashes`, which fails closed for a
+factor-guided identity with any omitted hash.
 
 The journal derives each draw from `(seed, epoch, draw_index,
-distribution_sha256)` so interrupted runs do not depend on mutable RNG state.
+distribution_sha256, manifest_sha256, calibration_checkpoint_sha256,
+metadata_index_sha256)` so interrupted runs do not depend on mutable RNG state.
 Each committed draw records selected image ID, probability, and realized image
 and class counts; duplicate `(epoch, draw_index)` with different content fails
-closed. The formal full-training sampler therefore records exactly 3,712 draws
-per epoch on one GPU.
+closed. Because eta changes by epoch, the queue persists and verifies a distinct
+distribution hash for each epoch. The formal full-training sampler therefore
+records exactly 3,712 draws per epoch on one GPU.
 
 - [ ] **Step 5: Run tests and commit**
 
@@ -432,9 +482,21 @@ class LearnedFactorManifestTest(unittest.TestCase):
         self.assertLess(ranks["a"], ranks["c"])
 
     def test_focus_score_uses_metadata_and_learned_half_weights(self):
+        manifest = manifest_fixture(
+            condition="F0", fit_ids=("a", "b"),
+            object_records=(
+                learned_object("a", "a:000001", 0.0, 0.0, 0.0),
+                learned_object("b", "b:000001", 1.0, 1.0, 1.0),
+            ),
+        )
         distribution = build_learned_focus_distribution(
-            metadata_priority={"a": 1.0, "b": 0.0},
-            learned_percentile={"a": 0.0, "b": 1.0},
+            manifest=manifest,
+            metadata_index=metadata_index_fixture(fit_ids=("a", "b")),
+            metadata_priorities=validated_metadata_priorities_fixture(
+                values={"a": 1.0, "b": 0.0},
+                metadata_index_sha256=manifest.metadata_index_sha256,
+            ),
+            epoch=20,
         )
         self.assertAlmostEqual(distribution.focus_scores["a"], 0.5)
         self.assertAlmostEqual(distribution.focus_scores["b"], 0.5)
@@ -443,16 +505,30 @@ class LearnedFactorManifestTest(unittest.TestCase):
     def test_manifest_rejects_development_id_and_binds_checkpoint(self):
         with self.assertRaisesRegex(ValueError, "development leakage"):
             build_manifest_from_records(
-                records=("dev-1",), fit_ids=("fit-1",),
-                checkpoint_sha256="a" * 64, node_ids=(17, 20, 23, 26),
+                condition="F0", checkpoint_path="/runs/f0/calibration/last.pt",
+                checkpoint_role="calibration_last", records=("dev-1",),
+                fit_ids=("fit-1",), checkpoint_sha256="a" * 64,
+                fit_ids_sha256="c" * 64, metadata_index_sha256="d" * 64,
+                expected_object_ids_sha256="e" * 64,
+                primary_node_ids=(17, 20, 23, 26),
             )
         manifest = build_manifest_from_records(
-            records=("fit-1",), fit_ids=("fit-1",),
-            checkpoint_sha256="b" * 64, node_ids=(17, 20, 23, 26),
+            condition="F0", checkpoint_path="/runs/f0/calibration/last.pt",
+            checkpoint_role="calibration_last", records=("fit-1",),
+            fit_ids=("fit-1",), checkpoint_sha256="b" * 64,
+            fit_ids_sha256="c" * 64, metadata_index_sha256="d" * 64,
+            expected_object_ids_sha256="e" * 64,
+            primary_node_ids=(17, 20, 23, 26),
         )
+        self.assertEqual(manifest.schema_version, "factor-manifest-v1")
+        self.assertEqual(manifest.condition, "F0")
+        self.assertEqual(manifest.checkpoint_role, "calibration_last")
+        self.assertEqual(manifest.checkpoint_path,
+                         "/runs/f0/calibration/last.pt")
         self.assertEqual(manifest.checkpoint_sha256, "b" * 64)
-        self.assertEqual(manifest.node_ids, (17, 20, 23, 26))
-        self.assertEqual(len(manifest.sha256), 64)
+        self.assertEqual(manifest.fit_ids, ("fit-1",))
+        self.assertEqual(manifest.primary_node_ids, (17, 20, 23, 26))
+        self.assertEqual(len(manifest.manifest_sha256), 64)
 ```
 
 Add `test_image_priority_uses_max_eligible_cyclist_joint`, which supplies two
@@ -460,6 +536,27 @@ eligible Cyclist objects and one non-Cyclist object and expects the image
 priority to equal only the larger eligible joint; and
 `test_failed_candidate_gate_blocks_manifest_write`, which expects no manifest
 file or digest when the candidate decision is failed.
+`test_focus_rejects_unbound_priority_dict` passes a bare mapping or a priority
+wrapper with the wrong metadata-index SHA256 and expects `ValueError` before a
+distribution is returned.
+
+Add these fail-closed builder tests with exact fixtures:
+`test_manifest_generation_temporarily_evals_model_and_preserves_state` starts
+the model in train mode with changed normalization buffers, compares the full
+model-state hash before and after (including BN running buffers), and expects
+every semantic module's training flag restored; `test_manifest_requires_every_fit_image` removes one fit image
+and expects `ValueError("fit image coverage")`; and
+`test_manifest_requires_exact_eligible_object_identity_set` removes one
+eligible object, adds one development object, or duplicates one object and
+expects `ValueError("object identity coverage")` in each case.
+Add `test_manifest_digest_changes_for_checkpoint_fit_metadata_or_object_edit`,
+which edits each bound field independently and expects a different
+`manifest_sha256`, and
+`test_distribution_rejects_manifest_or_metadata_hash_mismatch`, which expects
+both distribution construction and queue resume to
+fail closed after any such edit. `test_manifest_path_is_resolved_and_secret_free`
+passes a credential-bearing path and expects the stored resolved provenance
+path to reject the secret-bearing form.
 
 - [ ] **Step 2: Run the tests and verify failure**
 
@@ -472,6 +569,7 @@ Expected: import failure for `ifdr_yolo.data.learned_factor_manifest`.
 ```python
 from dataclasses import dataclass
 from math import isfinite
+from typing import Mapping
 
 
 PRIMARY_NODE_IDS = (17, 20, 23, 26)
@@ -489,11 +587,24 @@ class LearnedObjectFactor:
 
 @dataclass(frozen=True)
 class LearnedFactorManifest:
+    schema_version: str
+    condition: str
+    checkpoint_path: str
+    checkpoint_role: str
     checkpoint_sha256: str
     fit_ids_sha256: str
-    node_ids: tuple[int, ...]
+    fit_ids: tuple[str, ...]
+    metadata_index_sha256: str
+    primary_node_ids: tuple[int, ...]
+    expected_object_ids_sha256: str
     objects: tuple[LearnedObjectFactor, ...]
-    sha256: str
+    manifest_sha256: str
+
+
+@dataclass(frozen=True)
+class ValidatedMetadataPriorities:
+    metadata_index_sha256: str
+    values: Mapping[str, float]
 
 
 def aggregate_primary_node_factors(node_values):
@@ -524,42 +635,127 @@ def average_tie_percentile_rank(scores):
     return result
 
 
-def build_learned_focus_distribution(*, metadata_priority, learned_percentile):
-    if set(metadata_priority) != set(learned_percentile):
-        raise ValueError("metadata and learned focus IDs differ")
+def build_learned_focus_distribution(*, manifest, metadata_index,
+                                     metadata_priorities, epoch):
+    verify_manifest_binding(manifest, metadata_index)
+    if manifest.checkpoint_role != "calibration_last":
+        raise ValueError("learned replay requires calibration_last")
+    if metadata_priorities.metadata_index_sha256 != metadata_index.sha256:
+        raise ValueError("metadata priority hash mismatch")
+    metadata_priority = metadata_priorities.values
+    if set(metadata_priority) != set(manifest.fit_ids):
+        raise ValueError("metadata priority IDs differ from manifest fit IDs")
+    learned_priority = image_max_eligible_cyclist_joint(manifest.objects)
+    learned_percentile = average_tie_percentile_rank(learned_priority)
+    focus_ids = tuple(sorted(learned_priority))
     focus_scores = {
         image_id: 0.5 * metadata_priority[image_id]
         + 0.5 * learned_percentile[image_id]
-        for image_id in metadata_priority
+        for image_id in focus_ids
     }
     weighted = {image_id: score + 0.05 for image_id, score in focus_scores.items()}
     total = sum(weighted.values())
     if total <= 0.0:
         raise ValueError("learned focus distribution is empty")
+    final_probabilities = mix_m3_probabilities(
+        original=uniform_probabilities(manifest.fit_ids),
+        focus={image_id: value / total for image_id, value in weighted.items()},
+        epoch=epoch,
+    )
     return ReplayDistribution(
+        mode="factor_guided", epoch=epoch, eta=replay_eta(epoch),
+        image_ids=tuple(sorted(manifest.fit_ids)),
+        original_probabilities=final_probabilities.original,
+        focus_probabilities=final_probabilities.focus,
+        probabilities=final_probabilities.final,
         focus_scores=focus_scores,
-        focus_probabilities={image_id: value / total for image_id, value in weighted.items()},
+        source_sha256=manifest.manifest_sha256,
+        manifest_sha256=manifest.manifest_sha256,
+        calibration_checkpoint_sha256=manifest.checkpoint_sha256,
+        metadata_index_sha256=manifest.metadata_index_sha256,
+        distribution_sha256=digest_distribution(
+            "factor_guided", epoch, final_probabilities,
+            manifest.manifest_sha256, manifest.checkpoint_sha256,
+            manifest.metadata_index_sha256,
+        ),
     )
 ```
 
-`build_manifest_from_records` rejects any image outside `fit_ids`, validates
-checkpoint and fit-ID SHA256 values, stores only eligible Cyclist object records,
-and computes its digest from checkpoint hash, fit-ID hash, node IDs, and sorted
-object payloads. The loader evaluates each frozen calibration checkpoint on fit
-clean images under `torch.no_grad()`, maps each object ROI independently to
-nodes `(17, 20, 23, 26)`, macro-averages the two channels over nodes, computes
-the learned joint score and image maximum, and writes the immutable manifest
-before adaptation. The sampler uses the manifest's
-`build_learned_focus_distribution` output with the M3 replacement draw and eta
-rules; no candidate manifest is created or consumed after a failed gate, and F0
-is paired only with the selected candidate.
+```python
+def build_learned_factor_manifest(*, condition, checkpoint_path, checkpoint_role,
+                                  checkpoint_sha256, model, loader, fit_ids,
+                                  metadata_index):
+    if checkpoint_role != "calibration_last":
+        raise ValueError("learned manifest requires calibration_last")
+    resolved_path = resolve_provenance_path(checkpoint_path)
+    if sha256_file(resolved_path) != checkpoint_sha256:
+        raise ValueError("calibration checkpoint hash mismatch")
+    load_validated_checkpoint(model, resolved_path, role=checkpoint_role)
+    before_state = full_model_state_sha256(model)
+    before_flags = capture_training_flags(model)
+    expected_images = tuple(sorted(fit_ids))
+    expected_objects = expected_eligible_cyclist_object_ids(
+        metadata_index, expected_images,
+    )
+    observed_images = []
+    observed_objects = []
+    model.eval()
+    try:
+        with torch.no_grad():
+            for batch in deterministic_no_augmentation_loader(loader, expected_images):
+                observed_images.extend(batch.image_ids)
+                observed_objects.extend(
+                    evaluate_primary_nodes(model, batch, PRIMARY_NODE_IDS)
+                )
+    finally:
+        restore_training_flags(model, before_flags)
+    if tuple(sorted(observed_images)) != expected_images:
+        raise ValueError("fit image coverage")
+    observed_ids = tuple(sorted(
+        (record.image_id, record.object_id) for record in observed_objects
+    ))
+    if observed_ids != tuple(sorted(expected_objects)):
+        raise ValueError("object identity coverage")
+    if full_model_state_sha256(model) != before_state:
+        raise ValueError("manifest generation changed model state")
+    return finalize_manifest(
+        schema_version="factor-manifest-v1", condition=condition,
+        checkpoint_path=resolved_path, checkpoint_role=checkpoint_role,
+        checkpoint_sha256=checkpoint_sha256,
+        fit_ids_sha256=digest_ids(expected_images),
+        fit_ids=expected_images,
+        metadata_index_sha256=metadata_index.sha256,
+        primary_node_ids=PRIMARY_NODE_IDS,
+        expected_object_ids_sha256=digest_ids(expected_objects),
+        objects=tuple(sorted(observed_objects)),
+    )
+```
+
+`build_manifest_from_records` rejects any image outside `fit_ids`, validates the
+resolved provenance path, requires `checkpoint_role="calibration_last"`,
+validates checkpoint/fit/metadata/object-set hashes, stores only eligible
+Cyclist object records, and computes `manifest_sha256` from every manifest field
+and sorted object payload. The builder uses a deterministic no-augmentation
+loader whose observed image IDs must exactly equal `fit_ids`; it derives the
+expected eligible object IDs from the bound metadata index and requires exact
+set equality with observed `(image_id, object_id)` records. Before inference it
+records every model parameter/buffer and training flag, switches the model to
+`eval()`, evaluates under `torch.no_grad()`, and restores the flags; a complete
+model-state hash mismatch before/after fails closed. The sampler uses the
+validated manifest and typed metadata-priority record with
+`build_learned_focus_distribution` output and the M3
+replacement draw and eta rules; its distribution and draw-journal identities
+include manifest, calibration-checkpoint, and metadata-index hashes. No
+candidate manifest is created or consumed after a failed gate, and F0 is paired
+only with the selected candidate.
 
 - [ ] **Step 4: Verify manifest and replay integration**
 
 Run: `D:\ana\envs\yolo\python.exe -m unittest tests.test_learned_factor_manifest tests.test_replay_sampler -v`
 
-Expected: all manifest hashes, tie ranks, focus probabilities, fit-ID leakage
-checks, and M3 draw-key tests pass.
+Expected: all manifest provenance/hash fields, temporary-eval state preservation,
+exact fit/object coverage, tie ranks, focus probabilities, fit-ID leakage checks,
+and M3 draw-key tests pass.
 
 - [ ] **Step 5: Commit**
 
@@ -1099,11 +1295,17 @@ git commit -m "feat: isolate semantic factor calibration"
 
 Add `test_task_adaptation_phase_matches_f0_and_candidate` to
 `tests/test_factor_repair_phase.py`. Construct independent F0 and selected
-candidate models from the same initialization, call the registered phase
-factory, and assert all of the following:
+candidate models from the same initialization, then deliberately perturb their
+calibration semantic tensors so their starting semantic hashes differ. Load
+each condition from its own `calibration_last` checkpoint, call the registered
+phase factory, run at least two adaptation epochs/optimizer steps, interrupt
+and resume once, and assert all of the following:
 
 - the frozen semantic names are exactly the twelve projections plus shared
   `reliability_estimator.shared_core` and `factor_head`;
+- each condition records a complete semantic-state hash over those parameters
+  and buffers before adaptation, and F0/candidate starting hashes are allowed
+  (and expected in this fixture) to differ;
 - the F0 and candidate trainable named-parameter sets are equal and contain
   only the enumerated task path (`backbone`, `C2f`, routers, fusion adapters,
   localization adapter, detection head, and explicitly registered gate
@@ -1111,8 +1313,13 @@ factory, and assert all of the following:
 - optimizer class and every hyperparameter are equal after a fresh reset;
 - `epochs == 60`, update count and eta schedule are equal, and early stopping
   is disabled;
-- both primary checkpoint paths are `last.pt`, and semantic state tensors are
-  byte-identical before the first update.
+- after every committed epoch, after the resume, and at the final checkpoint,
+  each condition's semantic-state hash equals its own pre-adaptation hash;
+- the trainer calls `model.train()` for task-path updates but forces every
+  semantic submodule to `eval()`, so all semantic training flags are false and
+  normalization buffers remain unchanged;
+- both primary checkpoint paths are `last.pt` and each condition resumes only
+  from its own checkpoint/provenance identity.
 
 - [ ] **Step 2: Run the equality test and verify failure**
 
@@ -1124,11 +1331,17 @@ contract is implemented.
 - [ ] **Step 3: Implement an independent task-adaptation phase factory**
 
 ```python
-def task_adaptation_phase(model, *, epochs=60, optimizer_name,
-                          optimizer_hparams, eta_schedule,
-                          primary_checkpoint="last.pt"):
-    if epochs != 60 or primary_checkpoint != "last.pt":
-        raise ValueError("registered task adaptation requires 60 epochs and last.pt")
+def task_adaptation_phase(model, *, condition, calibration_checkpoint_path,
+                          calibration_checkpoint_role="calibration_last",
+                          epochs=60, optimizer_name, optimizer_hparams,
+                          eta_schedule, primary_checkpoint="last.pt"):
+    if (calibration_checkpoint_role != "calibration_last"
+            or epochs != 60 or primary_checkpoint != "last.pt"):
+        raise ValueError(
+            "registered adaptation requires calibration_last, 60 epochs, and last.pt"
+        )
+    load_validated_checkpoint(model, calibration_checkpoint_path,
+                             role=calibration_checkpoint_role)
     semantic = {
         name for name, _ in model.factor_semantic_named_parameters()
     }
@@ -1143,6 +1356,10 @@ def task_adaptation_phase(model, *, epochs=60, optimizer_name,
         optimizer_name, model, trainable, optimizer_hparams,
     )
     return TaskAdaptationPhase(
+        condition=condition, calibration_checkpoint_path=resolve_provenance_path(
+            calibration_checkpoint_path,
+        ), calibration_checkpoint_role=calibration_checkpoint_role,
+        semantic_state_sha256=semantic_state_sha256(model, semantic_module_ids(model)),
         epochs=epochs, trainable_parameter_names=trainable,
         frozen_parameter_names=tuple(sorted(semantic)), optimizer=optimizer,
         optimizer_hparams=dict(optimizer_hparams), eta_schedule=tuple(eta_schedule),
@@ -1154,16 +1371,41 @@ def task_adaptation_phase(model, *, epochs=60, optimizer_name,
 The factory freezes the semantic parameters by identity, validates the exact
 task-path allowlist, creates a new optimizer with no inherited state, and uses
 the same optimizer hyperparameters, update count, eta schedule, and no-stop
-policy for F0 and the selected candidate. The trainer receives the phase
-object rather than a free-form epoch count; it writes the fixed-budget
-`last.pt` primary checkpoint and cannot substitute `best.pt` for evaluation.
+policy for F0 and the selected candidate. Each phase loads its own validated
+`calibration_last` checkpoint and snapshots a canonical semantic state hash
+over parameters and buffers; no cross-condition byte-equality assertion is
+allowed. The trainer receives the phase object rather than a free-form epoch
+count. At each epoch boundary and resume it recomputes the condition-local
+hash, fails closed on any change, and runs:
+
+```python
+def enforce_semantic_eval_mode(model, semantic_module_ids):
+    model.train()
+    for module in model.modules():
+        if id(module) in semantic_module_ids:
+            module.eval()
+            for parameter in module.parameters():
+                parameter.requires_grad = False
+```
+
+`semantic_state_sha256(model, semantic_module_ids)` serializes sorted semantic
+module names, every `named_parameter()` tensor, and every `named_buffer()`
+tensor with dtype, shape, and raw bytes; it excludes task-path state and
+returns a 64-hex digest. The epoch journal records this digest for
+`epoch_commit`, `resume_check`, and `final_checkpoint`, and rejects any
+missing or changed record.
+
+The trainer writes the fixed-budget `last.pt` primary checkpoint and cannot
+substitute `best.pt` for evaluation. A resume must verify the saved
+condition-local semantic hash before continuing and after the resumed epoch.
 
 - [ ] **Step 4: Verify adaptation and calibration contracts together**
 
 Run: `D:\ana\envs\yolo\python.exe -m unittest tests.test_factor_repair_phase tests.test_ifdr_trainer -v`
 
 Expected: both phase suites pass, including equal trainable names, optimizer
-reset, schedule, update count, semantic byte identity, and no early stop.
+reset, schedule, update count, condition-local semantic hash preservation across
+epochs/resume/final checkpoint, forced semantic eval mode, and no early stop.
 
 - [ ] **Step 5: Commit**
 
@@ -1208,6 +1450,16 @@ class FactorRepairConfigTest(unittest.TestCase):
                                       extra={"factor_gate": {"rho_threshold": 0.01}})
             with self.assertRaisesRegex(ValueError, "unknown factor_gate fields"):
                 load_factor_repair_config(path)
+
+    def test_bootstrap_seed_or_replicate_override_fails(self):
+        for extra in (
+            {"factor_gate": {"bootstrap_replicates": 10}},
+            {"factor_gate": {"bootstrap_seed": 17}},
+        ):
+            with TemporaryDirectory() as directory:
+                path = write_valid_config(Path(directory), extra=extra)
+                with self.assertRaisesRegex(ValueError, "unknown factor_gate fields"):
+                    load_factor_repair_config(path)
 ```
 
 - [ ] **Step 2: Run tests and verify failure**
@@ -1217,6 +1469,9 @@ Run: `D:\ana\envs\yolo\python.exe -m unittest tests.test_factor_repair_config -v
 - [ ] **Step 3: Implement frozen configuration dataclasses**
 
 Define `DevelopmentProtocolConfig`, `MetadataReplayConfig`, `FactorAlignmentConfig`, `FactorGateConfig`, `RepairConditionConfig`, and `FactorRepairConfig`. All fields are required; unknown fields fail. Register M1/M2/M3 at 60 epochs, F0/F1/F2/F3 calibration at 30 epochs, one 60-epoch task-adaptation budget shared by F0 and the single selected F1-F3 candidate, and `max_selected_factor_repairs=1`. F0 masks natural and specificity terms but retains synthetic supervision. Hard-code validation of registered values from the approved spec rather than accepting alternative thresholds from the command line.
+`FactorGateConfig` intentionally has no bootstrap seed or replicate-count
+fields: the gate module's fixed `FACTOR_GATE_BOOTSTRAP_REPLICATES=10000` and
+`FACTOR_GATE_BOOTSTRAP_SEED=20260805` are not configurable.
 
 - [ ] **Step 4: Write the canonical seed-17 development YAML**
 
@@ -1286,6 +1541,12 @@ are at most `1e-12`; `test_gate_decision_carries_reference_delta_and_hash`
 checks `reference_condition`, point/CI, selected condition, endpoint table,
 and both evidence hashes; and `test_manual_condition_string_is_rejected`
 passes `"F3"` to the queue consumer and expects `ValueError`.
+Add `test_bootstrap_resamples_are_byte_identical_across_repeated_calls`,
+`test_bootstrap_resample_key_is_shared_across_candidate_names`, and
+`test_bootstrap_seed_or_replicate_override_is_rejected`; these assert exactly
+10,000 replicates, seed `20260805`, percentiles `(2.5, 97.5)`, NumPy
+`method="linear"`, candidate-name-independent keys, and a selector API with no
+replicate/seed override parameters.
 
 - [ ] **Step 2: Run tests and verify failure**
 
@@ -1297,6 +1558,8 @@ Run: `D:\ana\envs\yolo\python.exe -m unittest tests.test_factor_repair_gate -v`
 from dataclasses import dataclass
 import math
 from typing import Mapping
+
+import numpy
 
 @dataclass(frozen=True)
 class FactorRepairGateDecision:
@@ -1328,6 +1591,10 @@ PRIMARY_ENDPOINTS = (
     "visibility_specificity_gap",
 )
 
+FACTOR_GATE_BOOTSTRAP_REPLICATES = 10_000
+FACTOR_GATE_BOOTSTRAP_SEED = 20260805
+FACTOR_GATE_BOOTSTRAP_PERCENTILES = (2.5, 97.5)
+
 
 def composite_mechanism_score(evidence):
     values = [float(evidence[name]) for name in PRIMARY_ENDPOINTS]
@@ -1336,7 +1603,44 @@ def composite_mechanism_score(evidence):
     return sum(values) / 4.0
 
 
-def select_repair_against_f0(f0, candidates, *, bootstrap_replicates):
+def paired_resample_indices(*, stage, image_ids_hash, image_count,
+                            replicate_index):
+    key = (FACTOR_GATE_BOOTSTRAP_SEED, stage, image_ids_hash, replicate_index)
+    # image_count is only the output length derived from the paired image IDs;
+    # it is not an additional random-key component.
+    return common_random_number_indices(key, image_count=image_count)
+
+
+def paired_image_cluster_delta(candidate, f0):
+    if candidate.image_ids_hash != f0.image_ids_hash:
+        raise ValueError("candidate/F0 evidence image IDs mismatch")
+    replicates = []
+    for replicate_index in range(FACTOR_GATE_BOOTSTRAP_REPLICATES):
+        indices = paired_resample_indices(
+            stage="development", image_ids_hash=f0.image_ids_hash,
+            image_count=len(f0.image_ids),
+            replicate_index=replicate_index,
+        )
+        candidate_endpoints = recompute_endpoints(candidate, indices)
+        f0_endpoints = recompute_endpoints(f0, indices)
+        replicates.append(
+            composite_mechanism_score(candidate_endpoints)
+            - composite_mechanism_score(f0_endpoints)
+        )
+    point = composite_mechanism_score(candidate.endpoints) \
+        - composite_mechanism_score(f0.endpoints)
+    ci95 = tuple(numpy.quantile(
+        replicates, FACTOR_GATE_BOOTSTRAP_PERCENTILES,
+        method="linear",
+    ))
+    return PairedDelta(
+        point=point, ci95=ci95,
+        candidate_endpoints=candidate.endpoints,
+        candidate_evidence_sha256=candidate.evidence_sha256,
+    )
+
+
+def select_repair_against_f0(f0, candidates):
     if not f0.complete:
         raise ValueError("incomplete F0 evidence")
     f0_score = composite_mechanism_score(f0.endpoints)
@@ -1353,9 +1657,7 @@ def select_repair_against_f0(f0, candidates, *, bootstrap_replicates):
             continue
         if not candidate.absolute_gate_passed:
             continue
-        paired = paired_image_cluster_delta(
-            candidate, f0, bootstrap_replicates=bootstrap_replicates,
-        )
+        paired = paired_image_cluster_delta(candidate, f0)
         if paired.ci95[0] > 0.0:
             selected.append((paired.ci95[0], paired.point, candidate.condition, paired))
     if not selected:
@@ -1448,14 +1750,7 @@ class FactorRepairRunnerTest(unittest.TestCase):
             queue.complete("F0-calibration", artifacts=passing_control_artifacts())
             self.assertFalse(queue.launchable("F0-adaptation"))
             queue.complete("F3-calibration", artifacts=passing_repair_artifacts())
-            decision = FactorRepairSelectionDecision(
-                reference_condition="F0", selected_condition="F3",
-                delta_s_point=0.12, delta_s_ci95=(0.04, 0.20),
-                endpoint_table=passing_repair_endpoint_table(),
-                reference_evidence_sha256="a" * 64,
-                selected_evidence_sha256="b" * 64,
-                decision_sha256="c" * 64,
-            )
+            decision = passing_selection_decision()
             queue.consume_selection_decision(decision)
             self.assertTrue(queue.launchable("F0-adaptation"))
             self.assertTrue(queue.launchable("selected-repair-adaptation"))
@@ -1478,6 +1773,49 @@ class FactorRepairRunnerTest(unittest.TestCase):
             self.assertEqual(queue.track_f_adaptation_status(), "blocked")
 ```
 
+The passing fixture is not allowed to hard-code digest strings:
+
+```python
+def passing_selection_decision():
+    endpoint_table = passing_repair_endpoint_table()
+    reference_evidence = canonical_evidence_payload(
+        condition="F0", image_ids=passing_image_ids(),
+        endpoints=passing_f0_endpoint_table(),
+    )
+    selected_evidence = canonical_evidence_payload(
+        condition="F3", image_ids=passing_image_ids(),
+        endpoints=endpoint_table,
+    )
+    reference_sha256 = sha256_canonical(reference_evidence)
+    selected_sha256 = sha256_canonical(selected_evidence)
+    decision_payload = canonical_selection_payload(
+        reference_condition="F0", selected_condition="F3",
+        delta_s_point=0.12, delta_s_ci95=(0.04, 0.20),
+        endpoint_table={"F0": passing_f0_endpoint_table(),
+                        "F3": endpoint_table},
+        reference_evidence_sha256=reference_sha256,
+        selected_evidence_sha256=selected_sha256,
+    )
+    return FactorRepairSelectionDecision(
+        reference_condition="F0", selected_condition="F3",
+        delta_s_point=0.12, delta_s_ci95=(0.04, 0.20),
+        endpoint_table=deep_freeze({
+            "F0": passing_f0_endpoint_table(), "F3": endpoint_table,
+        }),
+        reference_evidence_sha256=reference_sha256,
+        selected_evidence_sha256=selected_sha256,
+        decision_sha256=sha256_canonical(decision_payload),
+    )
+```
+
+`queue.consume_selection_decision` recomputes the same canonical evidence and
+decision payloads, rejects any tampered SHA256 or mutable nested table, and
+accepts this fixture only when all F0/selected-condition and manifest hashes
+match the completed calibration jobs. `passing_control_artifacts()` and
+`passing_repair_artifacts()` each bind their own non-identical
+`calibration_last` checkpoint path/hash and condition-local semantic-state hash;
+the queue never substitutes `best.pt`.
+
 Add named runner tests with isolated temporary artifacts:
 `test_dirty_checkout_fails_closed`, `test_missing_or_nonhex_hash_fails_closed`,
 `test_initialization_checkpoint_mismatch_fails_closed`,
@@ -1493,6 +1831,12 @@ diagnostic best metric to remain separate. Add
 `test_missing_empty_or_mismatched_last_hash_fails_closed`, which expects a
 failure for each missing path, empty file, or SHA256 mismatch before metrics
 are written.
+Add `test_queue_rejects_best_manifest_or_hash_mismatch`, which submits a
+`best.pt` manifest or a condition/checkpoint/metadata hash mismatch and expects
+no adaptation launch; `test_queue_rejects_tampered_selection_sha` mutates the
+canonical decision digest and expects `ValueError`; and
+`test_factor_guided_draw_identity_binds_manifest`, which changes each
+provenance hash and expects resume rejection.
 
 - [ ] **Step 2: Run tests and verify failure**
 
@@ -1521,7 +1865,7 @@ metrics are diagnostic-only and cannot satisfy a gate or advance the queue.
 
 - [ ] **Step 4: Implement the queue state machine**
 
-Allowed transitions are `pending -> running -> complete`, `pending -> blocked`, and `running -> failed`. Resume changes `failed -> running` only when identity and existing artifacts validate. The queue executes one GPU process at a time, permits the matched F0 control and at most one selected F1-F3 adaptation only after a candidate passes its gate, and blocks Track F adaptation entirely when no candidate passes. Before either adaptation starts, the runner evaluates the frozen calibration checkpoint on fit clean images and persists its immutable learned-factor manifest; a failed candidate gate creates no candidate manifest. `consume_selection_decision` accepts only an immutable `FactorRepairSelectionDecision`, verifies its F0/candidate evidence hashes and digest, and rejects strings, defaults, or any attempt to override the selected condition. It never auto-promotes a method after a failed factor or detection gate.
+Allowed transitions are `pending -> running -> complete`, `pending -> blocked`, and `running -> failed`. Resume changes `failed -> running` only when identity and existing artifacts validate. The queue executes one GPU process at a time, permits the matched F0 control and at most one selected F1-F3 adaptation only after a candidate passes its gate, and blocks Track F adaptation entirely when no candidate passes. Before either adaptation starts, the runner evaluates that condition's validated `calibration_last` checkpoint on fit clean images and persists its immutable learned-factor manifest; a failed candidate gate creates no candidate manifest. `consume_selection_decision` accepts only an immutable `FactorRepairSelectionDecision`, verifies its F0/candidate evidence hashes and digest, and rejects strings, defaults, `best.pt` manifests, or any manifest whose condition/checkpoint/metadata hash does not match the queue job. It never auto-promotes a method after a failed factor or detection gate.
 
 - [ ] **Step 5: Run tests and commit**
 
@@ -1609,7 +1953,7 @@ git commit -m "feat: report factor repair advancement evidence"
 
 - [ ] **Step 1: Add one-batch CPU dry-run test**
 
-The test builds two synthetic KITTI images with Car, Pedestrian and Cyclist objects, runs the F0 and F3 calibration forward/backward paths, and asserts finite synthetic/natural/specificity losses, zero natural/specificity contribution for F0, non-zero gradient only on semantic parameters, and byte-identical frozen parameters.
+The test builds two synthetic KITTI images with Car, Pedestrian and Cyclist objects, runs the F0 and F3 calibration forward/backward paths, and asserts finite synthetic/natural/specificity losses, zero natural/specificity contribution for F0, non-zero gradient only on semantic parameters, and condition-local semantic state hashes unchanged across the calibration validation step.
 
 - [ ] **Step 2: Run the CPU dry run**
 
@@ -1811,7 +2155,7 @@ git commit -m "docs: add independently verifiable factor repair package"
 
 - Spec coverage: target-conditioned definitions, object-balanced ROI loss, background specificity, leakage-free split, M1/M2/M3, F0-F3, relative selection, immutable learned replay, freeze rules, exact task adaptation, node gates, advancement, recovery, failure semantics, and independent reproducibility evidence all map to Tasks 1-13 (with Task 6A owning the matched adaptation phase).
 - Completeness scan: every code-changing step names concrete interfaces, commands and expected behavior. Unknown content hashes are generated from completed manifests before the canonical YAML can be written, and Task 13 rejects missing machine-bound evidence.
-- Type consistency: `DevelopmentSplit`, `FactorMetadataIndex`, `ReplayDistribution`, `ObjectFactorTarget`, `FactorRepairGateDecision`, and phase/report interfaces keep the same names across producing and consuming tasks.
+- Type consistency: `DevelopmentSplit`, `FactorMetadataIndex`, `ReplayDistribution`, `LearnedFactorManifest`, `ValidatedMetadataPriorities`, `ObjectFactorTarget`, `FactorRepairGateDecision`, `FactorRepairSelectionDecision`, and phase/report interfaces keep the same names across producing and consuming tasks.
 - Scope: no attention module, new backbone, new IoU variant, inference-graph change, validation-label modification, or BDD100K launch is included.
 
 Plan completion condition: this document is approved, then Tasks 1-12 are executed with review after each task and Task 13 is completed by an independent reviewer. No new GPU experiment begins before Task 12 reports `READY`.

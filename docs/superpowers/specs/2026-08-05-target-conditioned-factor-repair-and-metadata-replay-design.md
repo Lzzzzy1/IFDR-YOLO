@@ -344,18 +344,26 @@ When an F1--F3 candidate passes the development factor audit and beats F0 on
 the registered mechanism evidence, F0 supplies the new-repair-term
 compute-matched adaptation control and that single candidate has its semantic
 parameters frozen for the same 60-epoch focus/recovery adaptation as F0 and
-M3. F0 and the selected candidate must have byte-identical frozen semantic
-parameters: all twelve projections plus shared `shared_core` and `factor_head`.
-Their trainable named-parameter sets must be identical and contain only the
-remaining task path (backbone, C2f blocks, routers, fusion adapters,
-localization adapter, detection head, and any explicitly enumerated gate
-parameters). They use the same optimizer type and hyperparameters after an
-optimizer reset, the same update count and eta schedule, no early stopping,
-and the same `last.pt` primary checkpoint rule. Factors may condition replay
-only after the audit passes; metadata scores remain a mandatory control. If no
-F1--F3 candidate passes, no Track F adaptation is started and Track M is the
-only allowed method claim. The previously accepted full-training checkpoint is
-named `F_ref` and remains a frozen reference, not an ablation condition.
+M3. Each condition loads its own validated calibration `last.pt` checkpoint;
+the F0 and selected-candidate semantic starting states may differ and are not
+required to be byte-identical. For each condition, snapshot the complete
+semantic state (all twelve projections plus shared `shared_core` and
+`factor_head` parameters and buffers) before adaptation and record
+`semantic_state_sha256`. After every committed epoch, after resume, and at the
+final checkpoint, that condition's semantic-state hash must equal its own
+starting hash. `requires_grad=False` is necessary but insufficient: after every
+`model.train()` call, the trainer forces all semantic submodules back to
+`eval()` so normalization buffers and training flags cannot change. Their
+trainable named-parameter sets must be identical and contain only the remaining
+task path (backbone, C2f blocks, routers, fusion adapters, localization adapter,
+detection head, and any explicitly enumerated gate parameters). They use the
+same optimizer type and hyperparameters after an optimizer reset, the same
+update count and eta schedule, no early stopping, and the same `last.pt`
+primary checkpoint rule. Factors may condition replay only after the audit
+passes; metadata scores remain a mandatory control. If no F1--F3 candidate
+passes, no Track F adaptation is started and Track M is the only allowed
+method claim. The previously accepted full-training checkpoint is named `F_ref`
+and remains a frozen reference, not an ablation condition.
 
 Upstream detector updates can change the frozen factor encoder's inputs, so the
 complete natural audit is repeated after task adaptation. A post-adaptation
@@ -363,12 +371,20 @@ audit failure rejects the factor-guided claim even when AP improves.
 
 ### Learned-factor replay contract
 
-After semantic calibration and before task adaptation, each frozen calibration
-checkpoint produces an immutable per-image learned-factor manifest by evaluating
-fit clean images in `no_grad` mode. Only eligible Cyclist object ROIs and the
-primary P2--P5 nodes `(17, 20, 23, 26)` are included; development IDs are
-rejected before evaluation. Each object/factor is first macro-averaged across
-the primary nodes. The learned object score is
+After semantic calibration and before task adaptation, each validated
+calibration `last.pt` checkpoint (role `calibration_last`, never `best.pt`)
+produces an immutable per-image learned-factor manifest. The loader resolves
+the checkpoint provenance path, enters `eval()` under `torch.no_grad()`, uses a
+deterministic no-augmentation loader covering every fit ID exactly once, and
+restores all model training flags afterward. The complete model state hash
+before and after manifest generation must match. Only eligible Cyclist object
+ROIs and the primary P2--P5 nodes `(17, 20, 23, 26)` are included;
+development IDs are rejected before evaluation. The expected eligible object
+identity set is exported from the bound metadata index intersected with fit IDs;
+observed object IDs must exactly equal that set with no missing, extra, or
+duplicate records, and observed image IDs must exactly equal fit IDs. Each
+object/factor is first macro-averaged across the primary nodes. The learned
+object score is
 
 `learned_joint = 1 - (1 - learned_sampling) * (1 - learned_visibility)`.
 
@@ -386,12 +402,29 @@ as `P_focus`, then mixed with uniform `P_original` using the registered M3
 `P_t`, eta schedule, replacement draw count, and draw-key journal.
 
 F0 and the selected candidate use the same formula and independent manifests;
-their only scientific difference is the frozen calibration checkpoint. Each
-manifest binds checkpoint SHA256, fit-ID hash, node list, object records, and
-its own digest and is immutable. A candidate that fails the factor gate cannot
-produce or be used for adaptation. F0 is generated and replayed only as the
-matched control paired with the selected candidate. A post-adaptation audit
-failure revokes the factor-guided claim even if the learned replay improves AP.
+their only scientific difference is their own validated calibration checkpoint.
+Each manifest is immutable and binds `schema_version`, condition,
+resolved `checkpoint_path`, `checkpoint_role=calibration_last`, checkpoint
+SHA256, fit-ID SHA256, metadata-index SHA256, primary-node IDs, expected object
+ID SHA256, sorted object records, and its own digest. The resolved path is a
+non-secret provenance path. A candidate that fails the
+factor gate cannot produce or be used for adaptation. F0 is generated and
+replayed only as the matched control paired with the selected candidate. A
+post-adaptation audit failure revokes the factor-guided claim even if the
+learned replay improves AP.
+
+`build_learned_focus_distribution` accepts only a validated manifest, bound
+metadata index, and a typed metadata-priority record carrying the index SHA256;
+it rejects raw priority dictionaries or mismatched priority hashes and verifies
+all bound hashes. It returns the complete `ReplayDistribution` contract with
+`mode="factor_guided"`, epoch, eta, sorted IDs, original/focus/final
+probabilities, source SHA256, manifest SHA256, calibration-checkpoint SHA256,
+metadata-index SHA256, and a distribution SHA256 covering every field. The
+draw-journal identity binds the distribution, manifest, calibration checkpoint,
+and metadata-index hashes, so each eta-specific distribution has its own
+digest and resume identity. The queue accepts only F0 or the selected
+candidate's matching `calibration_last` manifest and rejects `best.pt` or an
+unbound priority map.
 
 ## Pre-Registered Factor Gate
 
@@ -430,6 +463,16 @@ residual covariate, target/background pair, and bootstrap cluster. Missing,
 malformed, or non-finite F0 evidence fails closed and prevents every Track F
 adaptation. F0 and each F1--F3 candidate must use exactly the same evidence
 image IDs and image-ID hash; a mismatch is a scientific-identity failure.
+
+The paired bootstrap is fully pre-registered:
+`FACTOR_GATE_BOOTSTRAP_REPLICATES=10000` and
+`FACTOR_GATE_BOOTSTRAP_SEED=20260805`. The selector API exposes neither a
+replicate-count nor a seed override, and configuration fields attempting to
+provide either are unknown fields and fail closed. Every candidate-vs-F0
+comparison uses common-random-number resamples whose indices are derived only
+from the fixed seed, stage, sorted paired image-ID hash, and replicate index;
+candidate condition names never enter the resample key. The interval uses the
+fixed 2.5/97.5 percentiles with NumPy quantile `method="linear"`.
 
 For each condition, the four pooled primary-node endpoints are:
 
@@ -566,8 +609,14 @@ Required implementation test coverage includes:
   multi-candidate selection, and incomplete-F0 fail-closed behavior;
 - immutable learned-factor manifests, average-tie percentile ranking, the
   metadata/learned 0.5/0.5 safeguard, and candidate-gate manifest blocking;
+- learned-manifest eval/no-grad state preservation, exact fit/object identity
+  coverage, full provenance/hash-chain fields, and typed distribution/draw
+  identity bindings;
 - equal F0/selected-candidate task-adaptation trainable names, optimizer,
-  schedules, update counts, frozen semantic tensors, and checkpoint policy;
+  schedules, update counts, per-condition semantic state hashes across epochs,
+  resume and final checkpoint, forced semantic eval mode, and checkpoint policy;
+- fixed 10,000-replicate/seeded common-random-number bootstrap keys,
+  quantile method, deterministic repeatability, and rejected override attempts;
 - post-adaptation audit enforcement;
 - equal-budget experiment configuration checks;
 - identical initialization hash, reset optimizer, fixed `last.pt` primary versus
