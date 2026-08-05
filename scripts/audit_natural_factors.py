@@ -47,6 +47,8 @@ from ifdr_yolo.eval.natural_factor_audit import (
 REQUIRED_SEEDS = (17, 29, 41)
 CLASS_NAMES = ("Car", "Pedestrian", "Cyclist")
 SELECTION_STRATEGY = "joint_degradation_max_one_per_class_v1"
+AUDIT_CONFIDENCE = 0.95
+MONOTONIC_THRESHOLD = 0.80
 
 
 def _canonical_json(value: object) -> str:
@@ -561,6 +563,9 @@ def _scientific_identity(
     input_size: int,
     bootstrap_replicates: int,
     severities: Sequence[float],
+    confidence: float,
+    monotonic_threshold: float,
+    implementation_git_commit: str | None,
 ) -> dict[str, object]:
     return {
         "metadata_sha256": metadata_sha256,
@@ -581,6 +586,9 @@ def _scientific_identity(
         "input_size": int(input_size),
         "bootstrap_replicates": int(bootstrap_replicates),
         "registered_severities": list(severities),
+        "confidence": float(confidence),
+        "monotonic_threshold": float(monotonic_threshold),
+        "implementation_git_commit": implementation_git_commit,
     }
 
 
@@ -674,6 +682,7 @@ def _run(args: argparse.Namespace) -> int:
             )
             manifests[seed] = manifest
             manifest_hashes[seed] = manifest.hash()
+        implementation_git_commit = _git_commit()
         scientific = _scientific_identity(
             metadata_sha256=metadata_sha256,
             train_sha256=_sha256_file(args.train_ids.expanduser().resolve(strict=False)),
@@ -689,6 +698,9 @@ def _run(args: argparse.Namespace) -> int:
             input_size=args.input_size,
             bootstrap_replicates=args.bootstrap_replicates,
             severities=severities,
+            confidence=AUDIT_CONFIDENCE,
+            monotonic_threshold=MONOTONIC_THRESHOLD,
+            implementation_git_commit=implementation_git_commit,
         )
         _validate_existing_provenance(provenance_path, scientific)
         for seed in REQUIRED_SEEDS:
@@ -755,8 +767,10 @@ def _run(args: argparse.Namespace) -> int:
             rows,
             required_seeds=REQUIRED_SEEDS,
             required_nodes=DEFAULT_REQUIRED_NODES,
+            monotonic_threshold=MONOTONIC_THRESHOLD,
             bootstrap_replicates=args.bootstrap_replicates,
             bootstrap_seed=args.audit_seed,
+            confidence=AUDIT_CONFIDENCE,
             expected_intervention_severities=severities,
         )
         gate_payload = decision.to_dict() if hasattr(decision, "to_dict") else dict(decision)
@@ -808,6 +822,8 @@ if __name__ == "__main__":
 
 
 __all__ = [
+    "AUDIT_CONFIDENCE",
+    "MONOTONIC_THRESHOLD",
     "REQUIRED_SEEDS",
     "SELECTION_STRATEGY",
     "build_parser",

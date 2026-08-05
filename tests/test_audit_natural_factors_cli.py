@@ -461,12 +461,15 @@ class NaturalFactorAuditCliTest(unittest.TestCase):
                 cli, "run_factor_observer", side_effect=fake_runner
             ), patch.object(cli, "_load_observation_rows", return_value=fixture), patch.object(
                 cli, "audit_natural_factors", return_value=FakeGate()
-            ):
+            ) as audit, patch.object(cli, "_git_commit", return_value="implementation-old"):
                 self.assertEqual(cli._run(args), 0)
                 first_root = (output / "observations.jsonl").read_bytes()
                 self.assertGreater(len(first_root), 0)
                 provenance = json.loads((output / "provenance.json").read_text(encoding="utf-8"))
                 scientific = provenance["scientific_identity"]
+                self.assertEqual(scientific["confidence"], cli.AUDIT_CONFIDENCE)
+                self.assertEqual(scientific["monotonic_threshold"], cli.MONOTONIC_THRESHOLD)
+                self.assertEqual(scientific["implementation_git_commit"], "implementation-old")
                 self.assertNotIn("transform_batch_size", scientific)
                 for path_key in (
                     "metadata_path", "train_ids_path", "val_ids_path", "checkpoint_paths", "image_dir"
@@ -478,7 +481,32 @@ class NaturalFactorAuditCliTest(unittest.TestCase):
                     provenance["runtime"]["paths"]["metadata_jsonl"],
                     str(metadata.resolve()),
                 )
+                self.assertEqual(audit.call_args.kwargs["confidence"], cli.AUDIT_CONFIDENCE)
+                self.assertEqual(
+                    audit.call_args.kwargs["monotonic_threshold"], cli.MONOTONIC_THRESHOLD
+                )
                 valid_provenance_bytes = (output / "provenance.json").read_bytes()
+
+                implementation_mismatch_files = {
+                    path: path.read_bytes()
+                    for path in output.rglob("*")
+                    if path.is_file()
+                }
+                with patch.object(cli, "_git_commit", return_value="implementation-new"), patch.object(
+                    cli, "load_ifdr_checkpoint"
+                ) as loader, patch.object(cli, "run_factor_observer") as runner:
+                    with self.assertRaises(ValueError):
+                        cli._run(args)
+                    loader.assert_not_called()
+                    runner.assert_not_called()
+                self.assertEqual(
+                    {
+                        path: path.read_bytes()
+                        for path in output.rglob("*")
+                        if path.is_file()
+                    },
+                    implementation_mismatch_files,
+                )
 
                 provenance["scientific_identity"]["audit_seed"] = 1
                 (output / "provenance.json").write_text(
