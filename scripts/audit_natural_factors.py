@@ -417,10 +417,10 @@ def _validate_existing_manifest(seed_dir: Path, manifest: FactorObservationManif
     hash_present = hash_path.exists() or hash_path.is_symlink()
     if not manifest_present and not hash_present:
         return
-    if not manifest_path.is_file() or not hash_path.is_file():
-        raise ValueError(f"seed manifest files are incomplete: {seed_dir}")
-    _validate_manifest_json_file(manifest_path, manifest)
-    _validate_manifest_hash_file(hash_path, manifest)
+    if manifest_present:
+        _validate_manifest_json_file(manifest_path, manifest)
+    if hash_present:
+        _validate_manifest_hash_file(hash_path, manifest)
 
 
 def _load_observation_rows(

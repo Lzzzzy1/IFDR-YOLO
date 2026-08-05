@@ -581,6 +581,18 @@ class NaturalFactorAuditCliTest(unittest.TestCase):
                         protected_files,
                     )
 
+                partial_manifest_path = output / "seed-17" / "manifest.json"
+                partial_hash_path = partial_manifest_path.with_name("manifest.sha256")
+                partial_hash_bytes = partial_hash_path.read_bytes()
+                partial_hash_path.unlink()
+                self.assertEqual(cli._run(args), 0)
+                self.assertEqual(partial_hash_path.read_bytes(), partial_hash_bytes)
+
+                partial_manifest_bytes = partial_manifest_path.read_bytes()
+                partial_manifest_path.unlink()
+                self.assertEqual(cli._run(args), 0)
+                self.assertEqual(partial_manifest_path.read_bytes(), partial_manifest_bytes)
+
                 implementation_mismatch_files = {
                     path: path.read_bytes()
                     for path in output.rglob("*")
