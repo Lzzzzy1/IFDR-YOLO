@@ -325,38 +325,89 @@ def _split_selection_hash(train_ids: Sequence[str], val_ids: Sequence[str], audi
     return _sha256_bytes(_canonical_json(payload).encode("utf-8"))
 
 
-def _git_commit() -> str | None:
+def _git_commit() -> str:
+    repository = Path(__file__).resolve().parents[1]
     try:
-        result = subprocess.run(
+        head_result = subprocess.run(
             ("git", "rev-parse", "HEAD"),
             capture_output=True,
             text=True,
             check=False,
-            cwd=Path(__file__).resolve().parents[1],
+            cwd=repository,
         )
-    except OSError:
-        return None
-    if result.returncode != 0:
-        return None
-    value = result.stdout.strip()
-    return value or None
+    except OSError as exc:
+        raise ValueError("unable to verify a clean Git worktree") from exc
+    if head_result.returncode != 0:
+        raise ValueError("unable to resolve Git HEAD")
+    value = (head_result.stdout or "").strip()
+    if len(value) != 40 or any(character not in "0123456789abcdef" for character in value):
+        raise ValueError("Git HEAD is not a 40-character hexadecimal commit")
+    try:
+        status_result = subprocess.run(
+            ("git", "status", "--porcelain"),
+            capture_output=True,
+            text=True,
+            check=False,
+            cwd=repository,
+        )
+    except OSError as exc:
+        raise ValueError("unable to verify a clean Git worktree") from exc
+    if status_result.returncode != 0:
+        raise ValueError("unable to verify Git worktree status")
+    if (status_result.stdout or "").strip():
+        raise ValueError("Git worktree must be clean")
+    return value
 
 
 def _manifest_hash_file(path: Path, manifest: FactorObservationManifest) -> None:
+    manifest_path = path
     hash_path = path.with_name("manifest.sha256")
-    if (
-        path.exists()
-        or path.is_symlink()
-        or hash_path.exists()
-        or hash_path.is_symlink()
-    ):
+    manifest_present = manifest_path.exists() or manifest_path.is_symlink()
+    hash_present = hash_path.exists() or hash_path.is_symlink()
+    if manifest_present and hash_present:
         _validate_existing_manifest(path.parent, manifest)
         return
-    _atomic_write_json(path, manifest.to_dict())
-    _atomic_write_bytes(
-        hash_path,
-        (manifest.hash() + "\n").encode("ascii"),
-    )
+    if manifest_present:
+        _validate_manifest_json_file(manifest_path, manifest)
+        _atomic_write_bytes(hash_path, (manifest.hash() + "\n").encode("ascii"))
+        return
+    if hash_present:
+        _validate_manifest_hash_file(hash_path, manifest)
+        _atomic_write_json(manifest_path, manifest.to_dict())
+        return
+    _atomic_write_json(manifest_path, manifest.to_dict())
+    _atomic_write_bytes(hash_path, (manifest.hash() + "\n").encode("ascii"))
+
+
+def _validate_manifest_json_file(path: Path, manifest: FactorObservationManifest) -> None:
+    if path.is_symlink() or not path.is_file():
+        raise ValueError(f"seed manifest files are incomplete: {path.parent}")
+    try:
+        raw_manifest = path.read_bytes()
+        payload = json.loads(
+            raw_manifest.decode("utf-8"),
+            parse_constant=lambda value: (_ for _ in ()).throw(ValueError(value)),
+        )
+    except (OSError, UnicodeDecodeError, TypeError, ValueError) as exc:
+        raise ValueError(f"seed manifest is malformed: {path.parent}") from exc
+    try:
+        matches = _canonical_json(payload) == _canonical_json(manifest.to_dict())
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"seed manifest is malformed: {path.parent}") from exc
+    if not matches:
+        raise ValueError(f"seed manifest does not match current manifest: {path.parent}")
+
+
+def _validate_manifest_hash_file(path: Path, manifest: FactorObservationManifest) -> None:
+    if path.is_symlink() or not path.is_file():
+        raise ValueError(f"seed manifest files are incomplete: {path.parent}")
+    try:
+        raw_hash = path.read_bytes()
+        existing_hash = raw_hash.decode("ascii").strip()
+    except (OSError, UnicodeDecodeError) as exc:
+        raise ValueError(f"seed manifest hash is malformed: {path.parent}") from exc
+    if existing_hash != manifest.hash():
+        raise ValueError(f"seed manifest hash does not match current manifest: {path.parent}")
 
 
 def _validate_existing_manifest(seed_dir: Path, manifest: FactorObservationManifest) -> None:
@@ -366,34 +417,10 @@ def _validate_existing_manifest(seed_dir: Path, manifest: FactorObservationManif
     hash_present = hash_path.exists() or hash_path.is_symlink()
     if not manifest_present and not hash_present:
         return
-    if (
-        manifest_path.is_symlink()
-        or hash_path.is_symlink()
-        or not manifest_path.is_file()
-        or not hash_path.is_file()
-    ):
+    if not manifest_path.is_file() or not hash_path.is_file():
         raise ValueError(f"seed manifest files are incomplete: {seed_dir}")
-    try:
-        raw_manifest = manifest_path.read_bytes()
-        raw_hash = hash_path.read_bytes()
-        payload = json.loads(
-            raw_manifest.decode("utf-8"),
-            parse_constant=lambda value: (_ for _ in ()).throw(ValueError(value)),
-        )
-    except (OSError, UnicodeDecodeError, TypeError, ValueError) as exc:
-        raise ValueError(f"seed manifest is malformed: {seed_dir}") from exc
-    try:
-        matches = _canonical_json(payload) == _canonical_json(manifest.to_dict())
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"seed manifest is malformed: {seed_dir}") from exc
-    if not matches:
-        raise ValueError(f"seed manifest does not match current manifest: {seed_dir}")
-    try:
-        existing_hash = raw_hash.decode("ascii").strip()
-    except UnicodeDecodeError as exc:
-        raise ValueError(f"seed manifest hash is malformed: {seed_dir}") from exc
-    if existing_hash != manifest.hash():
-        raise ValueError(f"seed manifest hash does not match current manifest: {seed_dir}")
+    _validate_manifest_json_file(manifest_path, manifest)
+    _validate_manifest_hash_file(hash_path, manifest)
 
 
 def _load_observation_rows(
@@ -565,7 +592,7 @@ def _scientific_identity(
     severities: Sequence[float],
     confidence: float,
     monotonic_threshold: float,
-    implementation_git_commit: str | None,
+    implementation_git_commit: str,
 ) -> dict[str, object]:
     return {
         "metadata_sha256": metadata_sha256,
@@ -614,18 +641,25 @@ def _validate_existing_provenance(path: Path, scientific: Mapping[str, object]) 
         raise ValueError("provenance scientific identity mismatch; refusing to resume")
 
 
-def _check_or_write_provenance(path: Path, scientific: Mapping[str, object], runtime: Mapping[str, object]) -> None:
+def _check_or_write_provenance(
+    path: Path,
+    scientific: Mapping[str, object],
+    runtime: Mapping[str, object],
+    *,
+    implementation_git_commit: str,
+) -> None:
     _validate_existing_provenance(path, scientific)
     payload = {
         "schema_version": 1,
         "scientific_identity": dict(scientific),
         "runtime": dict(runtime),
-        "git_commit": _git_commit(),
+        "git_commit": implementation_git_commit,
     }
     _atomic_write_json(path, payload)
 
 
 def _run(args: argparse.Namespace) -> int:
+    implementation_git_commit = _git_commit()
     output_dir = args.output_dir.expanduser().resolve(strict=False)
     output_dir.mkdir(parents=True, exist_ok=True)
     status_path = output_dir / "status.json"
@@ -682,7 +716,6 @@ def _run(args: argparse.Namespace) -> int:
             )
             manifests[seed] = manifest
             manifest_hashes[seed] = manifest.hash()
-        implementation_git_commit = _git_commit()
         scientific = _scientific_identity(
             metadata_sha256=metadata_sha256,
             train_sha256=_sha256_file(args.train_ids.expanduser().resolve(strict=False)),
@@ -724,7 +757,12 @@ def _run(args: argparse.Namespace) -> int:
 
         _atomic_write_json(status_path, {"schema_version": 1, "status": "running"})
         status_started = True
-        _check_or_write_provenance(provenance_path, scientific, runtime)
+        _check_or_write_provenance(
+            provenance_path,
+            scientific,
+            runtime,
+            implementation_git_commit=implementation_git_commit,
+        )
         for seed in REQUIRED_SEEDS:
             seed_dir = output_dir / f"seed-{seed}"
             seed_dir.mkdir(parents=True, exist_ok=True)
@@ -753,6 +791,7 @@ def _run(args: argparse.Namespace) -> int:
                 seed_dir / "observations.jsonl",
                 seed_dir / "progress.json",
             )
+            del loaded
         root_observations = _rebuild_root_observations(output_dir, REQUIRED_SEEDS)
         expected_root_ids = {
             observation_id
@@ -782,7 +821,12 @@ def _run(args: argparse.Namespace) -> int:
         )
         _atomic_write_json(output_dir / "summary.json", summary_payload)
         _atomic_write_json(output_dir / "gate.json", gate_payload)
-        _check_or_write_provenance(provenance_path, scientific, runtime)
+        _check_or_write_provenance(
+            provenance_path,
+            scientific,
+            runtime,
+            implementation_git_commit=implementation_git_commit,
+        )
         required_files = (
             root_observations,
             output_dir / "summary.json",

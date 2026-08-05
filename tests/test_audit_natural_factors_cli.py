@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import tempfile
+from types import SimpleNamespace
 import unittest
+import weakref
 from unittest.mock import patch
 
 import cv2
@@ -11,6 +13,29 @@ import numpy as np
 
 
 class NaturalFactorAuditCliTest(unittest.TestCase):
+    def test_git_commit_requires_valid_clean_worktree(self) -> None:
+        import scripts.audit_natural_factors as cli
+
+        clean_head = SimpleNamespace(returncode=0, stdout="a" * 40 + "\n")
+        clean_status = SimpleNamespace(returncode=0, stdout="")
+        with patch.object(cli.subprocess, "run", side_effect=[clean_head, clean_status]):
+            self.assertEqual(cli._git_commit(), "a" * 40)
+
+        dirty_head = SimpleNamespace(returncode=0, stdout="a" * 40 + "\n")
+        dirty_status = SimpleNamespace(returncode=0, stdout=" M scripts/audit_natural_factors.py\n")
+        with patch.object(cli.subprocess, "run", side_effect=[dirty_head, dirty_status]):
+            with self.assertRaises(ValueError):
+                cli._git_commit()
+
+        invalid_head = SimpleNamespace(returncode=0, stdout="a" * 39 + "\n")
+        with patch.object(cli.subprocess, "run", return_value=invalid_head):
+            with self.assertRaises(ValueError):
+                cli._git_commit()
+
+        with patch.object(cli.subprocess, "run", side_effect=OSError("git missing")):
+            with self.assertRaises(ValueError):
+                cli._git_commit()
+
     def test_parser_has_frozen_defaults_and_repeatable_checkpoints(self) -> None:
         from scripts.audit_natural_factors import build_parser
 
@@ -201,7 +226,7 @@ class NaturalFactorAuditCliTest(unittest.TestCase):
                 cli._manifest_hash_file(path, Manifest())
             self.assertEqual((path.read_bytes(), hash_path.read_bytes()), before)
 
-    def test_manifest_hash_helper_rejects_partial_pair_without_writes(self) -> None:
+    def test_manifest_hash_helper_recovers_valid_partial_and_rejects_invalid(self) -> None:
         import scripts.audit_natural_factors as cli
 
         class Manifest:
@@ -216,30 +241,62 @@ class NaturalFactorAuditCliTest(unittest.TestCase):
             manifest_path = root / "manifest.json"
             hash_path = root / "manifest.sha256"
             manifest_path.write_bytes(b'{"seed": 17}\n')
-            before = manifest_path.read_bytes()
-            with self.assertRaises(ValueError):
-                cli._manifest_hash_file(manifest_path, Manifest())
-            self.assertEqual(manifest_path.read_bytes(), before)
-            self.assertFalse(hash_path.exists())
+            manifest_before = manifest_path.read_bytes()
+            cli._manifest_hash_file(manifest_path, Manifest())
+            self.assertEqual(manifest_path.read_bytes(), manifest_before)
+            self.assertEqual(
+                hash_path.read_bytes(),
+                cli._sha256_bytes(cli._canonical_json(Manifest().to_dict()).encode("utf-8")).encode("ascii")
+                + b"\n",
+            )
 
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest_path = root / "manifest.json"
+            hash_path = root / "manifest.sha256"
             manifest_hash = cli._sha256_bytes(
                 cli._canonical_json(Manifest().to_dict()).encode("utf-8")
             )
             hash_path.write_bytes(manifest_hash.encode("ascii") + b"\n")
-            before = (manifest_path.read_bytes(), hash_path.read_bytes())
+            hash_before = hash_path.read_bytes()
             cli._manifest_hash_file(manifest_path, Manifest())
-            self.assertEqual((manifest_path.read_bytes(), hash_path.read_bytes()), before)
+            self.assertEqual(
+                manifest_path.read_bytes(),
+                (cli._canonical_json(Manifest().to_dict()) + "\n").encode("utf-8"),
+            )
+            self.assertEqual(hash_path.read_bytes(), hash_before)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest_path = root / "manifest.json"
+            hash_path = root / "manifest.sha256"
+            manifest_path.write_bytes(b'{"seed": 99}\n')
+            manifest_before = manifest_path.read_bytes()
+            with self.assertRaises(ValueError):
+                cli._manifest_hash_file(manifest_path, Manifest())
+            self.assertEqual(manifest_path.read_bytes(), manifest_before)
+            self.assertFalse(hash_path.exists())
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             manifest_path = root / "manifest.json"
             hash_path = root / "manifest.sha256"
             hash_path.write_bytes(b"a" * 64 + b"\n")
-            before = hash_path.read_bytes()
+            hash_before = hash_path.read_bytes()
             with self.assertRaises(ValueError):
                 cli._manifest_hash_file(manifest_path, Manifest())
             self.assertFalse(manifest_path.exists())
-            self.assertEqual(hash_path.read_bytes(), before)
+            self.assertEqual(hash_path.read_bytes(), hash_before)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest_path = root / "manifest.json"
+            hash_path = root / "manifest.sha256"
+            manifest_path.mkdir()
+            with self.assertRaises(ValueError):
+                cli._manifest_hash_file(manifest_path, Manifest())
+            self.assertTrue(manifest_path.is_dir())
+            self.assertFalse(hash_path.exists())
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -446,7 +503,11 @@ class NaturalFactorAuditCliTest(unittest.TestCase):
 
             def fake_loader(path, device):
                 raw = Path(path).read_bytes()
-                return type("Loaded", (), {"checkpoint_sha256": cli._sha256_bytes(raw)})()
+                if loaded_refs:
+                    self.assertIsNone(loaded_refs[-1]())
+                loaded = type("Loaded", (), {"checkpoint_sha256": cli._sha256_bytes(raw)})()
+                loaded_refs.append(weakref.ref(loaded))
+                return loaded
 
             def fake_runner(loaded, manifest, journal, *, transform_batch_size):
                 plan = manifest.plans[0]
@@ -457,12 +518,15 @@ class NaturalFactorAuditCliTest(unittest.TestCase):
                 journal.commit_image(plan.image_id, rows)
                 journal.finalize()
 
+            real_git_commit = cli._git_commit
+            loaded_refs: list[weakref.ReferenceType[object]] = []
             with patch.object(cli, "load_ifdr_checkpoint", side_effect=fake_loader), patch.object(
-                cli, "run_factor_observer", side_effect=fake_runner
+                cli, "run_factor_observer", new=fake_runner
             ), patch.object(cli, "_load_observation_rows", return_value=fixture), patch.object(
                 cli, "audit_natural_factors", return_value=FakeGate()
-            ) as audit, patch.object(cli, "_git_commit", return_value="implementation-old"):
+            ) as audit, patch.object(cli, "_git_commit", return_value="implementation-old") as git_commit:
                 self.assertEqual(cli._run(args), 0)
+                self.assertEqual(git_commit.call_count, 1)
                 first_root = (output / "observations.jsonl").read_bytes()
                 self.assertGreater(len(first_root), 0)
                 provenance = json.loads((output / "provenance.json").read_text(encoding="utf-8"))
@@ -486,6 +550,36 @@ class NaturalFactorAuditCliTest(unittest.TestCase):
                     audit.call_args.kwargs["monotonic_threshold"], cli.MONOTONIC_THRESHOLD
                 )
                 valid_provenance_bytes = (output / "provenance.json").read_bytes()
+
+                for git_run_side_effect in (
+                    [
+                        SimpleNamespace(returncode=0, stdout="a" * 40 + "\n"),
+                        SimpleNamespace(returncode=0, stdout=" M dirty.txt\n"),
+                    ],
+                    OSError("git missing"),
+                ):
+                    protected_files = {
+                        path: path.read_bytes()
+                        for path in output.rglob("*")
+                        if path.is_file()
+                    }
+                    with patch.object(cli, "_git_commit", side_effect=real_git_commit), patch.object(
+                        cli.subprocess, "run", side_effect=git_run_side_effect
+                    ), patch.object(cli, "load_ifdr_checkpoint") as loader, patch.object(
+                        cli, "run_factor_observer"
+                    ) as runner:
+                        with self.assertRaises(ValueError):
+                            cli._run(args)
+                        loader.assert_not_called()
+                        runner.assert_not_called()
+                    self.assertEqual(
+                        {
+                            path: path.read_bytes()
+                            for path in output.rglob("*")
+                            if path.is_file()
+                        },
+                        protected_files,
+                    )
 
                 implementation_mismatch_files = {
                     path: path.read_bytes()
@@ -586,8 +680,9 @@ class NaturalFactorAuditCliTest(unittest.TestCase):
                     str(output),
                 ]
             )
-            with self.assertRaises(ValueError):
-                cli._run(args)
+            with patch.object(cli, "_git_commit", return_value="a" * 40):
+                with self.assertRaises(ValueError):
+                    cli._run(args)
             status = json.loads((output / "status.json").read_text(encoding="utf-8"))
             self.assertEqual(status["status"], "failed")
             self.assertEqual(status["exception_type"], "ValueError")
