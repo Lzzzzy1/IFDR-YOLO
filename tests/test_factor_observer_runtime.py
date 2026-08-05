@@ -99,6 +99,24 @@ class _RunnerModel(nn.Module):
         return contexts
 
 
+class _OrderModel(_CheckpointModel):
+    def __init__(self) -> None:
+        super().__init__()
+        self.calls: list[str] = []
+
+    def to(self, *args, **kwargs):
+        self.calls.append("to")
+        return super().to(*args, **kwargs)
+
+    def float(self):
+        self.calls.append("float")
+        return super().float()
+
+    def eval(self):
+        self.calls.append("eval")
+        return super().eval()
+
+
 def _runner_record() -> NaturalDegradationRecord:
     return NaturalDegradationRecord(
         image_id="runner-image",
@@ -168,6 +186,20 @@ def _runner_fixture_two(directory: str):
 
 
 class LoadedIFDRCheckpointTest(unittest.TestCase):
+    def test_loader_prepares_model_to_device_before_float_and_eval(self) -> None:
+        from ifdr_yolo.eval.factor_observer_runtime import load_ifdr_checkpoint
+
+        model = _OrderModel()
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "ordered.pt"
+            path.write_bytes(b"ordered-checkpoint")
+            with patch(
+                "ifdr_yolo.eval.factor_observer_runtime.torch.load",
+                return_value={"model": model},
+            ):
+                load_ifdr_checkpoint(path, device="cpu")
+        self.assertEqual(model.calls[-3:], ["to", "float", "eval"])
+
     def test_loader_prefers_ema_and_records_hash_device_and_eval(self) -> None:
         from ifdr_yolo.eval.factor_observer_runtime import load_ifdr_checkpoint
 
@@ -374,6 +406,27 @@ class PooledReliabilityTest(unittest.TestCase):
 
 
 class FactorObserverRunnerTest(unittest.TestCase):
+    def test_runner_validates_context_once_per_node_per_microbatch(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            _, manifest = _runner_fixture(directory)
+            output = Path(directory) / "observations.jsonl"
+            progress = Path(directory) / "progress.json"
+            model = _RunnerModel()
+            from ifdr_yolo.eval import factor_observer_runtime as runtime
+
+            with patch.object(
+                runtime,
+                "_validate_context",
+                wraps=runtime._validate_context,
+            ) as validator:
+                run_factor_observer(
+                    LoadedIFDRCheckpoint(model, manifest.checkpoint_sha256),
+                    manifest,
+                    FactorObservationJournal(manifest, output, progress),
+                    transform_batch_size=64,
+                )
+            self.assertEqual(validator.call_count, len(manifest.required_nodes))
+
     def test_transform_seed_protocol_and_common_random_numbers(self) -> None:
         self.assertEqual(
             _transform_seed_for_condition(

@@ -122,7 +122,8 @@ def load_ifdr_checkpoint(
     if not callable(consume):
         raise ValueError("checkpoint model must expose callable consume_reliability_context")
     try:
-        candidate = candidate.float().to(device)
+        candidate = candidate.to(device)
+        candidate = candidate.float()
         candidate.eval()
     except Exception as exc:
         raise ValueError(f"unable to prepare checkpoint model on device {device!r}") from exc
@@ -231,32 +232,32 @@ def _validate_context(
     return factors.detach(), branches.detach(), gate
 
 
-def pool_reliability_contexts(
-    contexts: Mapping[int, object],
-    *,
-    batch_index: int,
-    bbox_xyxy: Sequence[float],
-    geometry: LetterboxGeometry,
-    required_nodes: Sequence[int] = DEFAULT_REQUIRED_NODES,
-) -> tuple[PooledReliability, ...]:
-    """Pool six-node reliability maps over one original-image ROI."""
-
+def _required_context_nodes(required_nodes: Sequence[int]) -> tuple[int, ...]:
     try:
         nodes = tuple(required_nodes)
     except (TypeError, ValueError) as exc:
         raise ValueError(f"required_nodes must equal {DEFAULT_REQUIRED_NODES}") from exc
     if nodes != DEFAULT_REQUIRED_NODES:
         raise ValueError(f"required_nodes must equal {DEFAULT_REQUIRED_NODES}")
+    return nodes
+
+
+def _prepare_reliability_contexts(
+    contexts: Mapping[int, object],
+    *,
+    required_nodes: Sequence[int] = DEFAULT_REQUIRED_NODES,
+) -> tuple[dict[int, tuple[torch.Tensor, torch.Tensor, float]], int]:
+    """Validate one model context batch once for reuse across multiple ROIs."""
+
+    nodes = _required_context_nodes(required_nodes)
     if not isinstance(contexts, Mapping) or set(contexts) != set(nodes):
         raise ValueError("contexts must contain exactly the required nodes")
-    if isinstance(batch_index, bool) or not isinstance(batch_index, int) or batch_index < 0:
-        raise ValueError("batch_index must be a non-negative integer")
-    pooled: list[PooledReliability] = []
+    prepared: dict[int, tuple[torch.Tensor, torch.Tensor, float]] = {}
     expected_batch_size: int | None = None
     expected_device: torch.device | None = None
     for node in nodes:
         factors, branches, gate = _validate_context(contexts[node], node=node)
-        batch_size, _, feature_height, feature_width = factors.shape
+        batch_size = factors.shape[0]
         if expected_batch_size is None:
             expected_batch_size = batch_size
             expected_device = factors.device
@@ -264,8 +265,29 @@ def pool_reliability_contexts(
             raise ValueError("contexts must share batch size across nodes")
         elif factors.device != expected_device:
             raise ValueError("contexts must share device across nodes")
-        if batch_index >= batch_size:
-            raise ValueError("batch_index is outside context batch dimension")
+        prepared[node] = (factors, branches, gate)
+    assert expected_batch_size is not None
+    return prepared, expected_batch_size
+
+
+def _pool_prepared_reliability_contexts(
+    prepared: Mapping[int, tuple[torch.Tensor, torch.Tensor, float]],
+    batch_size: int,
+    *,
+    batch_index: int,
+    bbox_xyxy: Sequence[float],
+    geometry: LetterboxGeometry,
+    required_nodes: Sequence[int] = DEFAULT_REQUIRED_NODES,
+) -> tuple[PooledReliability, ...]:
+    nodes = _required_context_nodes(required_nodes)
+    if isinstance(batch_index, bool) or not isinstance(batch_index, int) or batch_index < 0:
+        raise ValueError("batch_index must be a non-negative integer")
+    if batch_index >= batch_size:
+        raise ValueError("batch_index is outside context batch dimension")
+    pooled: list[PooledReliability] = []
+    for node in nodes:
+        factors, branches, gate = prepared[node]
+        _, _, feature_height, feature_width = factors.shape
         roi = map_box_to_feature_roi(
             bbox_xyxy,
             geometry,
@@ -286,6 +308,30 @@ def pool_reliability_contexts(
             )
         )
     return tuple(pooled)
+
+
+def pool_reliability_contexts(
+    contexts: Mapping[int, object],
+    *,
+    batch_index: int,
+    bbox_xyxy: Sequence[float],
+    geometry: LetterboxGeometry,
+    required_nodes: Sequence[int] = DEFAULT_REQUIRED_NODES,
+) -> tuple[PooledReliability, ...]:
+    """Pool six-node reliability maps over one original-image ROI."""
+
+    prepared, batch_size = _prepare_reliability_contexts(
+        contexts,
+        required_nodes=required_nodes,
+    )
+    return _pool_prepared_reliability_contexts(
+        prepared,
+        batch_size,
+        batch_index=batch_index,
+        bbox_xyxy=bbox_xyxy,
+        geometry=geometry,
+        required_nodes=required_nodes,
+    )
 
 
 def _model_device(model: nn.Module) -> torch.device:
@@ -861,10 +907,15 @@ def run_factor_observer(
             with torch.inference_mode():
                 model(batch)
             contexts = model.consume_reliability_context()
+            prepared_contexts, context_batch_size = _prepare_reliability_contexts(
+                contexts,
+                required_nodes=nodes,
+            )
             for batch_index, (geometry, conditions) in enumerate(chunk):
                 for condition in conditions:
-                    pooled = pool_reliability_contexts(
-                        contexts,
+                    pooled = _pool_prepared_reliability_contexts(
+                        prepared_contexts,
+                        context_batch_size,
                         batch_index=batch_index,
                         bbox_xyxy=condition.bbox_xyxy,
                         geometry=geometry,
@@ -882,7 +933,7 @@ def run_factor_observer(
                                 checkpoint_sha256=loaded.checkpoint_sha256,
                             )
                         )
-            del contexts, chunk
+            del contexts, prepared_contexts, context_batch_size, chunk
             del batch
         validated = validate_observation_rows(
             rows,
