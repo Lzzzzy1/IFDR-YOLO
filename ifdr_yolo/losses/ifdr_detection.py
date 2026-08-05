@@ -16,6 +16,7 @@ from ifdr_yolo.losses.dcli import (
     derive_localization_uncertainty,
     normalized_dfl_entropy,
 )
+from ifdr_yolo.losses.factor_alignment import object_balanced_factor_loss
 from ifdr_yolo.data.ifdr_dataset import (
     COUNTERFACTUAL_DELTA_KEY,
     COUNTERFACTUAL_WEIGHT_KEY,
@@ -403,6 +404,27 @@ class IFDRDetectionLoss(v8DetectionLoss):
             factor_target,
             factor_weight,
         )
+        if "factor_object_targets" in batch:
+            natural_contexts = (
+                clean_contexts if clean_contexts is not None else contexts
+            )
+            natural_context_kind = (
+                "clean" if clean_contexts is not None else "main"
+            )
+            natural_maps = []
+            for node_index in FINAL_PYRAMID_CONTEXT_NODES:
+                if node_index not in natural_contexts:
+                    raise ValueError(
+                        f"missing {natural_context_kind} reliability context "
+                        f"for natural node {node_index}"
+                    )
+                natural_maps.append(natural_contexts[node_index].factors)
+            natural_loss = object_balanced_factor_loss(
+                natural_maps,
+                batch["factor_object_targets"],
+                check_finite=False,
+            )
+            factor_loss = factor_loss + natural_loss
         counterfactual_loss = factor_loss * 0.0
         counterfactual_weight = batch.get(COUNTERFACTUAL_WEIGHT_KEY)
         if (
