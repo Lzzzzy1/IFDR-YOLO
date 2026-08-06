@@ -16,7 +16,10 @@ from ifdr_yolo.losses.dcli import (
     derive_localization_uncertainty,
     normalized_dfl_entropy,
 )
-from ifdr_yolo.losses.factor_alignment import object_balanced_factor_loss
+from ifdr_yolo.losses.factor_alignment import (
+    factor_specificity_from_contexts,
+    object_balanced_factor_loss,
+)
 from ifdr_yolo.data.ifdr_dataset import (
     COUNTERFACTUAL_DELTA_KEY,
     COUNTERFACTUAL_WEIGHT_KEY,
@@ -26,6 +29,66 @@ from ifdr_yolo.models.gated_fusion import ReliabilityContext
 
 FINAL_PYRAMID_CONTEXT_NODES = (17, 20, 23, 26)
 ALL_FUSION_CONTEXT_NODES = (11, 14, 17, 20, 23, 26)
+
+
+def synthetic_factor_loss_from_context(
+    target_contexts: Mapping[int, ReliabilityContext],
+    dense_target: torch.Tensor,
+    dense_weight: torch.Tensor,
+    *,
+    node_indices: tuple[int, ...] = ALL_FUSION_CONTEXT_NODES,
+) -> torch.Tensor:
+    """Apply dense synthetic supervision to the target view only."""
+
+    return multiscale_factor_supervision(
+        target_contexts,
+        dense_target,
+        dense_weight,
+        node_indices=node_indices,
+    )
+
+
+def route_calibration_losses(
+    *,
+    clean_context: Mapping[int, ReliabilityContext],
+    target_context: Mapping[int, ReliabilityContext],
+    background_context: Mapping[int, ReliabilityContext],
+    dense_target: torch.Tensor,
+    dense_weight: torch.Tensor,
+    natural_object_targets: Sequence[object],
+    intervention: Sequence[object],
+) -> dict[str, torch.Tensor]:
+    """Route the three calibration objectives to their owning views."""
+
+    synthetic = synthetic_factor_loss_from_context(
+        target_context,
+        dense_target,
+        dense_weight,
+    )
+    natural_maps: list[torch.Tensor] = []
+    for node_index in FINAL_PYRAMID_CONTEXT_NODES:
+        if node_index not in clean_context:
+            raise ValueError(f"clean contexts missing node {node_index}")
+        factors = clean_context[node_index].factors
+        natural_maps.append(factors)
+    natural = object_balanced_factor_loss(
+        natural_maps,
+        natural_object_targets,
+        check_finite=False,
+    )
+    specificity = factor_specificity_from_contexts(
+        clean_context,
+        target_context,
+        background_context,
+        intervention,
+    )
+    total = synthetic + natural + 0.5 * specificity
+    return {
+        "synthetic_factor_loss": synthetic,
+        "natural_factor_loss": natural,
+        "specificity_loss": specificity,
+        "total": total,
+    }
 
 
 def stable_ciou(
@@ -135,6 +198,8 @@ def multiscale_factor_supervision(
         or target.shape != weight.shape
         or not target.is_floating_point()
         or not weight.is_floating_point()
+        or target.dtype != weight.dtype
+        or target.device != weight.device
     ):
         raise ValueError(
             "factor target and weight must be matching [batch, 2, h, w] tensors"
@@ -149,6 +214,10 @@ def multiscale_factor_supervision(
         if factors.shape[:2] != target.shape[:2]:
             raise ValueError(
                 f"factor batch/channels at node {node_index} do not match target"
+            )
+        if factors.device != target.device or factors.dtype != target.dtype:
+            raise ValueError(
+                f"factor target and node {node_index} must share dtype and device"
             )
         size = factors.shape[-2:]
         scaled_target = F.interpolate(target, size=size, mode="area")
@@ -382,6 +451,40 @@ class IFDRDetectionLoss(v8DetectionLoss):
             beta=beta,
             calibration_gain=calibration_gain,
         ).to(self.device)
+
+    def calibration_loss(
+        self,
+        *,
+        clean_context: Mapping[int, ReliabilityContext],
+        target_context: Mapping[int, ReliabilityContext],
+        background_context: Mapping[int, ReliabilityContext],
+        dense_target: torch.Tensor,
+        dense_weight: torch.Tensor,
+        natural_object_targets: Sequence[object],
+        intervention: Sequence[object],
+        batch_size: int,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Compute calibration objectives without entering detection loss."""
+
+        if isinstance(batch_size, bool) or not isinstance(batch_size, int) or batch_size <= 0:
+            raise ValueError("calibration batch_size must be a positive integer")
+        losses = route_calibration_losses(
+            clean_context=clean_context,
+            target_context=target_context,
+            background_context=background_context,
+            dense_target=dense_target,
+            dense_weight=dense_weight,
+            natural_object_targets=natural_object_targets,
+            intervention=intervention,
+        )
+        components = torch.stack(
+            (
+                losses["synthetic_factor_loss"].detach(),
+                losses["natural_factor_loss"].detach(),
+                losses["specificity_loss"].detach(),
+            )
+        )
+        return losses["total"] * batch_size, components
 
     def get_assigned_targets_and_loss(
         self,

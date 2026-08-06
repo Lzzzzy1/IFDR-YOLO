@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 import math
 
@@ -15,8 +16,13 @@ from ifdr_yolo.models.gated_fusion import (
     ResidualFactorAdapter,
 )
 from ifdr_yolo.data.ifdr_dataset import (
+    BACKGROUND_IMAGE_KEY,
     COUNTERFACTUAL_IMAGE_KEY,
     COUNTERFACTUAL_WEIGHT_KEY,
+    CLEAN_IMAGE_KEY,
+    FACTOR_OBJECT_TARGETS_KEY,
+    SPECIFICITY_PAIRS_KEY,
+    TARGET_IMAGE_KEY,
 )
 from ifdr_yolo.experiments.gradient_diagnostics import (
     ScheduledGradientDiagnostics,
@@ -120,6 +126,67 @@ def _split_paired_contexts(
             gate_strength=context.gate_strength,
         )
     return main, clean
+
+
+def split_three_view_contexts(
+    contexts: dict[int, ReliabilityContext],
+    batch_size: int,
+    *,
+    required_nodes: tuple[int, ...] | None = None,
+) -> tuple[
+    dict[int, ReliabilityContext],
+    dict[int, ReliabilityContext],
+    dict[int, ReliabilityContext],
+]:
+    """Split reliability contexts emitted by one clean/target/background pass."""
+
+    if isinstance(batch_size, bool) or not isinstance(batch_size, int) or batch_size <= 0:
+        raise RuntimeError("three-view batch size must be a positive integer")
+    if not isinstance(contexts, dict):
+        raise RuntimeError("three-view reliability contexts must be a mapping")
+    expected = tuple(required_nodes) if required_nodes is not None else tuple(contexts)
+    if not expected or set(contexts) != set(expected):
+        raise RuntimeError("three-view reliability contexts have incomplete nodes")
+    views: tuple[dict[int, ReliabilityContext], ...] = ({}, {}, {})
+    reference_dtype: torch.dtype | None = None
+    reference_device: torch.device | None = None
+    for node in expected:
+        context = contexts[node]
+        if not isinstance(context, ReliabilityContext):
+            raise RuntimeError(f"three-view context at node {node} is invalid")
+        factors = context.factors
+        branch_weights = context.branch_weights
+        if (
+            not isinstance(factors, torch.Tensor)
+            or not isinstance(branch_weights, torch.Tensor)
+            or factors.ndim != 4
+            or branch_weights.ndim != 4
+            or factors.shape[0] != 3 * batch_size
+            or branch_weights.shape[0] != 3 * batch_size
+            or factors.shape != branch_weights.shape
+            or factors.shape[1] != 2
+            or not factors.is_floating_point()
+            or not branch_weights.is_floating_point()
+            or factors.dtype != branch_weights.dtype
+            or factors.device != branch_weights.device
+        ):
+            raise RuntimeError(
+                f"three-view reliability context at node {node} must have leading dimension 3B"
+            )
+        if reference_dtype is None:
+            reference_dtype = factors.dtype
+            reference_device = factors.device
+        elif factors.dtype != reference_dtype or factors.device != reference_device:
+            raise RuntimeError("three-view reliability contexts must share dtype and device")
+        for view_index, view in enumerate(views):
+            view[node] = ReliabilityContext(
+                factors=factors[view_index * batch_size : (view_index + 1) * batch_size],
+                branch_weights=branch_weights[
+                    view_index * batch_size : (view_index + 1) * batch_size
+                ],
+                gate_strength=context.gate_strength,
+            )
+    return views
 
 
 def _copy_graph_attributes(source: object, target: object) -> None:
@@ -318,6 +385,40 @@ class IFDRDetectionModel(DetectionModel):
             return contexts
         return self.consume_reliability_context(), None
 
+    @staticmethod
+    def _calibration_view_keys() -> tuple[str, str, str]:
+        return CLEAN_IMAGE_KEY, TARGET_IMAGE_KEY, BACKGROUND_IMAGE_KEY
+
+    def _calibration_view_batch(
+        self,
+        batch: object,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None:
+        if not isinstance(batch, dict):
+            return None
+        keys = self._calibration_view_keys()
+        present = tuple(key in batch for key in keys)
+        if not any(present):
+            return None
+        if not all(present):
+            missing = [key for key, exists in zip(keys, present) if not exists]
+            raise RuntimeError(
+                "registered calibration batch is missing view key(s): "
+                + ", ".join(missing)
+            )
+        views = tuple(batch[key] for key in keys)
+        if not all(isinstance(view, torch.Tensor) for view in views):
+            raise RuntimeError("registered calibration views must be tensors")
+        clean, target, background = views
+        if clean.ndim != 4 or clean.shape[0] <= 0:
+            raise RuntimeError("registered calibration views must be non-empty BCHW tensors")
+        if any(view.shape != clean.shape for view in views):
+            raise RuntimeError("registered calibration views must share BCHW shape")
+        if any(view.dtype != clean.dtype for view in views):
+            raise RuntimeError("registered calibration views must share dtype")
+        if any(view.device != clean.device for view in views):
+            raise RuntimeError("registered calibration views must share device")
+        return clean, target, background
+
     def _counterfactual_pair_is_active(
         self,
         batch: dict[str, object],
@@ -331,6 +432,81 @@ class IFDRDetectionModel(DetectionModel):
         )
 
     def loss(self, batch, preds=None):
+        calibration_views = self._calibration_view_batch(batch)
+        if calibration_views is not None:
+            if preds is not None:
+                raise RuntimeError(
+                    "registered calibration loss requires preds=None"
+                )
+            clean_image, target_image, background_image = calibration_views
+            if clean_image.dtype == torch.uint8:
+                clean_image = clean_image.float() / 255.0
+                target_image = target_image.float() / 255.0
+                background_image = background_image.float() / 255.0
+            elif not clean_image.is_floating_point():
+                raise RuntimeError(
+                    "registered calibration views must be floating or uint8 tensors"
+                )
+            batch_size = clean_image.shape[0]
+            dense_target = batch.get("ifdr_factor_target")
+            dense_weight = batch.get("ifdr_factor_weight")
+            if not isinstance(dense_target, torch.Tensor) or not isinstance(
+                dense_weight,
+                torch.Tensor,
+            ):
+                raise RuntimeError(
+                    "registered calibration batch is missing dense factor targets"
+                )
+            if dense_target.shape[0] != batch_size or dense_weight.shape != dense_target.shape:
+                raise RuntimeError(
+                    "registered calibration dense targets must align with batch"
+                )
+            if getattr(self, "criterion", None) is None:
+                self.criterion = self.init_criterion()
+            predictions = self.forward(
+                torch.cat((clean_image, target_image, background_image), dim=0)
+            )
+            del predictions  # calibration is factor-only and never consumes detections
+            contexts = self.consume_reliability_context()
+            clean_context, target_context, background_context = split_three_view_contexts(
+                contexts,
+                batch_size,
+                required_nodes=tuple(self._fusion_node_indices),
+            )
+            if FACTOR_OBJECT_TARGETS_KEY not in batch:
+                raise RuntimeError(
+                    "registered calibration batch is missing factor object targets"
+                )
+            if SPECIFICITY_PAIRS_KEY not in batch:
+                raise RuntimeError(
+                    "registered calibration batch is missing specificity pairs"
+                )
+            natural_targets = batch[FACTOR_OBJECT_TARGETS_KEY]
+            intervention = batch[SPECIFICITY_PAIRS_KEY]
+            if (
+                isinstance(natural_targets, (str, bytes))
+                or not isinstance(natural_targets, Sequence)
+                or isinstance(intervention, (str, bytes))
+                or not isinstance(intervention, Sequence)
+            ):
+                raise RuntimeError(
+                    "registered calibration records must be non-string sequences"
+                )
+            return self.criterion.calibration_loss(
+                clean_context=clean_context,
+                target_context=target_context,
+                background_context=background_context,
+                dense_target=dense_target,
+                dense_weight=dense_weight,
+                natural_object_targets=natural_targets,
+                intervention=intervention,
+                batch_size=batch_size,
+            )
+        if any(
+            key in batch
+            for key in self._calibration_view_keys()
+        ) and preds is not None:
+            raise RuntimeError("partial calibration view keys cannot be scored with preds")
         if preds is not None or not self._counterfactual_pair_is_active(batch):
             return super().loss(batch, preds)
         if getattr(self, "criterion", None) is None:
