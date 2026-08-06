@@ -129,6 +129,50 @@ def flush_gradient_diagnostics(trainer: object) -> None:
             file.write(json.dumps(record, sort_keys=True) + "\n")
 
 
+def apply_semantic_calibration_phase(
+    trainer: object,
+    phase: object | None = None,
+    *,
+    variant: str | None = None,
+    epochs: int = 30,
+    optimizer: object | None = None,
+) -> object:
+    from ifdr_yolo.experiments.factor_repair import (
+        SemanticCalibrationPhase,
+        semantic_calibration_phase,
+    )
+
+    if phase is not None:
+        if not isinstance(phase, SemanticCalibrationPhase):
+            raise TypeError("phase must be a SemanticCalibrationPhase")
+        variant = phase.variant
+        epochs = phase.epochs
+    elif variant is None:
+        raise ValueError("variant is required when phase is not provided")
+    model = _unwrap_training_model(getattr(trainer, "model", None))
+    if optimizer is None:
+        optimizer = getattr(trainer, "optimizer", None)
+    applied = semantic_calibration_phase(
+        model,
+        variant=variant,
+        epochs=epochs,
+        optimizer=optimizer,
+    )
+    setattr(trainer, "semantic_calibration_phase", applied)
+    return applied
+
+
+def run_validation_without_optimizer_step(trainer: object, batch: object) -> object:
+    from ifdr_yolo.experiments.factor_repair import run_calibration_validation
+
+    model = _unwrap_training_model(getattr(trainer, "model", None))
+    return run_calibration_validation(
+        model,
+        batch,
+        optimizer=getattr(trainer, "optimizer", None),
+    )
+
+
 class IFDRDetectionTrainer(DetectionTrainer):
     """Ultralytics-compatible trainer that owns the IFDR model lifecycle."""
 

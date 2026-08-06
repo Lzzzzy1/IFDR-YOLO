@@ -560,6 +560,70 @@ class IFDRDetectionModel(DetectionModel):
         assert isinstance(first_layer, ReliabilityGatedConcat)
         return tuple(first_layer.reliability_estimator.parameters())
 
+    def factor_semantic_named_parameters(
+        self,
+    ) -> tuple[tuple[str, torch.nn.Parameter], ...]:
+        """Return identity-deduplicated semantic calibration parameters."""
+
+        indexes = tuple(self._fusion_node_indices)
+        if len(indexes) != 6 or len(set(indexes)) != 6:
+            raise ValueError("semantic calibration requires six fusion nodes")
+        layers: list[ReliabilityGatedConcat] = []
+        for index in indexes:
+            try:
+                layer = self.model[index]
+            except (IndexError, KeyError, TypeError) as error:
+                raise ValueError(f"fusion node {index} is not registered") from error
+            if not isinstance(layer, ReliabilityGatedConcat):
+                raise TypeError(f"fusion node {index} is not ReliabilityGatedConcat")
+            layers.append(layer)
+        registered_layers = tuple(
+            module
+            for module in self.modules()
+            if isinstance(module, ReliabilityGatedConcat)
+        )
+        if len(registered_layers) != 6 or {
+            id(layer) for layer in registered_layers
+        } != {id(layer) for layer in layers}:
+            raise ValueError("semantic calibration requires exactly six fusion nodes")
+        first_estimator = layers[0].reliability_estimator
+        if any(
+            layer.reliability_estimator is not first_estimator
+            for layer in layers[1:]
+        ):
+            raise ValueError("fusion nodes must share one reliability estimator")
+
+        named_by_id = {
+            id(parameter): (name, parameter)
+            for name, parameter in self.named_parameters()
+        }
+        selected: dict[int, tuple[str, torch.nn.Parameter]] = {}
+
+        def register(parameter: torch.nn.Parameter) -> None:
+            parameter_id = id(parameter)
+            named = named_by_id.get(parameter_id)
+            if named is None:
+                raise ValueError("semantic calibration parameter is not registered")
+            selected.setdefault(parameter_id, named)
+
+        projection_count = 0
+        for layer in layers:
+            if len(layer.projections) != 2:
+                raise ValueError("each fusion node must expose two projections")
+            projection_count += len(layer.projections)
+            for projection in layer.projections:
+                for parameter in projection.parameters():
+                    register(parameter)
+        if projection_count != 12:
+            raise ValueError("semantic calibration requires 12 projections")
+        for module in (
+            first_estimator.shared_core,
+            first_estimator.factor_head,
+        ):
+            for parameter in module.parameters():
+                register(parameter)
+        return tuple(sorted(selected.values(), key=lambda item: item[0]))
+
     def gradient_diagnostic_parameter_groups(
         self,
     ) -> dict[str, tuple[torch.nn.Parameter, ...]]:
