@@ -116,6 +116,7 @@ class ThreeViewMechanismSmokeTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as directory:
             images, labels, output = self._fixture(Path(directory))
+            (labels / "000001.txt").write_text("0 0.25 0.25 0.03 0.04\n", encoding="utf-8")
             with patch(
                 "scripts.run_three_view_mechanism_smoke.load_ifdr_checkpoint",
                 return_value=SimpleNamespace(model=_FakeThreeViewModel(), checkpoint_sha256="b" * 64),
@@ -136,6 +137,10 @@ class ThreeViewMechanismSmokeTest(unittest.TestCase):
                 background = mechanism["background_box"]
                 target = mechanism["target_box"]
                 self.assertEqual(mechanism["background_max_iou"], 0.0)
+                self.assertLess(target[2] - target[0], 0.05)
+                self.assertLess(target[3] - target[1], 0.05)
+                self.assertAlmostEqual(background[2] - background[0], target[2] - target[0], delta=1e-6)
+                self.assertAlmostEqual(background[3] - background[1], target[3] - target[1], delta=1e-6)
                 self.assertNotEqual(background, target)
                 self.assertGreaterEqual(mechanism["severity"], 0.0)
 

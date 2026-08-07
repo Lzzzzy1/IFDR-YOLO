@@ -191,8 +191,8 @@ def _select_images(
 
 
 def _choose_background(target: Sequence[float], boxes: Sequence[Sequence[float]], seed: int) -> tuple[float, float, float, float]:
-    width = min(max(float(target[2] - target[0]), 0.05), 0.45)
-    height = min(max(float(target[3] - target[1]), 0.05), 0.45)
+    width = float(target[2] - target[0])
+    height = float(target[3] - target[1])
     candidates: list[tuple[float, float, float, float]] = []
     for center_y in np.linspace(height / 2.0, 1.0 - height / 2.0, 11):
         for center_x in np.linspace(width / 2.0, 1.0 - width / 2.0, 11):
