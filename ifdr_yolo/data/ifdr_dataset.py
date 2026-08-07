@@ -1025,6 +1025,21 @@ class IFDRYOLODataset(YOLODataset):
             raise ValueError("calibration requires a FactorMetadataIndex")
         image_id = str(labels.get("image_id") or Path(str(labels.get("im_file", "unknown"))).stem)
         records = tuple(metadata_index.by_image.get(image_id, ()))
+        original_shape = labels.get("ori_shape")
+        if (
+            isinstance(original_shape, (str, bytes))
+            or not isinstance(original_shape, Sequence)
+            or len(original_shape) != 2
+            or any(
+                isinstance(value, (bool, np.bool_))
+                or not isinstance(value, (int, np.integer))
+                or int(value) <= 0
+                for value in original_shape
+            )
+        ):
+            _reject(self.specificity_rejection_counter, "missing_metadata")
+            raise ValueError("calibration metadata binding requires valid ori_shape")
+        original_height, original_width = (int(value) for value in original_shape)
         instances = deepcopy(labels.get("instances"))
         if instances is None:
             _reject(self.specificity_rejection_counter, "missing_metadata")
@@ -1032,9 +1047,8 @@ class IFDRYOLODataset(YOLODataset):
         instances.convert_bbox(format="xyxy")
         boxes = np.asarray(instances.bboxes, dtype=np.float64)
         if instances.normalized:
-            height, width = labels["img"].shape[:2]
-            boxes[:, [0, 2]] *= width
-            boxes[:, [1, 3]] *= height
+            boxes[:, [0, 2]] *= original_width
+            boxes[:, [1, 3]] *= original_height
         classes = np.asarray(labels.get("cls", ()), dtype=np.float64).reshape(-1)
         if len(records) != len(boxes) or len(classes) != len(boxes):
             _reject(self.specificity_rejection_counter, "missing_metadata")
@@ -1058,9 +1072,13 @@ class IFDRYOLODataset(YOLODataset):
                 if match.object_index in used:
                     raise ValueError("duplicate metadata identity")
                 used.add(match.object_index)
-                height, width = labels["img"].shape[:2]
                 raw_box = tuple(float(value) for value in record.bbox_xyxy)
-                raw_normalized = (raw_box[0] / width, raw_box[1] / height, raw_box[2] / width, raw_box[3] / height)
+                raw_normalized = (
+                    raw_box[0] / original_width,
+                    raw_box[1] / original_height,
+                    raw_box[2] / original_width,
+                    raw_box[3] / original_height,
+                )
                 attached.append({
                     "object_id": record.object_id,
                     "class_id": record.class_id,

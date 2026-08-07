@@ -325,6 +325,7 @@ class FactorSpecificityDataTest(unittest.TestCase):
         dataset.specificity_rejection_counter = SpecificityRejectionCounter()
         labels = {
             "img": np.zeros((32, 48, 3), dtype=np.uint8),
+            "ori_shape": (32, 48),
             "im_file": "/dataset/images/train/000123.png",
             "cls": np.array([[0.0]], dtype=np.float32),
             "instances": Instances(
@@ -336,6 +337,87 @@ class FactorSpecificityDataTest(unittest.TestCase):
             bound = dataset.get_image_and_label(0)
         self.assertEqual(bound["ifdr_raw_label_indices"], (0,))
         self.assertEqual(bound["_ifdr_metadata_records"][0]["object_id"], "000123:000000")
+
+    def test_metadata_binding_uses_original_shape_when_image_is_resized(self):
+        from ultralytics.data.dataset import YOLODataset
+        from ultralytics.utils.instance import Instances
+        from ifdr_yolo.data.ifdr_dataset import IFDRYOLODataset, SpecificityRejectionCounter
+        from ifdr_yolo.data.metadata_index import FactorMetadataIndex, FactorObjectRecord
+
+        original_shape = (375, 1242)
+        raw_box = (685.93, 173.71, 728.07, 195.98)
+        record = FactorObjectRecord(
+            image_id="002190", object_id="002190:000000", class_id=0,
+            class_name="Car", bbox_xyxy=raw_box, height=22.27,
+            depth_m=20.0, occlusion=0, truncation=0.0, sampling=0.2,
+            visibility=0.3, joint=0.44, sampling_valid=True, visibility_valid=True,
+        )
+        metadata = FactorMetadataIndex(
+            by_image={"002190": (record,)}, source_sha256="a" * 64,
+            split_sha256="b" * 64, label_source_sha256="c" * 64, sha256="d" * 64,
+        )
+        dataset = object.__new__(IFDRYOLODataset)
+        dataset.calibration_enabled = True
+        dataset.metadata_index = metadata
+        dataset.specificity_rejection_counter = SpecificityRejectionCounter()
+        normalized_box = np.array(
+            [[raw_box[0] / original_shape[1], raw_box[1] / original_shape[0],
+              raw_box[2] / original_shape[1], raw_box[3] / original_shape[0]]],
+            dtype=np.float32,
+        )
+        labels = {
+            "img": np.zeros((64, 256, 3), dtype=np.uint8),
+            "ori_shape": original_shape,
+            "im_file": "/dataset/images/train/002190.png",
+            "cls": np.array([[0.0]], dtype=np.float32),
+            "instances": Instances(
+                bboxes=normalized_box, bbox_format="xyxy", normalized=True,
+            ),
+        }
+        with patch.object(YOLODataset, "get_image_and_label", return_value=labels):
+            bound = dataset.get_image_and_label(0)
+        self.assertEqual(bound["ifdr_raw_label_indices"], (0,))
+        self.assertTrue(np.allclose(
+            bound["_ifdr_metadata_records"][0]["raw_box_xyxy_normalized"],
+            normalized_box[0], atol=1e-6,
+        ))
+
+    def test_metadata_binding_rejects_missing_or_invalid_original_shape(self):
+        from ultralytics.data.dataset import YOLODataset
+        from ultralytics.utils.instance import Instances
+        from ifdr_yolo.data.ifdr_dataset import IFDRYOLODataset, SpecificityRejectionCounter
+        from ifdr_yolo.data.metadata_index import FactorMetadataIndex, FactorObjectRecord
+
+        record = FactorObjectRecord(
+            image_id="002190", object_id="002190:000000", class_id=0,
+            class_name="Car", bbox_xyxy=(10.0, 10.0, 20.0, 20.0), height=10.0,
+            depth_m=20.0, occlusion=0, truncation=0.0, sampling=0.2,
+            visibility=0.3, joint=0.44, sampling_valid=True, visibility_valid=True,
+        )
+        metadata = FactorMetadataIndex(
+            by_image={"002190": (record,)}, source_sha256="a" * 64,
+            split_sha256="b" * 64, label_source_sha256="c" * 64, sha256="d" * 64,
+        )
+        for invalid_shape in (None, (375,), (0, 1242), (375, "1242")):
+            with self.subTest(invalid_shape=invalid_shape):
+                dataset = object.__new__(IFDRYOLODataset)
+                dataset.calibration_enabled = True
+                dataset.metadata_index = metadata
+                dataset.specificity_rejection_counter = SpecificityRejectionCounter()
+                labels = {
+                    "img": np.zeros((64, 256, 3), dtype=np.uint8),
+                    "ori_shape": invalid_shape,
+                    "im_file": "/dataset/images/train/002190.png",
+                    "cls": np.array([[0.0]], dtype=np.float32),
+                    "instances": Instances(
+                        bboxes=np.array([[0.1, 0.1, 0.2, 0.2]], dtype=np.float32),
+                        bbox_format="xyxy", normalized=True,
+                    ),
+                }
+                with patch.object(YOLODataset, "get_image_and_label", return_value=labels):
+                    with self.assertRaisesRegex(ValueError, "ori_shape"):
+                        dataset.get_image_and_label(0)
+                self.assertEqual(dataset.specificity_rejection_counter["missing_metadata"], 1)
 
 
 
