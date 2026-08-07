@@ -1551,6 +1551,12 @@ class IFDRDetectionTrainer(DetectionTrainer):
 class FactorCalibrationTrainer(IFDRDetectionTrainer):
     """Ultralytics trainer bound to one immutable F0--F3 runtime."""
 
+    IFDR_LOSS_NAMES = (
+        "synthetic_factor_loss",
+        "natural_factor_loss",
+        "specificity_loss",
+    )
+
     @staticmethod
     def ultralytics_overrides(runtime: object) -> dict[str, object]:
         """Return the complete registered Ultralytics override mapping."""
@@ -1764,6 +1770,31 @@ class FactorCalibrationTrainer(IFDRDetectionTrainer):
                 frozen=tuple(self.calibration_phase.frozen_parameter_names),
             )
         return optimizer
+
+    def validate(self):
+        """Run development-set detection validation with its five loss terms.
+
+        Calibration training reports three factor objectives.  The validation
+        dataloader intentionally remains the ordinary detection split, so its
+        model loss reports the five IFDR detection terms.  Ultralytics sizes
+        the validator accumulator from ``trainer.loss_items``; temporarily
+        switching that shape and label set avoids a 3-vs-5 broadcast while
+        preserving the calibration labels for subsequent training epochs.
+        """
+
+        calibration_loss_items = self.loss_items
+        calibration_loss_names = self.loss_names
+        try:
+            self.loss_items = torch.zeros(
+                len(IFDRDetectionTrainer.IFDR_LOSS_NAMES),
+                device=calibration_loss_items.device,
+                dtype=calibration_loss_items.dtype,
+            )
+            self.loss_names = IFDRDetectionTrainer.IFDR_LOSS_NAMES
+            return super().validate()
+        finally:
+            self.loss_items = calibration_loss_items
+            self.loss_names = calibration_loss_names
 
     def evaluate_primary_last(self, path: str | Path):
         """Evaluate only a caller-supplied, provenance-bound ``last.pt`` path."""

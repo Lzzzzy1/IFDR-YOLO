@@ -342,6 +342,74 @@ class IFDRDetectionTrainerTest(unittest.TestCase):
             IFDRDetectionTrainer.IFDR_LOSS_NAMES,
         )
 
+    def test_factor_calibration_uses_three_semantic_training_loss_labels(self) -> None:
+        from ifdr_yolo.experiments.ifdr_trainer import (
+            FactorCalibrationTrainer,
+            IFDRDetectionTrainer,
+        )
+
+        self.assertEqual(
+            FactorCalibrationTrainer.IFDR_LOSS_NAMES,
+            (
+                "synthetic_factor_loss",
+                "natural_factor_loss",
+                "specificity_loss",
+            ),
+        )
+        self.assertEqual(len(FactorCalibrationTrainer.IFDR_LOSS_NAMES), 3)
+        self.assertEqual(len(IFDRDetectionTrainer.IFDR_LOSS_NAMES), 5)
+
+    def test_factor_calibration_validate_temporarily_uses_detection_loss_shape(self) -> None:
+        from ifdr_yolo.experiments.ifdr_trainer import (
+            FactorCalibrationTrainer,
+            IFDRDetectionTrainer,
+        )
+
+        trainer = object.__new__(FactorCalibrationTrainer)
+        calibration_names = FactorCalibrationTrainer.IFDR_LOSS_NAMES
+        trainer.loss_names = calibration_names
+        trainer.loss_items = torch.ones(len(calibration_names))
+        observed = {}
+
+        def parent_validate(_trainer):
+            observed["names"] = _trainer.loss_names
+            observed["shape"] = tuple(_trainer.loss_items.shape)
+            observed["values"] = _trainer.loss_items.clone()
+            return "validated"
+
+        with patch.object(IFDRDetectionTrainer, "validate", parent_validate):
+            result = trainer.validate()
+
+        self.assertEqual(result, "validated")
+        self.assertEqual(observed["names"], IFDRDetectionTrainer.IFDR_LOSS_NAMES)
+        self.assertEqual(observed["shape"], (5,))
+        self.assertTrue(torch.equal(observed["values"], torch.zeros(5)))
+        self.assertEqual(trainer.loss_names, calibration_names)
+        self.assertTrue(torch.equal(trainer.loss_items, torch.ones(3)))
+
+    def test_factor_calibration_validate_restores_state_on_parent_failure(self) -> None:
+        from ifdr_yolo.experiments.ifdr_trainer import (
+            FactorCalibrationTrainer,
+            IFDRDetectionTrainer,
+        )
+
+        trainer = object.__new__(FactorCalibrationTrainer)
+        calibration_names = FactorCalibrationTrainer.IFDR_LOSS_NAMES
+        trainer.loss_names = calibration_names
+        trainer.loss_items = torch.arange(3, dtype=torch.float32)
+
+        def parent_validate(_trainer):
+            self.assertEqual(_trainer.loss_names, IFDRDetectionTrainer.IFDR_LOSS_NAMES)
+            self.assertEqual(tuple(_trainer.loss_items.shape), (5,))
+            raise RuntimeError("validation failed")
+
+        with patch.object(IFDRDetectionTrainer, "validate", parent_validate):
+            with self.assertRaisesRegex(RuntimeError, "validation failed"):
+                trainer.validate()
+
+        self.assertEqual(trainer.loss_names, calibration_names)
+        self.assertTrue(torch.equal(trainer.loss_items, torch.arange(3, dtype=torch.float32)))
+
 
 if __name__ == "__main__":
     unittest.main()
