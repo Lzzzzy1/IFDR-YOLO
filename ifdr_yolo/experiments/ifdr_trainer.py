@@ -31,6 +31,8 @@ from ifdr_yolo.models.ifdr_model import IFDRDetectionModel
 
 TASK_ADAPTATION_STATE_KEY = "task_adaptation_state_dict"
 TASK_ADAPTATION_STATE_SOURCE = "live_model_state_dict"
+_AMP_PREFLIGHT_ATOL = 0.5
+_AMP_PREFLIGHT_RTOL = 0.1
 
 
 def _lossless_model_state_dict(model: object) -> dict[str, object]:
@@ -223,6 +225,99 @@ def _unwrap_training_model(model: object) -> object:
     while hasattr(model, "module"):
         model = getattr(model, "module")
     return model
+
+
+def _collect_amp_output_tensors(value: object, output: list[torch.Tensor]) -> None:
+    if isinstance(value, torch.Tensor):
+        output.append(value)
+        return
+    if isinstance(value, Mapping):
+        for key in sorted(value, key=str):
+            _collect_amp_output_tensors(value[key], output)
+        return
+    if isinstance(value, (tuple, list)):
+        for item in value:
+            _collect_amp_output_tensors(item, output)
+
+
+def validate_amp_outputs(fp32_outputs: object, amp_outputs: object) -> None:
+    """Validate deterministic FP32/autocast output parity for AMP preflight."""
+
+    fp32: list[torch.Tensor] = []
+    amp: list[torch.Tensor] = []
+    _collect_amp_output_tensors(fp32_outputs, fp32)
+    _collect_amp_output_tensors(amp_outputs, amp)
+    if not fp32 or not amp:
+        raise RuntimeError("local AMP preflight produced no tensor outputs")
+    if len(fp32) != len(amp):
+        raise RuntimeError("local AMP preflight output count mismatch")
+    for index, (full, mixed) in enumerate(zip(fp32, amp)):
+        if full.shape != mixed.shape:
+            raise RuntimeError(f"local AMP preflight output shape mismatch at index {index}")
+        if not bool(torch.isfinite(full).all().item()) or not bool(torch.isfinite(mixed).all().item()):
+            raise RuntimeError(f"local AMP preflight output is not finite at index {index}")
+        if not torch.allclose(
+            full.detach().float().cpu(),
+            mixed.detach().float().cpu(),
+            atol=_AMP_PREFLIGHT_ATOL,
+            rtol=_AMP_PREFLIGHT_RTOL,
+        ):
+            raise RuntimeError(f"local AMP preflight output value mismatch at index {index}")
+
+
+def _consume_amp_reliability_context(model: object) -> None:
+    consume = getattr(model, "consume_reliability_context", None)
+    if not callable(consume):
+        return
+    try:
+        consume()
+    except RuntimeError as error:
+        if "no reliability context" not in str(error):
+            raise
+
+
+def factor_amp_preflight(model: object) -> bool:
+    """Run project-local FP32/autocast parity checks on the active CUDA model."""
+
+    model = _unwrap_training_model(model)
+    if not isinstance(model, torch.nn.Module):
+        raise RuntimeError("local AMP preflight requires a torch module")
+    parameters = tuple(model.parameters())
+    if not parameters:
+        raise RuntimeError("local AMP preflight model has no parameters")
+    device = parameters[0].device
+    if device.type != "cuda" or not torch.cuda.is_available():
+        raise RuntimeError("local AMP preflight requires a CUDA model")
+    if any(parameter.device != device for parameter in parameters):
+        raise RuntimeError("local AMP preflight model parameters span devices")
+    stride_value = getattr(model, "stride", 32)
+    try:
+        stride = max(int(stride_value.max()), 1)
+    except (AttributeError, TypeError, ValueError):
+        stride = 32
+    image_size = max(64, stride * 2)
+    image_size = ((image_size + stride - 1) // stride) * stride
+    image = torch.zeros((1, 3, image_size, image_size), device=device, dtype=torch.float32)
+    was_training = bool(model.training)
+    model.eval()
+    try:
+        with torch.no_grad():
+            fp32_outputs = model(image)
+        _consume_amp_reliability_context(model)
+        with torch.no_grad(), torch.autocast(device_type="cuda", dtype=torch.float16):
+            amp_outputs = model(image)
+        _consume_amp_reliability_context(model)
+        validate_amp_outputs(fp32_outputs, amp_outputs)
+    except RuntimeError:
+        _consume_amp_reliability_context(model)
+        raise
+    finally:
+        model.train(was_training)
+        _consume_amp_reliability_context(model)
+    return True
+
+
+run_local_amp_preflight = factor_amp_preflight
 
 
 def apply_fusion_schedule(trainer: object) -> float:
@@ -1587,6 +1682,18 @@ class FactorCalibrationTrainer(IFDRDetectionTrainer):
             batch[key] = view
         return batch
 
+    def _setup_train(self):
+        """Use the project-local AMP preflight only during parent setup."""
+
+        import ultralytics.engine.trainer as ultralytics_trainer
+
+        original_check_amp = ultralytics_trainer.check_amp
+        ultralytics_trainer.check_amp = factor_amp_preflight
+        try:
+            return super()._setup_train()
+        finally:
+            ultralytics_trainer.check_amp = original_check_amp
+
     @staticmethod
     def _filter_optimizer_for_phase(optimizer: object, phase: object, model: object) -> None:
         named = tuple(model.named_parameters())
@@ -1675,6 +1782,9 @@ __all__ = [
     "IFDRComponentSwitches",
     "IFDRDetectionTrainer",
     "FactorCalibrationTrainer",
+    "factor_amp_preflight",
+    "run_local_amp_preflight",
+    "validate_amp_outputs",
     "apply_fusion_schedule",
     "apply_semantic_calibration_phase",
     "run_validation_without_optimizer_step",

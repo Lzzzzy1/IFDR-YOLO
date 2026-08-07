@@ -29,7 +29,11 @@ from ifdr_yolo.experiments.factor_repair_runtime import (
     FactorRepairRuntime,
     build_factor_repair_runtime,
 )
-from ifdr_yolo.experiments.ifdr_trainer import FactorCalibrationTrainer
+from ifdr_yolo.experiments.ifdr_trainer import (
+    FactorCalibrationTrainer,
+    factor_amp_preflight,
+    validate_amp_outputs,
+)
 from scripts.train_factor_repair import run_registered_condition
 
 
@@ -104,6 +108,36 @@ def _write_bundle(root: Path, *, overlap: bool = False) -> SimpleNamespace:
 
 
 class FactorRepairRuntimeTest(unittest.TestCase):
+    def test_amp_preflight_rejects_cpu_unit_model(self) -> None:
+        model = torch.nn.Linear(4, 4)
+        with self.assertRaisesRegex(RuntimeError, "CUDA"):
+            factor_amp_preflight(model)
+
+    def test_amp_output_validation_rejects_nonfinite_or_shape_drift(self) -> None:
+        valid = (torch.zeros(1, 2),)
+        validate_amp_outputs(valid, (torch.full((1, 2), 0.1),))
+        with self.assertRaisesRegex(RuntimeError, "finite"):
+            validate_amp_outputs((torch.full((1, 2), float("nan")),), valid)
+        with self.assertRaisesRegex(RuntimeError, "shape"):
+            validate_amp_outputs(valid, (torch.zeros(2, 2),))
+
+    def test_setup_train_temporarily_uses_local_amp_check_and_restores(self) -> None:
+        import ultralytics.engine.trainer as ultralytics_trainer
+
+        observed: list[object] = []
+        original = ultralytics_trainer.check_amp
+
+        def parent_setup(_trainer: object) -> str:
+            observed.append(ultralytics_trainer.check_amp)
+            return "ready"
+
+        trainer = object.__new__(FactorCalibrationTrainer)
+        with patch("ifdr_yolo.experiments.ifdr_trainer.factor_amp_preflight", return_value=True) as local:
+            with patch.object(FactorCalibrationTrainer.__mro__[1], "_setup_train", parent_setup):
+                self.assertEqual(trainer._setup_train(), "ready")
+            self.assertIs(observed[0], local)
+        self.assertIs(ultralytics_trainer.check_amp, original)
+
     def _runtime(self, directory: str, **kwargs: object) -> FactorRepairRuntime:
         fixture = _write_bundle(Path(directory), overlap=bool(kwargs.pop("overlap", False)))
         return build_factor_repair_runtime(
