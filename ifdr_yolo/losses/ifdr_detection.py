@@ -29,6 +29,14 @@ from ifdr_yolo.models.gated_fusion import ReliabilityContext
 
 FINAL_PYRAMID_CONTEXT_NODES = (17, 20, 23, 26)
 ALL_FUSION_CONTEXT_NODES = (11, 14, 17, 20, 23, 26)
+_REGISTERED_CALIBRATION_MASKS = frozenset(
+    (
+        (1.0, 0.0, 0.0),
+        (1.0, 1.0, 0.0),
+        (1.0, 0.0, 1.0),
+        (1.0, 1.0, 1.0),
+    )
+)
 
 
 def synthetic_factor_loss_from_context(
@@ -463,6 +471,7 @@ class IFDRDetectionLoss(v8DetectionLoss):
         natural_object_targets: Sequence[object],
         intervention: Sequence[object],
         batch_size: int,
+        loss_mask: Mapping[str, float] | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Compute calibration objectives without entering detection loss."""
 
@@ -477,14 +486,32 @@ class IFDRDetectionLoss(v8DetectionLoss):
             natural_object_targets=natural_object_targets,
             intervention=intervention,
         )
+        if loss_mask is None:
+            loss_mask = {"synthetic": 1.0, "natural": 1.0, "specificity": 1.0}
+        expected_mask = {"synthetic", "natural", "specificity"}
+        if set(loss_mask) != expected_mask or any(
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(float(value))
+            or not 0.0 <= float(value) <= 1.0
+            for value in loss_mask.values()
+        ) or tuple(
+            float(loss_mask[key])
+            for key in ("synthetic", "natural", "specificity")
+        ) not in _REGISTERED_CALIBRATION_MASKS:
+            raise ValueError("calibration loss mask is not registered")
+        synthetic = losses["synthetic_factor_loss"] * float(loss_mask["synthetic"])
+        natural = losses["natural_factor_loss"] * float(loss_mask["natural"])
+        specificity = losses["specificity_loss"] * float(loss_mask["specificity"])
+        total = synthetic + natural + 0.5 * specificity
         components = torch.stack(
             (
-                losses["synthetic_factor_loss"].detach(),
-                losses["natural_factor_loss"].detach(),
-                losses["specificity_loss"].detach(),
+                synthetic.detach(),
+                natural.detach(),
+                specificity.detach(),
             )
         )
-        return losses["total"] * batch_size, components
+        return total * batch_size, components
 
     def get_assigned_targets_and_loss(
         self,

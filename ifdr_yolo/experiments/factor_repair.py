@@ -296,7 +296,7 @@ def semantic_calibration_phase(
             "projection_group_count": 12,
         }
     )
-    return SemanticCalibrationPhase(
+    phase = SemanticCalibrationPhase(
         variant=variant,
         epochs=epochs,
         trainable_parameter_names=trainable_names,
@@ -310,6 +310,11 @@ def semantic_calibration_phase(
         diagnostic_group_provenance=provenance,
         provenance=phase_provenance,
     )
+    # Bind the immutable condition contract to the model consumed by the
+    # calibration loss.  Without this hand-off, F0--F3 all silently use the
+    # unmasked route and natural/specificity gradients leak into F0.
+    setattr(model, "_semantic_calibration_phase", phase)
+    return phase
 
 
 def run_calibration_validation(

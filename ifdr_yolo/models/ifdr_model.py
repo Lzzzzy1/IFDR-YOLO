@@ -463,6 +463,22 @@ class IFDRDetectionModel(DetectionModel):
                 )
             if getattr(self, "criterion", None) is None:
                 self.criterion = self.init_criterion()
+            phase = getattr(self, "_semantic_calibration_phase", None)
+            if phase is None:
+                # Small criterion doubles used by the legacy loss tests do not
+                # expose the semantic registration hook.  A real IFDR model,
+                # however, must be entered through a registered F0--F3 phase.
+                if callable(getattr(self, "factor_semantic_named_parameters", None)):
+                    raise RuntimeError(
+                        "registered calibration phase is required before calibration loss"
+                    )
+                calibration_mask = None
+            else:
+                from ifdr_yolo.experiments.factor_repair import SemanticCalibrationPhase
+
+                if not isinstance(phase, SemanticCalibrationPhase):
+                    raise RuntimeError("calibration phase is not registered")
+                calibration_mask = phase.loss_mask
             predictions = self.forward(
                 torch.cat((clean_image, target_image, background_image), dim=0)
             )
@@ -492,16 +508,25 @@ class IFDRDetectionModel(DetectionModel):
                 raise RuntimeError(
                     "registered calibration records must be non-string sequences"
                 )
-            return self.criterion.calibration_loss(
-                clean_context=clean_context,
-                target_context=target_context,
-                background_context=background_context,
-                dense_target=dense_target,
-                dense_weight=dense_weight,
-                natural_object_targets=natural_targets,
-                intervention=intervention,
-                batch_size=batch_size,
-            )
+            calibration_kwargs = {
+                "clean_context": clean_context,
+                "target_context": target_context,
+                "background_context": background_context,
+                "dense_target": dense_target,
+                "dense_weight": dense_weight,
+                "natural_object_targets": natural_targets,
+                "intervention": intervention,
+                "batch_size": batch_size,
+            }
+            if calibration_mask is not None:
+                from ifdr_yolo.losses.ifdr_detection import IFDRDetectionLoss
+
+                if not isinstance(self.criterion, IFDRDetectionLoss):
+                    raise RuntimeError(
+                        "registered calibration requires IFDRDetectionLoss"
+                    )
+                calibration_kwargs["loss_mask"] = calibration_mask
+            return self.criterion.calibration_loss(**calibration_kwargs)
         if any(
             key in batch
             for key in self._calibration_view_keys()
