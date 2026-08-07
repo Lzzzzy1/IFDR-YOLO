@@ -108,6 +108,33 @@ def _write_bundle(root: Path, *, overlap: bool = False) -> SimpleNamespace:
 
 
 class FactorRepairRuntimeTest(unittest.TestCase):
+    def test_calibration_runtime_and_trainer_disable_geometry_augmentation(self) -> None:
+        required = (
+            "mosaic",
+            "mixup",
+            "cutmix",
+            "copy_paste",
+            "degrees",
+            "translate",
+            "scale",
+            "shear",
+            "perspective",
+            "flipud",
+            "fliplr",
+            "close_mosaic",
+        )
+        expected = {name: 0.0 for name in required}
+        expected["close_mosaic"] = 0
+        with TemporaryDirectory() as directory:
+            runtime = self._runtime(directory)
+            self.assertEqual(dict(runtime.geometry_overrides), expected)
+            provenance = runtime.static_provenance(trainable=(), frozen=())
+            self.assertEqual(provenance["geometry_overrides"], expected)
+            overrides = FactorCalibrationTrainer.ultralytics_overrides(runtime)
+            self.assertEqual({name: overrides[name] for name in required}, expected)
+            self.assertIsInstance(overrides["close_mosaic"], int)
+            self.assertEqual(overrides["close_mosaic"], 0)
+
     def test_amp_preflight_rejects_cpu_unit_model(self) -> None:
         model = torch.nn.Linear(4, 4)
         with self.assertRaisesRegex(RuntimeError, "CUDA"):
@@ -362,6 +389,18 @@ class FactorRepairRuntimeTest(unittest.TestCase):
                 "amp": True,
                 "deterministic": True,
                 "cache": False,
+                "mosaic": 0.0,
+                "mixup": 0.0,
+                "cutmix": 0.0,
+                "copy_paste": 0.0,
+                "degrees": 0.0,
+                "translate": 0.0,
+                "scale": 0.0,
+                "shear": 0.0,
+                "perspective": 0.0,
+                "flipud": 0.0,
+                "fliplr": 0.0,
+                "close_mosaic": 0,
                 "patience": 0,
                 "save_dir": str(Path("run").resolve()),
             },

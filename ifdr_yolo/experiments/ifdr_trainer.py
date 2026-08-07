@@ -26,6 +26,7 @@ from ifdr_yolo.data.ifdr_dataset import (
     build_ifdr_dataset,
 )
 from ifdr_yolo.data.interventions.sampler import SamplingPolicy
+from ifdr_yolo.experiments.factor_repair_runtime import CALIBRATION_GEOMETRY_OVERRIDES
 from ifdr_yolo.models.ifdr_model import IFDRDetectionModel
 
 
@@ -1560,6 +1561,12 @@ class FactorCalibrationTrainer(IFDRDetectionTrainer):
                 raise ValueError(f"factor runtime is missing {name}")
             return result
 
+        geometry_overrides = getattr(runtime, "geometry_overrides", CALIBRATION_GEOMETRY_OVERRIDES)
+        if not isinstance(geometry_overrides, Mapping):
+            raise ValueError("factor runtime geometry overrides are invalid")
+        expected_geometry = dict(CALIBRATION_GEOMETRY_OVERRIDES)
+        if dict(geometry_overrides) != expected_geometry:
+            raise ValueError("factor calibration geometry overrides must all be zero")
         return {
             "model": str(Path(value("model_yaml")).resolve()),
             "data": str(Path(value("resolved_data_yaml")).resolve()),
@@ -1579,6 +1586,7 @@ class FactorCalibrationTrainer(IFDRDetectionTrainer):
             "amp": bool(value("amp")),
             "deterministic": bool(value("deterministic")),
             "cache": bool(value("cache")),
+            **expected_geometry,
             "patience": 0,
             "save_dir": str(Path(value("run_dir")).resolve()),
         }

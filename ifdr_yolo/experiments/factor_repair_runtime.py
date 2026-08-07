@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import hashlib
 import json
 from pathlib import Path
@@ -39,6 +39,27 @@ _FIXED_TRAINING: dict[str, object] = {
     "deterministic": True,
     "cache": False,
 }
+
+# Ultralytics keeps these augmentations enabled by default.  Factor
+# calibration binds clean/target/background views to one image geometry, so
+# every geometry-changing probability is part of the immutable runtime
+# contract rather than an incidental CLI default.
+CALIBRATION_GEOMETRY_OVERRIDES: Mapping[str, float | int] = MappingProxyType(
+    {
+        "mosaic": 0.0,
+        "mixup": 0.0,
+        "cutmix": 0.0,
+        "copy_paste": 0.0,
+        "degrees": 0.0,
+        "translate": 0.0,
+        "scale": 0.0,
+        "shear": 0.0,
+        "perspective": 0.0,
+        "flipud": 0.0,
+        "fliplr": 0.0,
+        "close_mosaic": 0,
+    }
+)
 
 
 def file_sha256(path: str | Path) -> str:
@@ -256,6 +277,9 @@ class FactorRepairRuntime:
     cache: bool
     smoke_mode: bool = False
     run_mode: str = "formal"
+    geometry_overrides: Mapping[str, float | int] = field(
+        default_factory=lambda: dict(CALIBRATION_GEOMETRY_OVERRIDES)
+    )
 
     def __post_init__(self) -> None:
         if self.condition not in REGISTERED_FACTOR_CONDITIONS:
@@ -277,6 +301,10 @@ class FactorRepairRuntime:
         object.__setattr__(self, "development_manifest", Path(self.development_manifest).resolve())
         object.__setattr__(self, "fit_ids", tuple(self.fit_ids))
         object.__setattr__(self, "development_ids", tuple(self.development_ids))
+        geometry_overrides = dict(self.geometry_overrides)
+        if geometry_overrides != dict(CALIBRATION_GEOMETRY_OVERRIDES):
+            raise ValueError("factor calibration geometry overrides must all be zero")
+        object.__setattr__(self, "geometry_overrides", MappingProxyType(geometry_overrides))
 
     def static_provenance(self, *, trainable: tuple[str, ...] = (), frozen: tuple[str, ...] = ()) -> dict[str, object]:
         return {
@@ -311,6 +339,7 @@ class FactorRepairRuntime:
             "amp": self.amp,
             "deterministic": self.deterministic,
             "cache": self.cache,
+            "geometry_overrides": dict(self.geometry_overrides),
             "fit_ids": self.fit_ids,
             "development_ids": self.development_ids,
             "trainable_parameter_names": tuple(trainable),
@@ -522,6 +551,7 @@ __all__ = [
     "FactorRuntime",
     "REGISTERED_FACTOR_CONDITIONS",
     "REGISTERED_EPOCHS",
+    "CALIBRATION_GEOMETRY_OVERRIDES",
     "build_factor_repair_runtime",
     "load_factor_repair_runtime",
     "file_sha256",
