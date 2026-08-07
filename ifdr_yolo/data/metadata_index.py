@@ -14,6 +14,7 @@ from math import isfinite
 from types import MappingProxyType
 from typing import Any, Mapping, Sequence
 import re
+from pathlib import Path
 
 from ifdr_yolo.data.kitti_types import TRAIN_CLASS_TO_ID
 from ifdr_yolo.data.natural_degradation import (
@@ -401,12 +402,158 @@ def build_metadata_index(
     )
 
 
+def load_metadata_index(
+    path: str | Path,
+    *,
+    expected_sha256: str | None = None,
+) -> FactorMetadataIndex:
+    """Deserialize and integrity-check a generated ``metadata_index.json``.
+
+    The generated artifact stores the digest of the canonical index payload in
+    ``sha256`` while the protocol identity stores that same digest.  Parsing is
+    intentionally strict: malformed records, altered fields, and an altered
+    artifact digest all fail before a dataset can consume the index.
+    """
+
+    candidate = Path(path).expanduser()
+    if candidate.is_symlink():
+        raise ValueError(f"metadata index must not be a symlink: {candidate}")
+    resolved = candidate.resolve()
+    if not resolved.is_file():
+        raise FileNotFoundError(f"metadata index does not exist: {resolved}")
+    raw = resolved.read_bytes()
+    if not raw:
+        raise ValueError("metadata index is empty")
+    expected_logical_sha256 = (
+        _validate_hash(expected_sha256, "metadata index SHA256")
+        if expected_sha256 is not None
+        else None
+    )
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError("metadata index must contain valid JSON") from error
+    if not isinstance(payload, Mapping):
+        raise ValueError("metadata index root must be a mapping")
+    by_image_raw = payload.get("by_image")
+    if not isinstance(by_image_raw, Mapping):
+        raise ValueError("metadata index by_image must be a mapping")
+
+    records_by_image: dict[str, tuple[FactorObjectRecord, ...]] = {}
+    for image_id, raw_records in by_image_raw.items():
+        if not isinstance(image_id, str) or not image_id or image_id.strip() != image_id:
+            raise ValueError("metadata index image IDs must be exact text")
+        if not isinstance(raw_records, Sequence) or isinstance(raw_records, (str, bytes)):
+            raise ValueError(f"metadata index records for {image_id} must be a sequence")
+        parsed: list[FactorObjectRecord] = []
+        for raw_record in raw_records:
+            if not isinstance(raw_record, Mapping):
+                raise ValueError("metadata index object record must be a mapping")
+            required = {
+                "image_id", "object_id", "class_id", "class_name", "bbox_xyxy",
+                "height", "depth_m", "occlusion", "truncation", "sampling",
+                "visibility", "joint", "sampling_valid", "visibility_valid",
+            }
+            if set(raw_record) != required:
+                raise ValueError("metadata index object record fields are invalid")
+            record_image_id = raw_record["image_id"]
+            object_id = raw_record["object_id"]
+            class_id = raw_record["class_id"]
+            class_name = raw_record["class_name"]
+            if record_image_id != image_id or not isinstance(object_id, str):
+                raise ValueError("metadata index object identity is invalid")
+            if isinstance(class_id, bool) or not isinstance(class_id, int):
+                raise ValueError("metadata index class_id is invalid")
+            if not isinstance(class_name, str):
+                raise ValueError("metadata index class_name is invalid")
+            bbox = raw_record["bbox_xyxy"]
+            if not isinstance(bbox, Sequence) or isinstance(bbox, (str, bytes)) or len(bbox) != 4:
+                raise ValueError("metadata index bbox is invalid")
+            try:
+                numbers = tuple(float(value) for value in bbox)
+                height = float(raw_record["height"])
+                depth = raw_record["depth_m"]
+                depth = None if depth is None else float(depth)
+                occlusion = int(raw_record["occlusion"])
+                truncation = float(raw_record["truncation"])
+                sampling = float(raw_record["sampling"])
+                visibility = float(raw_record["visibility"])
+                joint = float(raw_record["joint"])
+            except (TypeError, ValueError, OverflowError) as error:
+                raise ValueError("metadata index numeric field is invalid") from error
+            if not all(isfinite(value) for value in numbers + (height, truncation, sampling, visibility, joint)):
+                raise ValueError("metadata index numeric field must be finite")
+            if depth is not None and not isfinite(depth):
+                raise ValueError("metadata index depth_m must be finite")
+            if not isinstance(raw_record["sampling_valid"], bool) or not isinstance(raw_record["visibility_valid"], bool):
+                raise ValueError("metadata index validity flags must be boolean")
+            parsed.append(
+                FactorObjectRecord(
+                    image_id=record_image_id,
+                    object_id=object_id,
+                    class_id=class_id,
+                    class_name=class_name,
+                    bbox_xyxy=numbers,
+                    height=height,
+                    depth_m=depth,
+                    occlusion=occlusion,
+                    truncation=truncation,
+                    sampling=sampling,
+                    visibility=visibility,
+                    joint=joint,
+                    sampling_valid=raw_record["sampling_valid"],
+                    visibility_valid=raw_record["visibility_valid"],
+                )
+            )
+        records_by_image[image_id] = tuple(parsed)
+
+    source_sha256 = _validate_hash(payload.get("source_sha256"), "source_sha256")
+    split_sha256 = _validate_hash(payload.get("split_sha256"), "split_sha256")
+    label_source_sha256 = _validate_hash(
+        payload.get("label_source_sha256"), "label_source_sha256"
+    )
+    invalid_depth_count = payload.get("invalid_depth_count", 0)
+    if isinstance(invalid_depth_count, bool) or not isinstance(invalid_depth_count, int) or invalid_depth_count < 0:
+        raise ValueError("invalid_depth_count must be a non-negative integer")
+    supplied_sha256 = _validate_hash(payload.get("sha256"), "metadata index sha256")
+    canonical_payload = _index_payload(
+        records_by_image,
+        source_sha256=source_sha256,
+        split_sha256=split_sha256,
+        label_source_sha256=label_source_sha256,
+        invalid_depth_count=invalid_depth_count,
+    )
+    actual_sha256 = hashlib.sha256(_canonical_json(canonical_payload)).hexdigest()
+    if supplied_sha256 != actual_sha256:
+        raise ValueError(
+            "metadata index SHA256 mismatch: "
+            f"expected={supplied_sha256}, actual={actual_sha256}"
+        )
+    if expected_logical_sha256 is not None and supplied_sha256 != expected_logical_sha256:
+        file_digest = hashlib.sha256(raw).hexdigest()
+        if file_digest != expected_logical_sha256:
+            raise ValueError("metadata index SHA256 does not match expected identity")
+    return FactorMetadataIndex(
+        by_image=records_by_image,
+        source_sha256=source_sha256,
+        split_sha256=split_sha256,
+        label_source_sha256=label_source_sha256,
+        sha256=supplied_sha256,
+        invalid_depth_count=invalid_depth_count,
+    )
+
+
+deserialize_metadata_index = load_metadata_index
+
+
 __all__ = [
     "FactorMetadataIndex",
     "FactorObjectRecord",
     "KittiLabelCandidate",
     "KittiMetadataObject",
     "build_metadata_index",
+    "load_metadata_index",
+    "deserialize_metadata_index",
     "box_iou",
     "compute_sampling_score",
     "compute_visibility_score",

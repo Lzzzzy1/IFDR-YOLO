@@ -18,7 +18,11 @@ from ultralytics.models.yolo.detect import DetectionTrainer
 from ultralytics.utils import DEFAULT_CFG, RANK
 
 from ifdr_yolo.data.ifdr_dataset import (
+    BACKGROUND_IMAGE_KEY,
+    CLEAN_IMAGE_KEY,
     COUNTERFACTUAL_IMAGE_KEY,
+    TARGET_IMAGE_KEY,
+    SpecificityRejectionCounter,
     build_ifdr_dataset,
 )
 from ifdr_yolo.data.interventions.sampler import SamplingPolicy
@@ -1446,3 +1450,233 @@ class IFDRDetectionTrainer(DetectionTrainer):
             )
         batch[COUNTERFACTUAL_IMAGE_KEY] = counterfactual
         return batch
+
+
+class FactorCalibrationTrainer(IFDRDetectionTrainer):
+    """Ultralytics trainer bound to one immutable F0--F3 runtime."""
+
+    @staticmethod
+    def ultralytics_overrides(runtime: object) -> dict[str, object]:
+        """Return the complete registered Ultralytics override mapping."""
+
+        def value(name: str) -> object:
+            result = getattr(runtime, name, None)
+            if result is None:
+                raise ValueError(f"factor runtime is missing {name}")
+            return result
+
+        return {
+            "model": str(Path(value("model_yaml")).resolve()),
+            "data": str(Path(value("resolved_data_yaml")).resolve()),
+            "pretrained": str(Path(value("initialization_checkpoint")).resolve()),
+            "epochs": int(value("epochs")),
+            "imgsz": int(value("imgsz")),
+            "batch": int(value("batch")),
+            "workers": int(value("workers")),
+            "device": str(value("device")),
+            "optimizer": str(value("optimizer")),
+            "lr0": float(value("lr0")),
+            "lrf": float(value("lrf")),
+            "momentum": float(value("momentum")),
+            "weight_decay": float(value("weight_decay")),
+            "warmup_epochs": float(value("warmup_epochs")),
+            "seed": int(value("seed")),
+            "amp": bool(value("amp")),
+            "deterministic": bool(value("deterministic")),
+            "cache": bool(value("cache")),
+            "patience": 0,
+            "save_dir": str(Path(value("run_dir")).resolve()),
+        }
+
+    def __init__(
+        self,
+        runtime: object,
+        *,
+        config: object | None = None,
+        condition: str | None = None,
+        run_dir: str | Path | None = None,
+        metadata_index: object | None = None,
+        draw_callback: object | None = None,
+        draw_journal: object | None = None,
+    ) -> None:
+        del draw_journal  # the callback owns the durable journal binding
+        runtime_condition = getattr(runtime, "condition", None)
+        self.runtime = runtime
+        self.config = config if config is not None else getattr(runtime, "config", None)
+        self.condition = condition if condition is not None else runtime_condition
+        if self.condition not in {"F0", "F1", "F2", "F3"}:
+            raise ValueError("factor calibration condition must be F0, F1, F2, or F3")
+        self.run_dir = Path(run_dir if run_dir is not None else getattr(runtime, "run_dir")).resolve()
+        self.metadata_index = (
+            metadata_index if metadata_index is not None else getattr(runtime, "metadata_index", None)
+        )
+        if self.metadata_index is None:
+            raise ValueError("factor calibration requires a metadata index")
+        self.specificity_rejection_counter = SpecificityRejectionCounter()
+        self.seed = int(getattr(runtime, "seed"))
+        self.draw_callback = draw_callback if callable(draw_callback) else None
+        self.calibration_phase = None
+        self._calibration_optimizer_bound = False
+        overrides = self.ultralytics_overrides(runtime)
+        super().__init__(
+            overrides=overrides,
+            component_switches=IFDRComponentSwitches(
+                fusion_gate=False,
+                dcli=False,
+                factor_supervision=True,
+                interventions=True,
+            ),
+            intervention_seed=self.seed,
+        )
+        self.add_callback("on_train_epoch_start", self._record_epoch_draw)
+
+    def _record_epoch_draw(self, trainer: object | None = None) -> None:
+        owner = trainer if trainer is not None and hasattr(trainer, "epoch") else self
+        epoch = getattr(owner, "epoch", None)
+        if isinstance(epoch, bool) or not isinstance(epoch, int) or epoch < 0:
+            raise ValueError("factor calibration epoch is invalid")
+        key = f"{self.condition}:seed={self.seed}:epoch={epoch}"
+        if self.draw_callback is not None:
+            self.draw_callback(epoch, key)
+
+    def build_dataset(
+        self,
+        img_path: str,
+        mode: str = "train",
+        batch: int | None = None,
+    ):
+        model = _unwrap_training_model(self.model)
+        stride = max(int(model.stride.max()), 32)
+        component_switches = getattr(self, "component_switches", IFDRComponentSwitches())
+        train_mode = mode == "train"
+        return build_ifdr_dataset(
+            self.args,
+            img_path,
+            batch,
+            self.data,
+            mode=mode,
+            rect=mode == "val",
+            stride=stride,
+            intervention_seed=self.intervention_seed,
+            interventions_enabled=train_mode and component_switches.interventions,
+            counterfactual_enabled=train_mode and component_switches.counterfactual_consistency,
+            intervention_policy=getattr(self, "intervention_policy", None),
+            calibration_enabled=train_mode,
+            metadata_index=self.metadata_index if train_mode else None,
+            specificity_rejection_counter=self.specificity_rejection_counter,
+        )
+
+    def preprocess_batch(self, batch: dict) -> dict:
+        batch = super().preprocess_batch(batch)
+        base = batch.get("img")
+        if not isinstance(base, torch.Tensor):
+            raise RuntimeError("calibration batch image is missing")
+        device = getattr(self, "device", base.device)
+        target_shape = tuple(base.shape[-2:])
+        for key in (CLEAN_IMAGE_KEY, TARGET_IMAGE_KEY, BACKGROUND_IMAGE_KEY):
+            view = batch.get(key)
+            if view is None:
+                raise RuntimeError(f"calibration batch view is missing: {key}")
+            if not isinstance(view, torch.Tensor):
+                raise RuntimeError(f"calibration batch view must be a tensor: {key}")
+            view = view.to(device=device).float() / 255.0
+            if tuple(view.shape[-2:]) != target_shape:
+                view = F.interpolate(view, size=target_shape, mode="bilinear", align_corners=False)
+            if view.shape != base.shape:
+                raise RuntimeError(f"calibration batch view shape mismatch: {key}")
+            batch[key] = view
+        return batch
+
+    @staticmethod
+    def _filter_optimizer_for_phase(optimizer: object, phase: object, model: object) -> None:
+        named = tuple(model.named_parameters())
+        expected_names = tuple(getattr(phase, "trainable_parameter_names", ()))
+        expected_ids = {id(parameter) for name, parameter in named if name in expected_names}
+        if not expected_ids or len(expected_ids) != len(expected_names):
+            raise ValueError("semantic calibration phase trainable parameters are invalid")
+        for name, parameter in named:
+            parameter.requires_grad = name in expected_names
+        groups = getattr(optimizer, "param_groups", None)
+        if not isinstance(groups, list):
+            raise TypeError("optimizer must expose param_groups")
+        for group in groups:
+            parameters = group.get("params")
+            if not isinstance(parameters, list):
+                parameters = list(parameters or ())
+            group["params"] = [parameter for parameter in parameters if parameter.requires_grad]
+        actual_ids = {
+            id(parameter)
+            for group in groups
+            for parameter in group.get("params", ())
+        }
+        if actual_ids != expected_ids:
+            raise AssertionError("optimizer parameters do not exactly match semantic calibration phase")
+
+    def build_optimizer(
+        self,
+        model: object,
+        name: str = "auto",
+        lr: float = 0.001,
+        momentum: float = 0.9,
+        decay: float = 1e-5,
+        iterations: float = 1e5,
+    ):
+        """Bind semantic calibration at the post-model optimizer boundary."""
+
+        from ifdr_yolo.experiments.factor_repair import semantic_calibration_phase
+
+        model = _unwrap_training_model(model)
+        if self.calibration_phase is None:
+            self.calibration_phase = semantic_calibration_phase(
+                model,
+                variant=self.condition,
+                epochs=30,
+            )
+        optimizer = super().build_optimizer(
+            model,
+            name=name,
+            lr=lr,
+            momentum=momentum,
+            decay=decay,
+            iterations=iterations,
+        )
+        self._filter_optimizer_for_phase(optimizer, self.calibration_phase, model)
+        self._calibration_optimizer_bound = True
+        runtime_writer = getattr(self.runtime, "write_provenance", None)
+        if callable(runtime_writer):
+            runtime_writer(
+                trainable=tuple(self.calibration_phase.trainable_parameter_names),
+                frozen=tuple(self.calibration_phase.frozen_parameter_names),
+            )
+        return optimizer
+
+    def evaluate_primary_last(self, path: str | Path):
+        """Evaluate only a caller-supplied, provenance-bound ``last.pt`` path."""
+
+        candidate = Path(path).expanduser().resolve()
+        run_dir = Path(getattr(self.runtime, "run_dir")).resolve()
+        allowed = {run_dir / "last.pt", run_dir / "weights" / "last.pt"}
+        if candidate.name != "last.pt" or candidate not in allowed:
+            raise ValueError("factor calibration evaluator requires the run's last.pt")
+        if not candidate.is_file() or candidate.stat().st_size <= 0:
+            raise FileNotFoundError(f"primary checkpoint is missing or empty: {candidate}")
+        validator = getattr(self, "validator", None)
+        if not callable(validator):
+            raise ValueError("factor calibration validator is not initialized")
+        # Keep evaluation path-bound: the validator receives the verified
+        # checkpoint itself rather than the in-memory training model or a
+        # zero-argument ``final_eval`` fallback.
+        self.metrics = validator(model=candidate)
+        return self.metrics
+
+
+__all__ = [
+    "FusionSchedule",
+    "IFDRComponentSwitches",
+    "IFDRDetectionTrainer",
+    "FactorCalibrationTrainer",
+    "apply_fusion_schedule",
+    "apply_semantic_calibration_phase",
+    "run_validation_without_optimizer_step",
+    "apply_task_adaptation_phase",
+]

@@ -12,6 +12,7 @@ import argparse
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from hashlib import sha256
+import inspect
 import json
 import math
 import os
@@ -338,6 +339,43 @@ def _atomic_json(path: Path, payload: Mapping[str, object]) -> None:
     atomic_write_json(path, payload)
 
 
+def _require_runtime_provenance(runtime: object, run_dir: Path) -> None:
+    """Require the complete immutable runtime record before publishing metrics."""
+
+    path = Path(run_dir) / "resolved_runtime.json"
+    if not path.is_file():
+        raise ValueError("resolved runtime provenance is missing")
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError("resolved runtime provenance is invalid") from error
+    if not isinstance(payload, Mapping):
+        raise ValueError("resolved runtime provenance must be a mapping")
+    required = (
+        "run_mode",
+        "registered_epochs",
+        "actual_epochs",
+        "model_sha256",
+        "data_sha256",
+        "initialization_checkpoint_sha256",
+        "fit_ids_sha256",
+        "development_ids_sha256",
+        "metadata_index_sha256",
+        "metadata_index_file_sha256",
+        "trainable_parameter_names",
+        "frozen_parameter_names",
+    )
+    missing = [field for field in required if field not in payload]
+    if missing:
+        raise ValueError(f"resolved runtime provenance is missing fields: {missing}")
+    if not isinstance(payload["trainable_parameter_names"], (list, tuple)) or not payload["trainable_parameter_names"]:
+        raise ValueError("resolved runtime trainable parameter provenance is empty")
+    if not isinstance(payload["frozen_parameter_names"], (list, tuple)) or not payload["frozen_parameter_names"]:
+        raise ValueError("resolved runtime frozen parameter provenance is empty")
+    if runtime is not None and payload.get("condition") != getattr(runtime, "condition", payload.get("condition")):
+        raise ValueError("resolved runtime condition provenance mismatch")
+
+
 @dataclass
 class EpochDrawJournal:
     """Exactly-once epoch draw journal with crash-safe atomic writes."""
@@ -387,17 +425,31 @@ def resume_epoch_draw_journal(path: Path, epoch: int, draw_key: str) -> bool:
 
 
 def evaluate_primary_last(
-    run_dir: Path,
+    path: Path,
     *,
-    checkpoint_hash: str,
-    evaluator: Callable[[Path], object],
+    checkpoint_hash: str | None = None,
+    evaluator: Callable[[Path], object] | None = None,
 ) -> Path:
-    """Evaluate only ``last.pt`` and publish the primary metric filename."""
+    """Evaluate a verified ``last.pt`` path and publish primary metrics.
 
-    last = _checkpoint_path(run_dir, PRIMARY_CHECKPOINT)
-    actual = _require_file_hash(last, checkpoint_hash, "primary checkpoint")
-    if actual != checkpoint_hash.lower():
+    ``path`` may be the checkpoint itself (the formal path-bound API) or the
+    historical run-directory form retained for existing callers.
+    """
+
+    candidate = Path(path).expanduser().resolve()
+    if candidate.name == PRIMARY_CHECKPOINT:
+        last = candidate
+        run_dir = candidate.parent.parent if candidate.parent.name == "weights" else candidate.parent
+    else:
+        run_dir = candidate
+        last = _checkpoint_path(run_dir, PRIMARY_CHECKPOINT)
+    if not last.is_file() or last.stat().st_size <= 0:
+        raise FileNotFoundError(f"primary checkpoint file is missing or empty: {last}")
+    actual = file_sha256(last)
+    if checkpoint_hash is not None and actual != _sha256(checkpoint_hash, "primary checkpoint.sha256"):
         raise ValueError("primary checkpoint hash mismatch")
+    if evaluator is None:
+        raise ValueError("path-bound primary evaluator is required")
     metrics = evaluator(last)
     if isinstance(metrics, Mapping):
         payload: object = {
@@ -433,6 +485,8 @@ class FactorRepairRun:
     initialization_checkpoint_sha256: str
     fit_ids: tuple[str, ...]
     journal: EpochDrawJournal
+    runtime: object | None = None
+    smoke_mode: bool = False
 
     @property
     def status_path(self) -> Path:
@@ -453,9 +507,12 @@ def build_factor_repair_run(
     repository_root: Path | None = None,
     run_dir: Path | None = None,
     git_provenance: Mapping[str, object] | None = None,
+    smoke_mode: bool = False,
 ) -> FactorRepairRun:
     """Validate immutable scientific identity and create a prepared run."""
 
+    if not isinstance(smoke_mode, bool):
+        raise ValueError("smoke_mode must be boolean")
     condition_name = _condition_name(config, condition)
     fit_ids = validate_fit_loader_ids(config, loader_ids)
     identity = _identity_mapping(config)
@@ -496,6 +553,7 @@ def build_factor_repair_run(
             initialization_checkpoint_sha256=initialization_hash,
             fit_ids=fit_ids,
             journal=journal,
+            smoke_mode=smoke_mode,
         )
     except Exception:
         lock.release()
@@ -513,10 +571,23 @@ def run_registered_condition(
 
     run.store.transition("running")
     try:
+        runtime = getattr(run, "runtime", None)
+        using_default_factory = trainer_factory is None
         if trainer_factory is None:
-            from ifdr_yolo.experiments.ifdr_trainer import IFDRDetectionTrainer
+            from ifdr_yolo.experiments.factor_repair_runtime import (
+                build_factor_repair_runtime,
+            )
+            from ifdr_yolo.experiments.ifdr_trainer import FactorCalibrationTrainer
 
-            trainer_factory = IFDRDetectionTrainer
+            if runtime is None:
+                runtime = build_factor_repair_runtime(
+                    run.config,
+                    condition=run.condition,
+                    run_dir=run.run_dir,
+                    smoke_mode=bool(getattr(run, "smoke_mode", False)),
+                )
+                run.runtime = runtime
+            trainer_factory = FactorCalibrationTrainer
         trainer_kwargs = {
             "config": run.config,
             "condition": run.condition,
@@ -524,27 +595,48 @@ def run_registered_condition(
             "draw_callback": run.record_epoch_draw,
             "draw_journal": run.journal,
         }
-        try:
-            trainer = trainer_factory(**trainer_kwargs)
-        except TypeError:
-            try:
-                trainer = trainer_factory(condition=run.condition, run_dir=run.run_dir)
-            except TypeError:
-                try:
-                    trainer = trainer_factory(overrides={"save_dir": str(run.run_dir)})
-                except TypeError:
-                    trainer = trainer_factory()
+        if runtime is not None:
+            trainer_kwargs.update(
+                {
+                    "runtime": runtime,
+                    "metadata_index": getattr(runtime, "metadata_index", None),
+                }
+            )
+            if using_default_factory:
+                from ifdr_yolo.experiments.ifdr_trainer import FactorCalibrationTrainer
+
+                trainer_kwargs["overrides"] = FactorCalibrationTrainer.ultralytics_overrides(runtime)
+        # A custom test factory may expose a narrower, explicit signature, but
+        # it is still invoked exactly once.  In particular, a TypeError raised
+        # inside its body must propagate unchanged.
+        signature = inspect.signature(trainer_factory)
+        parameters = tuple(signature.parameters.values())
+        accepts_kwargs = any(parameter.kind == inspect.Parameter.VAR_KEYWORD for parameter in parameters)
+        positional_args = [
+            trainer_kwargs[parameter.name]
+            for parameter in parameters
+            if parameter.kind == inspect.Parameter.POSITIONAL_ONLY
+            and parameter.name in trainer_kwargs
+        ]
+        if accepts_kwargs:
+            selected_kwargs = dict(trainer_kwargs)
+        else:
+            accepted_names = {
+                parameter.name
+                for parameter in parameters
+                if parameter.kind in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)
+            }
+            selected_kwargs = {
+                name: value for name, value in trainer_kwargs.items() if name in accepted_names
+            }
+        trainer = trainer_factory(*positional_args, **selected_kwargs)
         train = getattr(trainer, "train", None)
         if not callable(train):
             raise TypeError("trainer must expose train()")
         if evaluator is None:
             evaluator = getattr(trainer, "evaluate_primary_last", None)
             if evaluator is None:
-                evaluator = getattr(trainer, "evaluate", None)
-            if evaluator is None:
-                evaluator = getattr(trainer, "final_eval", None)
-            if evaluator is None:
-                raise ValueError("formal factor-repair evaluator is required")
+                raise ValueError("path-bound formal factor-repair evaluator is required")
         result = train()
         if isinstance(result, Mapping):
             validate_finite_loss(result.get("losses", result))
@@ -556,6 +648,8 @@ def run_registered_condition(
         trainer_losses = getattr(trainer, "losses", None)
         if trainer_losses is not None:
             validate_finite_loss(trainer_losses)
+        if runtime is not None:
+            _require_runtime_provenance(runtime, run.run_dir)
         run.store.transition("trained")
         roles = verify_checkpoint_artifacts(run.run_dir, expected=checkpoint_hashes)
         _atomic_json(run.run_dir / "checkpoint_roles.json", roles)
@@ -586,6 +680,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run a registered factor-repair condition.")
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--condition", choices=REGISTERED_CONDITIONS, required=True)
+    parser.add_argument("--smoke-mode", action="store_true")
     return parser
 
 
@@ -596,7 +691,12 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     config_path = args.config if args.config.is_absolute() else repository_root / args.config
     config = load_factor_repair_config(config_path.resolve(), repository_root=repository_root)
-    run = build_factor_repair_run(config, condition=args.condition, repository_root=repository_root)
+    run = build_factor_repair_run(
+        config,
+        condition=args.condition,
+        repository_root=repository_root,
+        smoke_mode=args.smoke_mode,
+    )
     run_registered_condition(run)
     print(f"FACTOR REPAIR {args.condition} COMPLETE")
     print(f"run_dir={run.run_dir}")
