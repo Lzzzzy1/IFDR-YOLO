@@ -311,6 +311,31 @@ class ThreeViewLossTest(unittest.TestCase):
         self.assertIn("factor_device=cpu", message)
         self.assertIn("branch_device=cpu", message)
 
+    def test_mixed_amp_contexts_normalize_to_float32_with_gradients(self):
+        from ifdr_yolo.models.ifdr_model import split_three_view_contexts
+
+        factors = torch.ones((3, 2, 2, 2), dtype=torch.float16, requires_grad=True)
+        branch_weights = torch.ones((3, 2, 2, 2), dtype=torch.float32)
+        contexts = {
+            11: ReliabilityContext(
+                factors=factors,
+                branch_weights=branch_weights,
+                gate_strength=1.0,
+            )
+        }
+
+        views = split_three_view_contexts(contexts, 1, required_nodes=(11,))
+        self.assertTrue(
+            all(view[11].factors.dtype == torch.float32 for view in views)
+        )
+        self.assertTrue(
+            all(view[11].branch_weights.dtype == torch.float32 for view in views)
+        )
+
+        sum(view[11].factors.sum() for view in views).backward()
+        self.assertIsNotNone(factors.grad)
+        self.assertTrue(torch.isfinite(factors.grad).all())
+
 
 if __name__ == "__main__":
     unittest.main()

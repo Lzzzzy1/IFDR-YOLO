@@ -167,39 +167,14 @@ def split_three_view_contexts(
             or factors.shape[1] != 2
             or not factors.is_floating_point()
             or not branch_weights.is_floating_point()
-            or factors.dtype != branch_weights.dtype
             or factors.device != branch_weights.device
         ):
-            factor_shape = (
-                tuple(factors.shape)
-                if isinstance(factors, torch.Tensor)
-                else f"<{type(factors).__name__}>"
-            )
-            branch_shape = (
-                tuple(branch_weights.shape)
-                if isinstance(branch_weights, torch.Tensor)
-                else f"<{type(branch_weights).__name__}>"
-            )
-            factor_dtype = (
-                str(factors.dtype)
-                if isinstance(factors, torch.Tensor)
-                else f"<{type(factors).__name__}>"
-            )
-            branch_dtype = (
-                str(branch_weights.dtype)
-                if isinstance(branch_weights, torch.Tensor)
-                else f"<{type(branch_weights).__name__}>"
-            )
-            factor_device = (
-                str(factors.device)
-                if isinstance(factors, torch.Tensor)
-                else f"<{type(factors).__name__}>"
-            )
-            branch_device = (
-                str(branch_weights.device)
-                if isinstance(branch_weights, torch.Tensor)
-                else f"<{type(branch_weights).__name__}>"
-            )
+            factor_shape = tuple(factors.shape) if isinstance(factors, torch.Tensor) else None
+            branch_shape = tuple(branch_weights.shape) if isinstance(branch_weights, torch.Tensor) else None
+            factor_dtype = str(factors.dtype) if isinstance(factors, torch.Tensor) else None
+            branch_dtype = str(branch_weights.dtype) if isinstance(branch_weights, torch.Tensor) else None
+            factor_device = str(factors.device) if isinstance(factors, torch.Tensor) else None
+            branch_device = str(branch_weights.device) if isinstance(branch_weights, torch.Tensor) else None
             raise RuntimeError(
                 f"three-view reliability context at node {node} must have leading dimension 3B "
                 f"(node={node}, batch_size={batch_size}, expected=3B={3 * batch_size}, "
@@ -207,6 +182,8 @@ def split_three_view_contexts(
                 f"factor_dtype={factor_dtype}, branch_dtype={branch_dtype}, "
                 f"factor_device={factor_device}, branch_device={branch_device})"
             )
+        factors = factors.float()
+        branch_weights = branch_weights.float()
         if reference_dtype is None:
             reference_dtype = factors.dtype
             reference_device = factors.device
