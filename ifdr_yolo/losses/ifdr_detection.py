@@ -223,10 +223,11 @@ def multiscale_factor_supervision(
             raise ValueError(
                 f"factor batch/channels at node {node_index} do not match target"
             )
-        if factors.device != target.device or factors.dtype != target.dtype:
+        if factors.device != target.device:
             raise ValueError(
-                f"factor target and node {node_index} must share dtype and device"
+                f"factor target and node {node_index} must share device"
             )
+        factors = factors.to(dtype=target.dtype)
         size = factors.shape[-2:]
         scaled_target = F.interpolate(target, size=size, mode="area")
         scaled_weight = F.interpolate(weight, size=size, mode="area")

@@ -191,6 +191,41 @@ class PyramidFactorAlignmentTest(unittest.TestCase):
         self.assertGreater(float(mismatch.detach()), 0.0)
         self.assertIsNotNone(contexts[17].factors.grad)
 
+    def test_multiscale_supervision_normalizes_mixed_amp_factors(self) -> None:
+        from ifdr_yolo.losses.ifdr_detection import (
+            multiscale_factor_supervision,
+        )
+        from ifdr_yolo.models.gated_fusion import ReliabilityContext
+
+        target = torch.full((1, 2, 16, 16), 0.75, dtype=torch.float32)
+        weight = torch.ones_like(target)
+        factors = torch.full(
+            (1, 2, 4, 4),
+            0.25,
+            dtype=torch.float16,
+            requires_grad=True,
+        )
+        contexts = {
+            11: ReliabilityContext(
+                factors=factors,
+                branch_weights=torch.ones_like(factors),
+                gate_strength=1.0,
+            )
+        }
+
+        loss = multiscale_factor_supervision(
+            contexts,
+            target,
+            weight,
+            node_indices=(11,),
+        )
+        self.assertEqual(loss.dtype, torch.float32)
+        self.assertTrue(torch.isfinite(loss))
+
+        loss.backward()
+        self.assertIsNotNone(factors.grad)
+        self.assertTrue(torch.isfinite(factors.grad).all())
+
     def test_counterfactual_delta_is_selective_and_updates_both_views(
         self,
     ) -> None:
