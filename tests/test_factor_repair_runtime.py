@@ -334,6 +334,31 @@ class FactorRepairRuntimeTest(unittest.TestCase):
             self.assertEqual(trainer.evaluate_primary_last(last), {"ok": True})
             self.assertEqual(seen, [last.resolve()])
 
+    def test_evaluator_invalidates_validator_dataloader_before_checkpoint_call(self) -> None:
+        with TemporaryDirectory() as directory:
+            run_dir = Path(directory) / "run"
+            last = run_dir / "weights" / "last.pt"
+            last.parent.mkdir(parents=True)
+            last.write_bytes(b"last")
+
+            class Validator:
+                def __init__(self) -> None:
+                    self.dataloader = object()
+                    self.seen_dataloader: object | None = None
+
+                def __call__(self, **kwargs: object) -> dict[str, bool]:
+                    self.seen_dataloader = self.dataloader
+                    return {"ok": True}
+
+            validator = Validator()
+            trainer = object.__new__(FactorCalibrationTrainer)
+            trainer.runtime = SimpleNamespace(run_dir=run_dir)
+            trainer.validator = validator
+
+            self.assertEqual(trainer.evaluate_primary_last(last), {"ok": True})
+            self.assertIsNone(validator.seen_dataloader)
+            self.assertIsNone(validator.dataloader)
+
     def test_epoch_draw_key_is_deterministic(self) -> None:
         keys: list[tuple[int, str]] = []
         trainer = object.__new__(FactorCalibrationTrainer)

@@ -1809,6 +1809,12 @@ class FactorCalibrationTrainer(IFDRDetectionTrainer):
         validator = getattr(self, "validator", None)
         if not callable(validator):
             raise ValueError("factor calibration validator is not initialized")
+        # The training validation call exhausts BaseValidator.dataloader's
+        # generator.  Independent checkpoint evaluation must force
+        # BaseValidator.__call__ to build a fresh loader rather than reusing
+        # that exhausted iterator; assignment errors are intentionally
+        # propagated instead of silently falling back to stale state.
+        validator.dataloader = None
         # Keep evaluation path-bound: the validator receives the verified
         # checkpoint itself rather than the in-memory training model or a
         # zero-argument ``final_eval`` fallback.
