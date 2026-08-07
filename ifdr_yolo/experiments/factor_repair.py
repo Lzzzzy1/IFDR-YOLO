@@ -38,6 +38,19 @@ def _freeze_audit_value(value: object) -> object:
     return value
 
 
+def _thaw_audit_value(value: object) -> object:
+    """Return pickle-safe containers for immutable audit values."""
+
+    if isinstance(value, Mapping):
+        return {
+            key: _thaw_audit_value(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, tuple):
+        return tuple(_thaw_audit_value(item) for item in value)
+    return value
+
+
 @dataclass(frozen=True)
 class SemanticCalibrationPhase:
     """Immutable, auditable freeze contract for one F0--F3 calibration."""
@@ -126,6 +139,27 @@ class SemanticCalibrationPhase:
         )
         memo[id(self)] = clone
         return clone
+
+    def __reduce__(self) -> tuple[type["SemanticCalibrationPhase"], tuple[object, ...]]:
+        """Serialize through the validated constructor, not mapping proxies."""
+
+        return (
+            type(self),
+            (
+                self.variant,
+                self.epochs,
+                _thaw_audit_value(self.trainable_parameter_names),
+                _thaw_audit_value(self.frozen_parameter_names),
+                _thaw_audit_value(self.loss_mask),
+                self.fusion_schedule,
+                self.dcli_schedule,
+                self.factor_supervision_schedule,
+                self.early_stopping,
+                _thaw_audit_value(self.diagnostic_group_names),
+                _thaw_audit_value(self.diagnostic_group_provenance),
+                _thaw_audit_value(self.provenance),
+            ),
+        )
 
 
 def _named_parameters(model: object) -> tuple[tuple[str, torch.nn.Parameter], ...]:

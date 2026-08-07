@@ -135,6 +135,45 @@ class FactorRepairPhaseTest(unittest.TestCase):
         self.assertIsNot(clone, model)
         self.assertIsNot(clone._semantic_calibration_phase, model._semantic_calibration_phase)
 
+    def test_semantic_phase_checkpoint_roundtrip_preserves_immutable_audit_data(self) -> None:
+        from ifdr_yolo.experiments.factor_repair import SemanticCalibrationPhase
+
+        phase = SemanticCalibrationPhase(
+            variant="F0",
+            epochs=30,
+            trainable_parameter_names=("model.projection.weight",),
+            frozen_parameter_names=("model.detect.weight",),
+            loss_mask={"synthetic": 1.0, "natural": 0.0, "specificity": 0.0},
+            diagnostic_group_names=("projection_00",),
+            diagnostic_group_provenance={
+                "projection_00": ("model.projection.weight",),
+            },
+            provenance={
+                "nested": {
+                    "items": ["model.projection.weight"],
+                    "tuple": ("F0", 30),
+                }
+            },
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoint = Path(directory) / "semantic-phase.pt"
+            torch.save({"phase": phase}, checkpoint)
+            restored = torch.load(checkpoint, map_location="cpu", weights_only=False)[
+                "phase"
+            ]
+
+        self.assertEqual(restored, phase)
+        self.assertEqual(type(restored.loss_mask), type(phase.loss_mask))
+        self.assertEqual(type(restored.provenance), type(phase.provenance))
+        self.assertEqual(
+            type(restored.provenance["nested"]),
+            type(phase.provenance["nested"]),
+        )
+        with self.assertRaises(TypeError):
+            restored.loss_mask["synthetic"] = 0.0
+        with self.assertRaises(TypeError):
+            restored.provenance["nested"]["items"] = ()
+
     def test_shared_semantic_modules_are_counted_once(self) -> None:
         from ifdr_yolo.experiments.factor_repair import (
             factor_calibration_parameter_groups,
