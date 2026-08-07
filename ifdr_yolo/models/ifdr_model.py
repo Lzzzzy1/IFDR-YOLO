@@ -170,8 +170,42 @@ def split_three_view_contexts(
             or factors.dtype != branch_weights.dtype
             or factors.device != branch_weights.device
         ):
+            factor_shape = (
+                tuple(factors.shape)
+                if isinstance(factors, torch.Tensor)
+                else f"<{type(factors).__name__}>"
+            )
+            branch_shape = (
+                tuple(branch_weights.shape)
+                if isinstance(branch_weights, torch.Tensor)
+                else f"<{type(branch_weights).__name__}>"
+            )
+            factor_dtype = (
+                str(factors.dtype)
+                if isinstance(factors, torch.Tensor)
+                else f"<{type(factors).__name__}>"
+            )
+            branch_dtype = (
+                str(branch_weights.dtype)
+                if isinstance(branch_weights, torch.Tensor)
+                else f"<{type(branch_weights).__name__}>"
+            )
+            factor_device = (
+                str(factors.device)
+                if isinstance(factors, torch.Tensor)
+                else f"<{type(factors).__name__}>"
+            )
+            branch_device = (
+                str(branch_weights.device)
+                if isinstance(branch_weights, torch.Tensor)
+                else f"<{type(branch_weights).__name__}>"
+            )
             raise RuntimeError(
-                f"three-view reliability context at node {node} must have leading dimension 3B"
+                f"three-view reliability context at node {node} must have leading dimension 3B "
+                f"(node={node}, batch_size={batch_size}, expected=3B={3 * batch_size}, "
+                f"factor_shape={factor_shape}, branch_shape={branch_shape}, "
+                f"factor_dtype={factor_dtype}, branch_dtype={branch_dtype}, "
+                f"factor_device={factor_device}, branch_device={branch_device})"
             )
         if reference_dtype is None:
             reference_dtype = factors.dtype

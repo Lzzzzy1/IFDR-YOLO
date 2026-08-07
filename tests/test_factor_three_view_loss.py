@@ -297,8 +297,19 @@ class ThreeViewLossTest(unittest.TestCase):
         from ifdr_yolo.models.ifdr_model import IFDRDetectionModel
 
         model, batch = self._fake_model(context_batch=2)
-        with self.assertRaisesRegex(RuntimeError, "leading dimension 3B"):
+        with self.assertRaises(RuntimeError) as context:
             IFDRDetectionModel.loss(model, batch)
+        message = str(context.exception)
+        self.assertIn("leading dimension 3B", message)
+        self.assertIn("node=11", message)
+        self.assertIn("batch_size=1", message)
+        self.assertIn("expected=3B=3", message)
+        self.assertIn("factor_shape=(2, 2, 2, 2)", message)
+        self.assertIn("branch_shape=(2, 2, 2, 2)", message)
+        self.assertIn("factor_dtype=torch.float32", message)
+        self.assertIn("branch_dtype=torch.float32", message)
+        self.assertIn("factor_device=cpu", message)
+        self.assertIn("branch_device=cpu", message)
 
 
 if __name__ == "__main__":
