@@ -125,6 +125,16 @@ class FactorRepairPhaseTest(unittest.TestCase):
         )
         self.assertTrue(all(phase.diagnostic_group_provenance.values()))
 
+    def test_semantic_phase_model_can_be_ema_deepcopied(self) -> None:
+        from ifdr_yolo.experiments.factor_repair import semantic_calibration_phase
+        from ifdr_yolo.models.ifdr_model import IFDRDetectionModel
+
+        model = IFDRDetectionModel(str(MODEL_PATH), verbose=False)
+        semantic_calibration_phase(model, variant="F0", epochs=30)
+        clone = copy.deepcopy(model)
+        self.assertIsNot(clone, model)
+        self.assertIsNot(clone._semantic_calibration_phase, model._semantic_calibration_phase)
+
     def test_shared_semantic_modules_are_counted_once(self) -> None:
         from ifdr_yolo.experiments.factor_repair import (
             factor_calibration_parameter_groups,

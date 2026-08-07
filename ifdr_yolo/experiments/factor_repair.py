@@ -104,6 +104,29 @@ class SemanticCalibrationPhase:
             raise TypeError("provenance must be a mapping")
         object.__setattr__(self, "provenance", provenance)
 
+    def __deepcopy__(self, memo: dict[int, object]) -> "SemanticCalibrationPhase":
+        """Copy the immutable phase without asking ``copy`` to pickle proxies."""
+
+        existing = memo.get(id(self))
+        if existing is not None:
+            return existing  # type: ignore[return-value]
+        clone = type(self)(
+            variant=self.variant,
+            epochs=self.epochs,
+            trainable_parameter_names=self.trainable_parameter_names,
+            frozen_parameter_names=self.frozen_parameter_names,
+            loss_mask=dict(self.loss_mask),
+            fusion_schedule=self.fusion_schedule,
+            dcli_schedule=self.dcli_schedule,
+            factor_supervision_schedule=self.factor_supervision_schedule,
+            early_stopping=self.early_stopping,
+            diagnostic_group_names=self.diagnostic_group_names,
+            diagnostic_group_provenance=dict(self.diagnostic_group_provenance),
+            provenance=dict(self.provenance),
+        )
+        memo[id(self)] = clone
+        return clone
+
 
 def _named_parameters(model: object) -> tuple[tuple[str, torch.nn.Parameter], ...]:
     method = getattr(model, "named_parameters", None)
