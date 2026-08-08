@@ -352,6 +352,12 @@ def _validate_kitti_payload(
                 raise ValueError(f"KITTI AP40 value is invalid for {class_name}/{difficulty.value}") from error
             if not math.isfinite(ap40):
                 raise ValueError(f"KITTI AP40 value is not finite for {class_name}/{difficulty.value}")
+            for field in ("num_valid_gt", "true_positives", "false_positives"):
+                count = metrics[field]
+                if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+                    raise ValueError(
+                        f"KITTI AP40 count {field} is invalid for {class_name}/{difficulty.value}"
+                    )
     return dict(payload)
 
 
@@ -408,6 +414,11 @@ def evaluate_factor_repair_kitti(
     status = _read_json(status_path)
     if status.get("state") != "complete":
         raise ValueError("factor run must be complete before KITTI AP40 evaluation")
+    run_provenance = run_root / "provenance.json"
+    if run_provenance.is_file():
+        provenance_payload = _read_json(run_provenance)
+        if provenance_payload.get("condition") not in {None, condition}:
+            raise ValueError("factor run provenance condition mismatch")
     checkpoint = _checkpoint_record(run_root, expected_sha256=checkpoint_sha256)
     image_ids, split_sha256 = _development_split(
         development_ids,
