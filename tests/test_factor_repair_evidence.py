@@ -279,6 +279,35 @@ class FactorRepairEvidenceTest(unittest.TestCase):
         draw = result.recompute_endpoints((1, 1, 2, 3))
         self.assertEqual(set(draw), set(PRIMARY_ENDPOINTS))
 
+    def test_recompute_parses_and_groups_raw_rows_once_per_bundle(self):
+        directory, path, digest = self._checkpoint()
+        self.addCleanup(directory.cleanup)
+        gate = _gate()
+        with patch(
+            "ifdr_yolo.eval.factor_repair_evidence.evaluate_factor_repair_gate",
+            return_value=gate,
+        ):
+            result = build_factor_repair_evidence(
+                "F0",
+                "development",
+                path,
+                _complete_rows(),
+                {"factor_results": {}},
+                checkpoint_roles=_checkpoint_roles(path, digest),
+                image_ids=("a", "b", "c", "d"),
+            )
+        with patch(
+            "ifdr_yolo.eval.factor_repair_evidence._mapping_observation",
+            wraps=__import__(
+                "ifdr_yolo.eval.factor_repair_evidence",
+                fromlist=["_mapping_observation"],
+            )._mapping_observation,
+        ) as parser:
+            result.recompute_endpoints((0, 1, 2, 3))
+            result.recompute_endpoints((1, 1, 2, 3))
+            result.recompute_endpoints((3, 2, 1, 0))
+        self.assertEqual(parser.call_count, len(result.raw_observations))
+
 
 def _sha256(payload: object) -> str:
     return hashlib.sha256(

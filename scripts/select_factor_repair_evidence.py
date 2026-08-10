@@ -11,12 +11,14 @@ from __future__ import annotations
 import argparse
 from collections.abc import Mapping, Sequence
 import csv
+import hashlib
 import io
 import json
 import math
 import os
 from pathlib import Path
 import sys
+import time
 from types import SimpleNamespace
 
 if __package__ in (None, ""):
@@ -29,13 +31,33 @@ from ifdr_yolo.eval.factor_repair_evidence import (
 )
 from ifdr_yolo.eval.factor_repair_gate import (
     PRIMARY_ENDPOINTS,
-    paired_image_cluster_delta,
     select_repair_against_f0,
 )
+from ifdr_yolo.eval.resumable_factor_bootstrap import (
+    DEFAULT_CHECKPOINT_INTERVAL,
+    build_shared_reference_draws,
+    run_resumable_factor_bootstrap,
+)
+
+from ifdr_yolo.eval.factor_repair_gate import paired_image_cluster_delta
 
 
 DEVELOPMENT_SEED = 17
 CONDITIONS = ("F0", "F1", "F2", "F3")
+FORMAL_REPLICATES = 10_000
+
+
+def _stream_file_sha256(path: Path) -> str:
+    """Hash one registered evidence source without materializing its bytes."""
+
+    digest = hashlib.sha256()
+    try:
+        with path.open("rb") as handle:
+            while chunk := handle.read(1024 * 1024):
+                digest.update(chunk)
+    except OSError as error:
+        raise ValueError(f"unable to hash evidence source file: {path}") from error
+    return digest.hexdigest()
 
 
 def _canonical_json(value: object) -> str:
@@ -94,6 +116,247 @@ def _atomic_create(path: Path, payload: bytes) -> None:
 
 def _write_json_once(path: Path, payload: Mapping[str, object]) -> None:
     _atomic_create(path, (_canonical_json(_json_safe(payload)) + "\n").encode("utf-8"))
+
+
+def _write_final_artifact(path: Path, payload: bytes, expected_sha256: str) -> None:
+    """Create an output once, or verify an already-created identical payload."""
+
+    if path.exists() or path.is_symlink():
+        try:
+            actual = hashlib.sha256(path.read_bytes()).hexdigest()
+        except OSError as error:
+            raise ValueError(f"unable to validate existing final artifact: {path}") from error
+        if actual != expected_sha256:
+            raise ValueError(f"final artifact hash mismatch: {path}")
+        return
+    _atomic_create(path, payload)
+
+
+def _finalization_identity(
+    evidences: Mapping[str, object],
+    source_file_hashes: Mapping[str, str],
+    image_ids_hash: str,
+    *,
+    selected_condition: str | None,
+) -> dict[str, object]:
+    return {
+        "evidence_canonical_sha256": {
+            condition: str(getattr(evidences[condition], "evidence_sha256")) for condition in CONDITIONS
+        },
+        "source_file_sha256": dict(source_file_hashes),
+        "image_ids_hash": image_ids_hash,
+        "selected_condition": selected_condition,
+    }
+
+
+def _read_finalization(path: Path, expected_identity: Mapping[str, object]) -> dict[str, object]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError(f"finalization journal is missing or malformed: {path}") from error
+    if not isinstance(payload, Mapping) or payload.get("schema_version") != 1:
+        raise ValueError("finalization journal is malformed")
+    identity = payload.get("identity")
+    if not isinstance(identity, Mapping):
+        raise ValueError("finalization journal identity is missing")
+    for key in ("evidence_canonical_sha256", "source_file_sha256", "image_ids_hash"):
+        if _json_safe(identity.get(key)) != _json_safe(expected_identity.get(key)):
+            raise ValueError(f"finalization identity mismatch: {key}")
+    artifacts = payload.get("artifacts")
+    if not isinstance(artifacts, Mapping):
+        raise ValueError("finalization journal artifacts are missing")
+    return dict(payload)
+
+
+def _write_finalization(path: Path, payload: Mapping[str, object]) -> None:
+    encoded = (_canonical_json(_json_safe(payload)) + "\n").encode("utf-8")
+    _atomic_replace(path, encoded)
+
+
+def _atomic_replace(path: Path, payload: bytes) -> None:
+    """Atomically replace a mirror state file after validating JSON bytes."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # The three final artifacts include one CSV.  JSON support files remain
+    # validated before replacement; the CSV is validated by its manifest hash
+    # and exact byte copy instead.
+    if path.suffix.lower() != ".csv":
+        try:
+            decoded = json.loads(payload.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise ValueError(f"mirror payload is not valid JSON: {path.name}") from error
+        if not isinstance(decoded, Mapping):
+            raise ValueError(f"mirror payload must be an object: {path.name}")
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    try:
+        with temporary.open("wb") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+        try:
+            directory_fd = os.open(str(path.parent), os.O_RDONLY)
+        except OSError:
+            directory_fd = None
+        if directory_fd is not None:
+            try:
+                os.fsync(directory_fd)
+            except OSError:
+                pass
+            finally:
+                os.close(directory_fd)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+
+
+def _mirror_publish(
+    mirror_dir: Path,
+    *,
+    stage: str,
+    output_dir: Path,
+    checkpoint_dir: Path,
+    conditions: Mapping[str, object] | None = None,
+    selected_condition: str | None = None,
+    resume: bool,
+    workers: int,
+    final_artifacts: Mapping[str, bytes] | None = None,
+) -> None:
+    """Persist a small independent mirror with a last-written commit marker."""
+
+    artifact_names = ("selection_decision.json", "mechanism_table.json", "mechanism_table.csv")
+    if stage == "complete":
+        if not isinstance(final_artifacts, Mapping) or set(final_artifacts) != set(artifact_names):
+            raise ValueError("final_artifacts are required for the complete mirror stage")
+        if any(not isinstance(final_artifacts[name], bytes) for name in artifact_names):
+            raise ValueError("final_artifacts must contain exact byte payloads")
+    mirror_dir.mkdir(parents=True, exist_ok=True)
+    generation = str(time.time_ns())
+    def support_payload(payload: Mapping[str, object]) -> dict[str, object]:
+        body = {**payload, "generation": generation}
+        body["payload_sha256"] = sha256_canonical(body)
+        return body
+
+    summary = {
+        "schema_version": 1,
+        "stage": stage,
+        "output_dir": str(output_dir),
+        "checkpoint_dir": str(checkpoint_dir),
+        "selected_condition": selected_condition,
+        "conditions": dict(conditions or {}),
+        "workers": int(workers),
+        "formal_replicates": FORMAL_REPLICATES,
+        "resume": bool(resume),
+        "updated_at": time.time(),
+    }
+    checkpoint_index = {
+        "schema_version": 1,
+        "stage": stage,
+        "checkpoint_dir": str(checkpoint_dir),
+        "paths": {
+            condition: str(checkpoint_dir / ("F0.reference.json" if condition == "F0" else f"{condition}.json"))
+            for condition in CONDITIONS
+        },
+        "states": dict(conditions or {}),
+    }
+    progress = {
+        "schema_version": 1,
+        "stage": stage,
+        "conditions": dict(conditions or {}),
+        "selected_condition": selected_condition,
+        "updated_at": summary["updated_at"],
+    }
+    resume_text = (
+        "Factor bootstrap mirror\n"
+        f"stage={stage}\n"
+        f"checkpoint_dir={checkpoint_dir}\n"
+        f"output_dir={output_dir}\n"
+        "resume command: rerun the formal CLI with --resume and the same input evidence, "
+        "checkpoint-dir, and mirror-dir.\n"
+    )
+    support = {
+        "checkpoint_index.json": support_payload(checkpoint_index),
+        "progress.json": support_payload(progress),
+        "summary.json": support_payload(summary),
+        "resume.txt": support_payload({
+            "schema_version": 1,
+            "kind": "resume-instructions",
+            "text": resume_text,
+        }),
+    }
+    file_hashes: dict[str, str] = {}
+    for name, payload in support.items():
+        encoded = (_canonical_json(_json_safe(payload)) + "\n").encode("utf-8")
+        _atomic_replace(mirror_dir / name, encoded)
+        file_hashes[name] = hashlib.sha256(encoded).hexdigest()
+    artifact_hashes: dict[str, dict[str, object]] = {}
+    if stage == "complete":
+        assert final_artifacts is not None
+        for name in artifact_names:
+            encoded = final_artifacts[name]
+            _atomic_replace(mirror_dir / name, encoded)
+            artifact_hashes[name] = {
+                "path": str(mirror_dir / name),
+                "sha256": hashlib.sha256(encoded).hexdigest(),
+                "generation": generation,
+            }
+    # The manifest is deliberately written last.  It is the only commit
+    # marker and proves that all support files belong to one generation.
+    manifest = {
+        "schema_version": 1,
+        "kind": "factor-bootstrap-mirror",
+        "stage": stage,
+        "formal_replicates": FORMAL_REPLICATES,
+        "output_dir": str(output_dir),
+        "checkpoint_dir": str(checkpoint_dir),
+        "mirror_dir": str(mirror_dir),
+        "resume_required_for_existing_state": True,
+        "generation": generation,
+        "files": file_hashes,
+        "artifacts": artifact_hashes,
+        "updated_at": summary["updated_at"],
+    }
+    manifest_bytes = (_canonical_json(_json_safe(manifest)) + "\n").encode("utf-8")
+    _atomic_replace(mirror_dir / "manifest.json", manifest_bytes)
+    _validate_mirror_commit(mirror_dir)
+
+
+def _validate_mirror_commit(mirror_dir: Path) -> dict[str, object]:
+    """Validate the last manifest and every generation/hash it commits."""
+
+    manifest = json.loads((mirror_dir / "manifest.json").read_text(encoding="utf-8"))
+    if not isinstance(manifest, Mapping) or not isinstance(manifest.get("files"), Mapping):
+        raise ValueError("mirror manifest is malformed")
+    generation = manifest.get("generation")
+    if not isinstance(generation, str) or not generation:
+        raise ValueError("mirror manifest generation is missing")
+    for name, expected_hash in manifest["files"].items():
+        path = mirror_dir / str(name)
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(payload, Mapping) or payload.get("generation") != generation:
+            raise ValueError(f"mirror generation mismatch: {name}")
+        if payload.get("payload_sha256") != sha256_canonical({key: value for key, value in payload.items() if key != "payload_sha256"}):
+            raise ValueError(f"mirror payload hash mismatch: {name}")
+        actual_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+        if actual_hash != expected_hash:
+            raise ValueError(f"mirror file hash mismatch: {name}")
+    if manifest.get("stage") == "complete":
+        artifact_entries = manifest.get("artifacts")
+        artifact_names = ("selection_decision.json", "mechanism_table.json", "mechanism_table.csv")
+        if not isinstance(artifact_entries, Mapping) or set(artifact_entries) != set(artifact_names):
+            raise ValueError("complete mirror artifacts are missing")
+        for name in artifact_names:
+            entry = artifact_entries.get(name)
+            if not isinstance(entry, Mapping) or entry.get("generation") != generation:
+                raise ValueError(f"mirror artifact generation mismatch: {name}")
+            path = mirror_dir / name
+            try:
+                actual_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+            except OSError as error:
+                raise ValueError(f"mirror artifact is missing: {name}") from error
+            if actual_hash != entry.get("sha256"):
+                raise ValueError(f"mirror artifact hash mismatch: {name}")
+    return dict(manifest)
 
 
 def _load_bundle(condition: str, path: Path) -> object:
@@ -246,11 +509,41 @@ def _mechanism_csv(table: Mapping[str, object]) -> bytes:
     return output.getvalue().encode("utf-8")
 
 
+def _validate_mirror_location(output_dir: Path, checkpoint_dir: Path, mirror_dir: Path) -> None:
+    """Require a distinct mirror sibling rather than a nested/ancestor path."""
+
+    if (
+        mirror_dir == output_dir
+        or mirror_dir.is_relative_to(output_dir)
+        or mirror_dir == checkpoint_dir
+        or mirror_dir.is_relative_to(checkpoint_dir)
+        or output_dir.is_relative_to(mirror_dir)
+        or checkpoint_dir.is_relative_to(mirror_dir)
+    ):
+        raise ValueError("mirror-dir must not equal, contain, or be contained by output-dir/checkpoint-dir")
+
+
 def run(args: argparse.Namespace) -> tuple[Path, Path, Path]:
     output_dir = Path(args.output_dir).expanduser().resolve(strict=False)
     output_paths = tuple(output_dir / name for name in ("selection_decision.json", "mechanism_table.json", "mechanism_table.csv"))
-    if any(path.exists() or path.is_symlink() for path in output_paths):
+    resume = bool(getattr(args, "resume", False))
+    if getattr(args, "mirror_dir", None) is None:
+        raise ValueError("--mirror-dir is required and must be a separate persistent location")
+    early_workers = int(getattr(args, "workers", getattr(args, "worker_count", 1)))
+    if early_workers != 1:
+        raise ValueError("workers must be exactly 1; parallel candidate execution is not enabled")
+    checkpoint_dir_arg = getattr(args, "checkpoint_dir", None)
+    checkpoint_dir = (
+        Path(checkpoint_dir_arg).expanduser().resolve(strict=False)
+        if checkpoint_dir_arg is not None
+        else output_dir / "checkpoints"
+    )
+    mirror_dir = Path(args.mirror_dir).expanduser().resolve(strict=False)
+    _validate_mirror_location(output_dir, checkpoint_dir, mirror_dir)
+    if not resume and any(path.exists() or path.is_symlink() for path in output_paths):
         raise ValueError(f"refusing to overwrite existing selection output: {output_dir}")
+    if not resume and (output_dir / "finalization.json").exists():
+        raise ValueError("finalization journal exists; explicit resume is required")
     paths = {
         "F0": Path(args.f0).expanduser().resolve(strict=False),
         "F1": Path(args.f1).expanduser().resolve(strict=False),
@@ -258,10 +551,115 @@ def run(args: argparse.Namespace) -> tuple[Path, Path, Path]:
         "F3": Path(args.f3).expanduser().resolve(strict=False),
     }
     evidences = {condition: _load_bundle(condition, path) for condition, path in paths.items()}
+    source_file_hashes = {condition: _stream_file_sha256(path) for condition, path in paths.items()}
     image_ids, image_ids_hash = validate_shared_image_identity(*[evidences[c] for c in CONDITIONS])
+    finalization_path = output_dir / "finalization.json"
+    base_final_identity = _finalization_identity(evidences, source_file_hashes, image_ids_hash, selected_condition=None)
     f0 = evidences["F0"]
     candidates = [evidences[c] for c in ("F1", "F2", "F3")]
-    selection = select_repair_against_f0(f0, candidates)
+    checkpoint_interval = int(getattr(args, "checkpoint_interval", DEFAULT_CHECKPOINT_INTERVAL))
+    checkpoint_wall_time_seconds = float(getattr(args, "checkpoint_wall_time_seconds", 300.0))
+    workers = int(getattr(args, "workers", getattr(args, "worker_count", 1)))
+    if workers != 1:
+        raise ValueError("workers must be exactly 1; parallel candidate execution is not enabled")
+    if resume and any(path.exists() or path.is_symlink() for path in output_paths):
+        if not finalization_path.exists():
+            raise ValueError("existing final artifacts require a finalization journal for --resume")
+        journal = _read_finalization(finalization_path, base_final_identity)
+        # A complete, hash-verified bundle is idempotent.  Repair the mirror
+        # milestone before returning so a prior mirror interruption is safe.
+        if journal.get("state") == "complete":
+            artifacts = journal["artifacts"]
+            artifact_names = ("selection_decision.json", "mechanism_table.json", "mechanism_table.csv")
+            if all(
+                (output_dir / name).is_file()
+                and isinstance(artifacts.get(name), Mapping)
+                and hashlib.sha256((output_dir / name).read_bytes()).hexdigest() == str(artifacts[name]["sha256"])
+                for name in artifact_names
+            ):
+                final_artifact_bytes = {name: (output_dir / name).read_bytes() for name in artifact_names}
+                _mirror_publish(
+                    mirror_dir,
+                    stage="complete",
+                    output_dir=output_dir,
+                    checkpoint_dir=checkpoint_dir,
+                    conditions={condition: "complete" for condition in CONDITIONS} | {"selection": "complete"},
+                    selected_condition=journal.get("identity", {}).get("selected_condition"),
+                    resume=True,
+                    workers=workers,
+                    final_artifacts=final_artifact_bytes,
+                )
+                return tuple(output_dir / name for name in artifact_names)  # type: ignore[return-value]
+    if mirror_dir.exists() and any(mirror_dir.iterdir()) and not resume:
+        raise ValueError(f"mirror state exists; explicit resume is required: {mirror_dir}")
+
+    states: dict[str, object] = {condition: "pending" for condition in CONDITIONS}
+    _mirror_publish(
+        mirror_dir,
+        stage="initialized",
+        output_dir=output_dir,
+        checkpoint_dir=checkpoint_dir,
+        conditions=states,
+        resume=resume,
+        workers=workers,
+    )
+    reference_cache = build_shared_reference_draws(
+        f0,
+        output_dir,
+        total_replicates=FORMAL_REPLICATES,
+        checkpoint_interval=checkpoint_interval,
+        checkpoint_wall_time_seconds=checkpoint_wall_time_seconds,
+        checkpoint_dir=checkpoint_dir,
+        resume=resume,
+        source_file_sha256=source_file_hashes["F0"],
+        progress_stream=sys.stdout,
+        code_paths=(Path(__file__).resolve(),),
+    )
+    states["F0"] = "complete"
+    _mirror_publish(
+        mirror_dir,
+        stage="reference_complete",
+        output_dir=output_dir,
+        checkpoint_dir=checkpoint_dir,
+        conditions=states,
+        resume=resume,
+        workers=workers,
+    )
+    paired: dict[str, object] = {}
+    for candidate in candidates:
+        condition = str(getattr(candidate, "condition"))
+        paired[condition] = run_resumable_factor_bootstrap(
+            candidate,
+            f0,
+            output_dir,
+            condition=condition,
+            total_replicates=FORMAL_REPLICATES,
+            checkpoint_interval=checkpoint_interval,
+            checkpoint_wall_time_seconds=checkpoint_wall_time_seconds,
+            checkpoint_dir=checkpoint_dir,
+            resume=resume,
+            reference_draws=reference_cache,
+            progress_stream=sys.stdout,
+            source_file_sha256={
+                "candidate": source_file_hashes[condition],
+                "reference": source_file_hashes["F0"],
+            },
+            code_paths=(Path(__file__).resolve(),),
+        )
+        states[condition] = "complete"
+        _mirror_publish(
+            mirror_dir,
+            stage=f"{condition}_complete",
+            output_dir=output_dir,
+            checkpoint_dir=checkpoint_dir,
+            conditions=states,
+            resume=resume,
+            workers=workers,
+        )
+
+    # Selection consumes only the already checkpointed candidate deltas.  No
+    # second 10,000-replicate bootstrap is allowed here.
+    selection = select_repair_against_f0(f0, candidates, paired_deltas=paired)
     selected_condition = getattr(selection, "selected_condition", None) if selection is not None else None
     if selected_condition is not None and selected_condition not in {"F1", "F2", "F3"}:
         raise ValueError("existing selector returned an invalid candidate condition")
@@ -269,30 +667,24 @@ def run(args: argparse.Namespace) -> tuple[Path, Path, Path]:
         verify_digest = getattr(selection, "verify_digest", None)
         if callable(verify_digest) and not verify_digest():
             raise ValueError("existing selector returned an invalid decision digest")
-
-    paired: dict[str, object] = {}
-    if selection is not None:
-        # select_repair_against_f0 has already called the registered paired
-        # bootstrap for its chosen candidate.  Reuse that immutable result so
-        # a 10,000-replicate draw is not repeated unnecessarily.
+        # Keep the selected record exactly as emitted by the pure selector.
+        # This preserves the historical artifact semantics even when a
+        # producer supplies a richer PairedDelta subclass for the checkpoint.
         endpoint_table = getattr(selection, "endpoint_table", None)
         candidate_endpoints = (
             endpoint_table.get(selected_condition)
             if isinstance(endpoint_table, Mapping) and selected_condition is not None
             else None
         )
-        if isinstance(candidate_endpoints, Mapping):
+        if candidate_endpoints is None and selected_condition is not None:
+            candidate_endpoints = getattr(evidences[selected_condition], "endpoints", None)
+        if isinstance(candidate_endpoints, Mapping) and selected_condition is not None:
             paired[selected_condition] = SimpleNamespace(
                 point=float(getattr(selection, "delta_s_point")),
                 ci95=tuple(float(value) for value in getattr(selection, "delta_s_ci95")),
                 candidate_endpoints=dict(candidate_endpoints),
                 candidate_evidence_sha256=str(getattr(evidences[selected_condition], "evidence_sha256")),
             )
-    for candidate in candidates:
-        condition = str(getattr(candidate, "condition"))
-        if not bool(getattr(candidate, "complete", False)) or condition in paired:
-            continue
-        paired[condition] = paired_image_cluster_delta(candidate, f0)
 
     table_conditions: dict[str, object] = {}
     table_conditions["F0"] = _condition_row("F0", f0, paired=None, selected=False)
@@ -336,17 +728,85 @@ def run(args: argparse.Namespace) -> tuple[Path, Path, Path]:
         "selection_sha256": selection_payload["selection_sha256"],
         "conditions": table_conditions,
     }
+    states["selection"] = "ready"
+    _mirror_publish(
+        mirror_dir,
+        stage="selection_ready",
+        output_dir=output_dir,
+        checkpoint_dir=checkpoint_dir,
+        conditions=states,
+        selected_condition=selected_condition,
+        resume=resume,
+        workers=workers,
+    )
     selection_path = output_dir / "selection_decision.json"
     mechanism_path = output_dir / "mechanism_table.json"
     csv_path = output_dir / "mechanism_table.csv"
-    _write_json_once(selection_path, selection_payload)
-    try:
-        _write_json_once(mechanism_path, table_payload)
-        _atomic_create(csv_path, _mechanism_csv(table_payload))
-    except Exception:
-        # Do not replace or repair an already-created decision.  A failed
-        # table write is left visible for the caller to remove/review.
-        raise
+    selection_bytes = (_canonical_json(_json_safe(selection_payload)) + "\n").encode("utf-8")
+    mechanism_bytes = (_canonical_json(_json_safe(table_payload)) + "\n").encode("utf-8")
+    csv_bytes = _mechanism_csv(table_payload)
+    final_artifact_bytes = {
+        "selection_decision.json": selection_bytes,
+        "mechanism_table.json": mechanism_bytes,
+        "mechanism_table.csv": csv_bytes,
+    }
+    final_identity = _finalization_identity(
+        evidences,
+        source_file_hashes,
+        image_ids_hash,
+        selected_condition=selected_condition,
+    )
+    artifacts = {
+        "selection_decision.json": {"path": str(selection_path), "sha256": hashlib.sha256(selection_bytes).hexdigest()},
+        "mechanism_table.json": {"path": str(mechanism_path), "sha256": hashlib.sha256(mechanism_bytes).hexdigest()},
+        "mechanism_table.csv": {"path": str(csv_path), "sha256": hashlib.sha256(csv_bytes).hexdigest()},
+    }
+    existing_journal = _read_finalization(finalization_path, base_final_identity) if finalization_path.exists() else None
+    if existing_journal is not None:
+        old_identity = existing_journal.get("identity")
+        if not isinstance(old_identity, Mapping) or _json_safe(old_identity) != _json_safe(final_identity):
+            raise ValueError("finalization identity mismatch: selected condition or payload")
+        if _json_safe(existing_journal.get("artifacts")) != _json_safe(artifacts):
+            raise ValueError("finalization payload hash mismatch")
+    else:
+        _write_finalization(
+            finalization_path,
+            {
+                "schema_version": 1,
+                "state": "pending",
+                "identity": final_identity,
+                "artifacts": artifacts,
+                "updated_at": time.time(),
+            },
+        )
+    # Publish the final mirror commit marker before promoting user-visible
+    # artifacts.  A mirror failure therefore leaves only a pending journal;
+    # no result can be mistaken for a promoted selection.
+    states["selection"] = "complete"
+    _mirror_publish(
+        mirror_dir,
+        stage="complete",
+        output_dir=output_dir,
+        checkpoint_dir=checkpoint_dir,
+        conditions=states,
+        selected_condition=selected_condition,
+        resume=resume,
+        workers=workers,
+        final_artifacts=final_artifact_bytes,
+    )
+    _write_final_artifact(selection_path, selection_bytes, artifacts["selection_decision.json"]["sha256"])
+    _write_final_artifact(mechanism_path, mechanism_bytes, artifacts["mechanism_table.json"]["sha256"])
+    _write_final_artifact(csv_path, csv_bytes, artifacts["mechanism_table.csv"]["sha256"])
+    _write_finalization(
+        finalization_path,
+        {
+            "schema_version": 1,
+            "state": "complete",
+            "identity": final_identity,
+            "artifacts": artifacts,
+            "updated_at": time.time(),
+        },
+    )
     return selection_path, mechanism_path, csv_path
 
 
@@ -357,6 +817,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--f2", "--f2-evidence", dest="f2", required=True, type=Path)
     parser.add_argument("--f3", "--f3-evidence", dest="f3", required=True, type=Path)
     parser.add_argument("--output-dir", required=True, type=Path)
+    parser.add_argument("--checkpoint-dir", type=Path, default=None)
+    parser.add_argument("--mirror-dir", type=Path, required=True)
+    parser.add_argument("--checkpoint-interval", type=int, default=DEFAULT_CHECKPOINT_INTERVAL)
+    parser.add_argument("--checkpoint-wall-time-seconds", type=float, default=300.0)
+    parser.add_argument("--workers", "--worker-count", dest="workers", type=int, default=1)
+    parser.add_argument("--resume", action="store_true")
     return parser
 
 

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field
 import hashlib
 import json
 import math
@@ -528,6 +528,15 @@ class FactorRepairEvidenceBundle(FactorRepairEvidence):
     raw_observations: tuple[Mapping[str, object], ...] = ()
     endpoint_rows: tuple[Mapping[str, object], ...] = ()
     audit: Mapping[str, object] | None = None
+    # Raw evidence is persisted as JSON mappings for auditability.  Bootstrap
+    # draws use this process-local immutable cache so mapping conversion and
+    # image grouping happen once per bundle, never once per replicate.
+    _prepared_by_image: Mapping[str, tuple[NaturalFactorObservation, ...]] | None = field(
+        default=None, init=False, repr=False, compare=False
+    )
+    _prepared_numeric: object | None = field(
+        default=None, init=False, repr=False, compare=False
+    )
 
     def __post_init__(self) -> None:
         super().__post_init__()
@@ -575,32 +584,183 @@ class FactorRepairEvidenceBundle(FactorRepairEvidence):
     def verify_digest(self) -> bool:
         return sha256_canonical(self.canonical_payload) == self.evidence_sha256
 
+    def _prepare_image_clusters(self) -> Mapping[str, tuple[NaturalFactorObservation, ...]]:
+        cached = object.__getattribute__(self, "_prepared_by_image")
+        if cached is not None:
+            return cached
+        grouped: dict[str, list[NaturalFactorObservation]] = defaultdict(list)
+        for raw in self.raw_observations:
+            observation, _ = _mapping_observation(raw)
+            grouped[observation.image_id].append(observation)
+        prepared = MappingProxyType(
+            {
+                image_id: tuple(rows)
+                for image_id, rows in sorted(grouped.items(), key=lambda item: item[0])
+            }
+        )
+        object.__setattr__(self, "_prepared_by_image", prepared)
+        return prepared
+
+    @property
+    def prepared_image_clusters(self) -> Mapping[str, tuple[NaturalFactorObservation, ...]]:
+        """Return immutable, lazily prepared rows grouped by image ID."""
+
+        return self._prepare_image_clusters()
+
+    def _prepare_numeric_clusters(self) -> Mapping[str, object]:
+        """Prepare immutable numeric slices used by the bootstrap hot loop.
+
+        The persisted rows remain the audit source of truth.  Once parsed,
+        natural residual vectors and intervention sums are stored per image;
+        a draw then concatenates numeric tuples instead of cloning every
+        ``NaturalFactorObservation`` merely to make duplicate image IDs
+        unique.
+        """
+
+        cached = object.__getattribute__(self, "_prepared_numeric")
+        if cached is not None:
+            return cached  # type: ignore[return-value]
+        clusters = self._prepare_image_clusters()
+        natural: dict[int, dict[str, tuple[tuple[float, float, float, float, float, int], ...]]] = {
+            node: {} for node in PRIMARY_NODE_IDS
+        }
+        interventions: dict[str, dict[int, dict[str, tuple[float, float, int, int]]]] = {
+            factor: {node: {} for node in PRIMARY_NODE_IDS}
+            for factor in ("sampling", "visibility")
+        }
+        for image_id, rows in clusters.items():
+            for node in PRIMARY_NODE_IDS:
+                natural[node][image_id] = tuple(
+                    (
+                        float(row.natural_sampling),
+                        float(row.predicted_sampling),
+                        float(row.natural_visibility),
+                        float(row.predicted_visibility),
+                        float(row.box_height),
+                        int(row.class_id),
+                    )
+                    for row in rows
+                    if row.node_id == node and row.intervention_kind == "natural"
+                )
+                for factor in ("sampling", "visibility"):
+                    result = intervention_statistics(
+                        tuple(row for row in rows if row.node_id == node),
+                        factor=factor,
+                    )
+                    eligible = int(result.get("eligible", 0) or 0)
+                    severities = result.get("expected_severities", ())
+                    severity_count = len(severities) if isinstance(severities, (tuple, list)) else 0
+                    target = result.get("target_mean_response")
+                    background = result.get("background_mean_response")
+                    malformed = int(result.get("malformed", 0) or 0)
+                    if (
+                        eligible > 0
+                        and severity_count > 0
+                        and isinstance(target, (int, float))
+                        and isinstance(background, (int, float))
+                        and math.isfinite(float(target))
+                        and math.isfinite(float(background))
+                    ):
+                        count = eligible * severity_count
+                        interventions[factor][node][image_id] = (
+                            float(target) * count,
+                            float(background) * count,
+                            count,
+                            malformed,
+                        )
+                    else:
+                        interventions[factor][node][image_id] = (0.0, 0.0, 0, malformed)
+        prepared = MappingProxyType(
+            {
+                "natural": MappingProxyType(
+                    {
+                        node: MappingProxyType(dict(images))
+                        for node, images in natural.items()
+                    }
+                ),
+                "interventions": MappingProxyType(
+                    {
+                        factor: MappingProxyType(
+                            {
+                                node: MappingProxyType(dict(images))
+                                for node, images in by_node.items()
+                            }
+                        )
+                        for factor, by_node in interventions.items()
+                    }
+                ),
+            }
+        )
+        object.__setattr__(self, "_prepared_numeric", prepared)
+        return prepared
+
+    def _recompute_numeric_endpoints(self, indices: Sequence[int]) -> Mapping[str, float]:
+        for index in indices:
+            if isinstance(index, bool) or not isinstance(index, Integral) or index < 0 or index >= len(self.image_ids):
+                raise ValueError("image-cluster draw index is out of bounds")
+        prepared = self._prepare_numeric_clusters()
+        natural = prepared["natural"]  # type: ignore[index]
+        interventions = prepared["interventions"]  # type: ignore[index]
+        image_ids = self.image_ids
+        selected_by_node: dict[int, list[tuple[float, float, float, float, float, int]]] = {
+            node: [] for node in PRIMARY_NODE_IDS
+        }
+        for index in indices:
+            image_id = image_ids[int(index)]
+            for node in PRIMARY_NODE_IDS:
+                selected_by_node[node].extend(natural[node][image_id])
+
+        pooled: dict[str, list[float]] = {name: [] for name in PRIMARY_ENDPOINTS}
+        for node in PRIMARY_NODE_IDS:
+            rows = selected_by_node[node]
+            for name, factor in (
+                (PRIMARY_ENDPOINTS[0], "sampling"),
+                (PRIMARY_ENDPOINTS[1], "visibility"),
+            ):
+                target_index, prediction_index = (0, 1) if factor == "sampling" else (2, 3)
+                target = tuple(row[target_index] for row in rows)
+                prediction = tuple(row[prediction_index] for row in rows)
+                heights = tuple(row[4] for row in rows)
+                classes = tuple(row[5] for row in rows)
+                result = partial_spearman(target, prediction, heights, classes)
+                rho = result.get("rho") if isinstance(result, Mapping) else None
+                if not isinstance(rho, (int, float)) or not math.isfinite(float(rho)):
+                    raise ValueError("observer observations do not contain complete endpoint evidence")
+                pooled[name].append(float(rho))
+            for endpoint_name, factor in (
+                (PRIMARY_ENDPOINTS[2], "sampling"),
+                (PRIMARY_ENDPOINTS[3], "visibility"),
+            ):
+                target_sums: list[float] = []
+                background_sums: list[float] = []
+                counts: list[int] = []
+                for image_index in indices:
+                    image_id = image_ids[int(image_index)]
+                    target_sum, background_sum, count, _malformed = interventions[factor][node][image_id]
+                    target_sums.append(float(target_sum))
+                    background_sums.append(float(background_sum))
+                    counts.append(int(count))
+                count_total = sum(counts)
+                if count_total <= 0:
+                    raise ValueError("observer observations do not contain complete endpoint evidence")
+                gap = math.fsum(target_sums) / count_total - math.fsum(background_sums) / count_total
+                if not math.isfinite(gap) or not -1.0 <= gap <= 1.0:
+                    raise ValueError("observer observations do not contain complete endpoint evidence")
+                pooled[endpoint_name].append(float(gap))
+        return {
+            name: float(math.fsum(values) / len(values))
+            for name, values in pooled.items()
+            if values
+        }
+
     def recompute_endpoints(self, indices: Sequence[int]) -> Mapping[str, float]:
         """Recompute pooled primary endpoints for one image-cluster draw."""
 
         if len(indices) != len(self.image_ids):
             raise ValueError("image-cluster draw length does not match evidence image count")
-        by_image: dict[str, list[object]] = defaultdict(list)
-        for raw in self.raw_observations:
-            observation, _ = _mapping_observation(raw)
-            by_image[observation.image_id].append(observation)
-        sampled: list[NaturalFactorObservation] = []
-        for draw_index, index in enumerate(indices):
-            if isinstance(index, bool) or not isinstance(index, Integral) or index < 0 or index >= len(self.image_ids):
-                raise ValueError("image-cluster draw index is out of bounds")
-            # ``natural_factor_audit`` rejects duplicate natural identities.
-            # A bootstrap draw can select one image more than once, so clone
-            # each cluster with a draw-local image identity.  The values and
-            # pair structure are unchanged; only the audit grouping key is
-            # made unique for this resample.
-            sampled.extend(
-                replace(
-                    observation,
-                    image_id=f"{observation.image_id}\0cluster-{draw_index}",
-                )
-                for observation in by_image[self.image_ids[int(index)]]  # type: ignore[index]
-            )
-        return _pooled_endpoints(tuple(sampled))
+        # The numeric cache is equivalent to the legacy row/object path but
+        # avoids per-draw mapping conversion and observation replacement.
+        return self._recompute_numeric_endpoints(indices)
 
     def to_dict(self) -> dict[str, object]:
         payload = dict(self.canonical_payload)

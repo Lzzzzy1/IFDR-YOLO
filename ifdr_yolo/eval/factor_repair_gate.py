@@ -1011,9 +1011,7 @@ def recompute_endpoints(
     return _validated_endpoints(coerced)
 
 
-def paired_image_cluster_delta(candidate: object, f0: object) -> PairedDelta:
-    """Compute candidate-minus-F0 composite delta on paired image clusters."""
-
+def _validate_paired_evidence(candidate: object, f0: object) -> tuple[FactorRepairEvidence, FactorRepairEvidence]:
     candidate_evidence = _coerce_evidence(candidate)
     f0_evidence = _coerce_evidence(f0)
     if candidate_evidence.image_ids_hash != f0_evidence.image_ids_hash:
@@ -1024,6 +1022,90 @@ def paired_image_cluster_delta(candidate: object, f0: object) -> PairedDelta:
         raise ValueError("incomplete candidate evidence")
     if not f0_evidence.complete:
         raise ValueError("incomplete F0 evidence")
+    return candidate_evidence, f0_evidence
+
+
+def _paired_image_cluster_replicate_from_evidence(
+    candidate: FactorRepairEvidence,
+    f0: FactorRepairEvidence,
+    replicate_index: int,
+    *,
+    indices: Sequence[int] | None = None,
+    reference_draw: Mapping[str, float] | None = None,
+    candidate_source: object | None = None,
+    f0_source: object | None = None,
+) -> float:
+    if indices is None:
+        indices = paired_resample_indices(
+            stage="development",
+            image_ids_hash=f0.image_ids_hash,
+            image_count=len(f0.image_ids),
+            replicate_index=replicate_index,
+        )
+    else:
+        indices = tuple(indices)
+        if len(indices) != len(f0.image_ids):
+            raise ValueError("image-cluster draw length does not match evidence image count")
+    # Keep the original producer objects when they expose a raw-row callback.
+    # ``_coerce_evidence`` intentionally returns the small immutable point
+    # record for arbitrary producers; using that record here would silently
+    # discard its ``recompute_endpoints`` method and bootstrap the point value
+    # instead of the registered image-cluster statistic.
+    candidate_draw = recompute_endpoints(
+        candidate if candidate_source is None else candidate_source,
+        indices,
+    )
+    reference_values = (
+        reference_draw
+        if reference_draw is not None
+        else recompute_endpoints(
+            f0 if f0_source is None else f0_source,
+            indices,
+        )
+    )
+    delta = composite_mechanism_score(candidate_draw) - composite_mechanism_score(reference_values)
+    if not math.isfinite(delta):
+        raise ValueError("paired bootstrap produced a non-finite delta")
+    return float(delta)
+
+
+def paired_image_cluster_replicate(
+    candidate: object,
+    f0: object,
+    replicate_index: int,
+    *,
+    indices: Sequence[int] | None = None,
+    reference_draw: Mapping[str, float] | None = None,
+) -> float:
+    """Compute one deterministic candidate-minus-F0 paired replicate.
+
+    ``reference_draw`` is an optional already-computed F0 endpoint mapping.
+    Supplying it lets callers evaluate F1/F2/F3 while computing the shared F0
+    draw exactly once per replicate; omitting it preserves the legacy pure
+    two-evidence behavior.
+    """
+
+    if not isinstance(replicate_index, Integral) or isinstance(replicate_index, (bool, np.bool_)):
+        raise ValueError("replicate_index must be a non-negative integer")
+    replicate_index = int(replicate_index)
+    if replicate_index < 0:
+        raise ValueError("replicate_index must be a non-negative integer")
+    candidate_evidence, f0_evidence = _validate_paired_evidence(candidate, f0)
+    return _paired_image_cluster_replicate_from_evidence(
+        candidate_evidence,
+        f0_evidence,
+        replicate_index,
+        indices=indices,
+        reference_draw=reference_draw,
+        candidate_source=candidate,
+        f0_source=f0,
+    )
+
+
+def paired_image_cluster_delta(candidate: object, f0: object) -> PairedDelta:
+    """Compute candidate-minus-F0 composite delta on paired image clusters."""
+
+    candidate_evidence, f0_evidence = _validate_paired_evidence(candidate, f0)
     candidate_point_endpoints = _validated_endpoints(candidate_evidence)
     f0_point_endpoints = _validated_endpoints(f0_evidence)
     point = composite_mechanism_score(candidate_point_endpoints) - composite_mechanism_score(f0_point_endpoints)
@@ -1036,12 +1118,16 @@ def paired_image_cluster_delta(candidate: object, f0: object) -> PairedDelta:
             image_count=image_count,
             replicate_index=replicate_index,
         )
-        candidate_draw = recompute_endpoints(candidate, indices)
-        f0_draw = recompute_endpoints(f0, indices)
-        delta = composite_mechanism_score(candidate_draw) - composite_mechanism_score(f0_draw)
-        if not math.isfinite(delta):
-            raise ValueError("paired bootstrap produced a non-finite delta")
-        replicates.append(float(delta))
+        replicates.append(
+            _paired_image_cluster_replicate_from_evidence(
+                candidate_evidence,
+                f0_evidence,
+                replicate_index,
+                indices=indices,
+                candidate_source=candidate,
+                f0_source=f0,
+            )
+        )
     ci = tuple(
         float(value)
         for value in np.quantile(
@@ -1082,13 +1168,13 @@ def digest_selection_decision(
     return _canonical_digest(payload)
 
 
-def select_repair_against_f0(
-    f0: object,
-    candidates: Iterable[object],
+def _select_from_paired_deltas(
+    reference: FactorRepairEvidence,
+    candidates: Sequence[object],
+    paired_deltas: Mapping[str, object],
 ) -> FactorRepairSelectionDecision | None:
-    """Select at most one eligible F1/F2/F3 candidate against complete F0."""
+    """Apply the registered eligibility and tie-break rule to precomputed deltas."""
 
-    reference = _coerce_evidence(f0)
     if reference.condition != "F0":
         raise ValueError("reference evidence condition must be F0")
     if not reference.complete:
@@ -1109,12 +1195,23 @@ def select_repair_against_f0(
             raise ValueError("candidate/F0 evidence image IDs mismatch")
         if not candidate.complete or not candidate.absolute_gate_passed:
             continue
-        paired = paired_image_cluster_delta(candidate, reference)
-        lower, upper = paired.ci95
+        paired_raw = paired_deltas.get(candidate.condition)
+        if paired_raw is None:
+            raise ValueError(f"precomputed paired delta is missing: {candidate.condition}")
+        candidate_hash = getattr(paired_raw, "candidate_evidence_sha256", None)
+        if candidate_hash is not None and str(candidate_hash) != candidate.evidence_sha256:
+            raise ValueError(f"precomputed paired delta evidence hash mismatch: {candidate.condition}")
+        if not hasattr(paired_raw, "ci95") or not hasattr(paired_raw, "point"):
+            raise ValueError(f"precomputed paired delta is malformed: {candidate.condition}")
+        paired = paired_raw  # type: ignore[assignment]
+        lower, upper = tuple(float(value) for value in paired.ci95)
         if not math.isfinite(lower) or not math.isfinite(upper) or lower > upper:
             raise ValueError("paired DeltaS CI must be finite and ordered")
+        point = float(paired.point)
+        if not math.isfinite(point):
+            raise ValueError("paired DeltaS point must be finite")
         if lower > 0.0:
-            eligible.append((float(lower), float(paired.point), candidate.condition, paired, candidate))
+            eligible.append((float(lower), point, candidate.condition, paired, candidate))
     if not eligible:
         return None
     best_lower = max(item[0] for item in eligible)
@@ -1147,6 +1244,43 @@ def select_repair_against_f0(
     )
 
 
+def select_repair_against_f0(
+    f0: object,
+    candidates: Iterable[object],
+    *,
+    paired_deltas: Mapping[str, object] | None = None,
+) -> FactorRepairSelectionDecision | None:
+    """Select at most one eligible F1/F2/F3 candidate against complete F0.
+
+    ``paired_deltas`` is an optional execution seam for checkpointed callers;
+    when omitted, this preserves the historical in-function bootstrap.
+    """
+
+    candidate_values = tuple(candidates)
+    reference = _coerce_evidence(f0)
+    if paired_deltas is None:
+        computed: dict[str, object] = {}
+        for candidate_raw in candidate_values:
+            candidate = _coerce_evidence(candidate_raw)
+            if candidate.condition not in {"F1", "F2", "F3"}:
+                raise ValueError("selection candidates must be F1, F2, or F3")
+            if not candidate.complete or not candidate.absolute_gate_passed:
+                continue
+            computed[candidate.condition] = paired_image_cluster_delta(candidate_raw, f0)
+        paired_deltas = computed
+    return _select_from_paired_deltas(reference, candidate_values, paired_deltas)
+
+
+def select_repair_against_f0_precomputed(
+    f0: object,
+    candidates: Iterable[object],
+    paired_deltas: Mapping[str, object],
+) -> FactorRepairSelectionDecision | None:
+    """Explicit name for selection from already checkpointed candidate deltas."""
+
+    return select_repair_against_f0(f0, candidates, paired_deltas=paired_deltas)
+
+
 def require_factor_guided_advancement(*, pre: object, post: object) -> None:
     """Require both pre- and post-adaptation absolute gates to pass."""
 
@@ -1175,9 +1309,11 @@ __all__ = [
     "composite_mechanism_score",
     "paired_resample_indices",
     "recompute_endpoints",
+    "paired_image_cluster_replicate",
     "paired_image_cluster_delta",
     "digest_selection_decision",
     "select_repair_against_f0",
+    "select_repair_against_f0_precomputed",
     "require_factor_guided_advancement",
     "spearman",
     "partial_spearman",

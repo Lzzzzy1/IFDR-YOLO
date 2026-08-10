@@ -16,9 +16,13 @@ from ifdr_yolo.eval.factor_repair_gate import (
     PRIMARY_ENDPOINTS,
     FactorRepairGateDecision,
     FactorRepairSelectionDecision,
+    PairedDelta,
+    composite_mechanism_score,
     evaluate_factor_repair_gate,
     paired_image_cluster_delta,
+    paired_image_cluster_replicate,
     paired_resample_indices,
+    recompute_endpoints,
     require_factor_guided_advancement,
     select_repair_against_f0,
 )
@@ -473,12 +477,71 @@ class FactorRepairGateTest(unittest.TestCase):
         second = paired_resample_indices(stage="development", image_ids_hash="same", image_count=8, replicate_index=4)
         self.assertEqual(first, second)
 
+    def test_indexed_replicate_matches_registered_draw_math(self) -> None:
+        f0 = candidate_evidence(
+            "F0",
+            "same",
+            0.1,
+            endpoint_samples={name: (0.1, 0.2, 0.3, 0.4) for name in PRIMARY_ENDPOINTS},
+        )
+        f1 = candidate_evidence(
+            "F1",
+            "same",
+            0.2,
+            endpoint_samples={name: (0.2, 0.3, 0.4, 0.5) for name in PRIMARY_ENDPOINTS},
+        )
+        index = 7
+        indices = paired_resample_indices(
+            stage="development",
+            image_ids_hash="same",
+            image_count=4,
+            replicate_index=index,
+        )
+        expected = composite_mechanism_score(
+            recompute_endpoints(f1, indices)
+        ) - composite_mechanism_score(recompute_endpoints(f0, indices))
+        self.assertEqual(
+            paired_image_cluster_replicate(f1, f0, index),
+            expected,
+        )
+
     def test_bootstrap_seed_or_replicate_override_is_rejected(self) -> None:
         parameters = inspect.signature(select_repair_against_f0).parameters
         self.assertNotIn("seed", parameters)
         self.assertNotIn("replicates", parameters)
         with self.assertRaises(TypeError):
             select_repair_against_f0(None, (), seed=1)  # type: ignore[call-arg]
+
+    def test_precomputed_deltas_use_selection_rule_without_bootstrap(self) -> None:
+        f0 = candidate_evidence("F0", "same", 0.1)
+        f1 = candidate_evidence("F1", "same", 0.2)
+        f2 = candidate_evidence("F2", "same", 0.3)
+        precomputed = {
+            "F1": PairedDelta(
+                point=0.05,
+                ci95=(0.02, 0.10),
+                candidate_endpoints=f1.endpoints,
+                candidate_evidence_sha256=f1.evidence_sha256,
+            ),
+            "F2": PairedDelta(
+                point=0.02,
+                ci95=(0.02, 0.10),
+                candidate_endpoints=f2.endpoints,
+                candidate_evidence_sha256=f2.evidence_sha256,
+            ),
+        }
+        with patch(
+            "ifdr_yolo.eval.factor_repair_gate.paired_image_cluster_delta",
+            side_effect=AssertionError("precomputed path must not bootstrap"),
+        ):
+            selected = select_repair_against_f0(
+                f0,
+                (f2, f1),
+                paired_deltas=precomputed,
+            )
+        self.assertIsNotNone(selected)
+        assert selected is not None
+        self.assertEqual(selected.selected_condition, "F1")
 
 
 if __name__ == "__main__":
