@@ -1,0 +1,29 @@
+schema_version: 1
+experiment:
+  dataset: kitti
+  model_role: plain_p2
+  seed: 17
+  checkpoint_role: last.pt
+paths:
+  model: models/kitti-p2-m.yaml
+  model_sha256: 0d2cbd9215dc62c4c9920127964ce0ab61b5d10581861d8e83c33fc168aa302a
+  checkpoint: runs/p2-fit-reference-s17/weights/last.pt
+  fit_ids: tmp/factor-metadata-dev-s17/fit_ids.txt
+  development_ids: tmp/factor-metadata-dev-s17/development_ids.txt
+  raw_images: kitti_raw/training/image_2/training/image_2
+  raw_labels: kitti_raw/training/label_2/training/label_2
+  checkpoint_sha256: null
+  fit_manifest_sha256: 50a1f8d72b747d1e2f460a4e0a355469484d33dbf1e9928b64ba6594c1873362
+oracle:
+  image_size: 640
+  crop_fraction: 0.5
+  small_height_px: 40.0
+  proposal_confidence: [0.001, 0.25]
+  proposal_limit: 18
+  max_crops_per_image: 1
+  nms_iou: 0.70
+  max_det: 300
+  o1_min_delta_ap40: 3.0
+  o2_min_delta_ap40: 5.0
+  no_harm_near_large: 0.5
+  no_harm_class: 1.0
