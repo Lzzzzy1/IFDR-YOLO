@@ -82,8 +82,8 @@ class OracleRules:
     max_crops_per_image: int = 1
     nms_iou: float = 0.70
     max_det: int = 300
-    o1_min_delta_ap40: float = 3.0
-    o2_min_delta_ap40: float = 5.0
+    o1_min_delta_ap40: float = 2.0
+    o2_min_delta_ap40: float = 2.0
     no_harm_near_large: float = 0.5
     no_harm_class: float = 1.0
 
@@ -275,8 +275,8 @@ def load_oracle_config(path: Path, *, repository_root: Path | None = None) -> Or
         max_crops_per_image=int(raw_rules.get("max_crops_per_image", 1)),
         nms_iou=float(raw_rules.get("nms_iou", 0.70)),
         max_det=int(raw_rules.get("max_det", 300)),
-        o1_min_delta_ap40=float(raw_rules.get("o1_min_delta_ap40", 3.0)),
-        o2_min_delta_ap40=float(raw_rules.get("o2_min_delta_ap40", 5.0)),
+        o1_min_delta_ap40=float(raw_rules.get("o1_min_delta_ap40", 2.0)),
+        o2_min_delta_ap40=float(raw_rules.get("o2_min_delta_ap40", 2.0)),
         no_harm_near_large=float(raw_rules.get("no_harm_near_large", 0.5)),
         no_harm_class=float(raw_rules.get("no_harm_class", 1.0)),
     )
@@ -289,8 +289,8 @@ def load_oracle_config(path: Path, *, repository_root: Path | None = None) -> Or
     if (
         rules.image_size != 640
         or rules.small_height_px != 40.0
-        or rules.o1_min_delta_ap40 != 3.0
-        or rules.o2_min_delta_ap40 != 5.0
+        or rules.o1_min_delta_ap40 != 2.0
+        or rules.o2_min_delta_ap40 != 2.0
         or rules.no_harm_near_large != 0.5
         or rules.no_harm_class != 1.0
     ):
@@ -815,7 +815,7 @@ class _OracleRunner:
         base_ap = _macro_moderate(base_metrics)
         o1_ap = _macro_moderate(o1_metrics)
         if o1_ap - base_ap < self.config.rules.o1_min_delta_ap40:
-            decision = {"route": "A", "o1": {"delta_moderate_macro_ap40": o1_ap - base_ap}, "decision": "STOP", "reason": "O1 below registered +3.0 gate"}
+            decision = {"route": "A", "o1": {"delta_moderate_macro_ap40": o1_ap - base_ap}, "decision": "STOP", "reason": "O1 below registered +2.0 gate"}
             _atomic_json(self.output / "route_a_decision.json", decision)
             _atomic_json(self.output / "stratified_no_harm.json", {"status": "NOT_RUN", "decision": "STOP"})
             _atomic_json(self.output / "latency_compute.json", {"images": len(self.image_ids), "one_crop_budget": self.config.rules.max_crops_per_image})

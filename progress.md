@@ -1,5 +1,16 @@
 # Progress: Resumable factor bootstrap
 
+## 2026-08-10 local P2/oracle gate
+
+- Fresh novelty evidence is on disk. The broad value-of-resolution claim is NO-GO; the narrow benefit/harm plus calibrated abstention formulation is provisionally defensible, but F4 coding is blocked until O1 and O2 each retain at least +2.0 AP_R40 and pass no-harm.
+- Focused local baseline evidence: 28 tests passed; direct syntax checks passed. Raw logs and command manifests are under `E:/myyolo/kitti_project/reports/local_initial_20260810/`.
+- Persistent synthetic smoke ran end to end and produced a 66-entry SHA manifest with zero missing/mismatched files. It proves only execution, identity rejection, and STOP behavior; it is not an AP result.
+- The smoke exposed a threshold mismatch. An intermediate `+1/+1` interpretation produced genuine RED/GREEN logs, but the user explicitly superseded it before release. The current frozen gates are O1 `+2` and O2 `+2`; prior `+1` artifacts are process evidence only and cannot authorize a server run.
+- Current performance targets are separate end-to-end measurements, not added claims: plain P2 F0 versus original P3-P5 `>=+4.0` AP; full F4 versus F0 `>=+2.0` AP with a +2 to +3 target; full F4 versus original `>=+6.0` AP with a +6 to +8 target.
+- The minimal `+2/+2` correction passed RED-to-GREEN. Main-agent fresh verification: 28/28 focused tests in 15.723 seconds; four-file `py_compile` exit 0; persistent synthetic smoke 1/1 with O1 delta `+0.5`, deterministic `STOP`, reason `O1 below registered +2.0 gate`, and no O2 pool. The smoke is a runnability/safety result, not AP improvement.
+- L1 is GO. The next and only authorized gate is the real RTX 5090 one-epoch clean-P2 preflight with interruption/resume, zero-overlap audit, mirror growth, and measured ETA; no 300-epoch run starts until that preflight passes.
+- Each following phase must publish its success criterion and proof path before execution. Runtime health requires log/checkpoint/output growth, not PID alone. Final results must include absolute AP_R40 points, uncertainty, strata, no-harm, false positives, latency, and budget; negative and zero results remain in the record.
+
 ## 2026-08-10
 
 - Final Sol gate passed for timing/ETA, source identity, fixed 10,000 replicates, resume equivalence, transactional final output, and the independent exact-byte mirror.

@@ -266,7 +266,8 @@ class ResolutionOracleTest(unittest.TestCase):
         self.assertEqual(config.checkpoint_role, "last.pt")
         self.assertEqual(config.rules.proposal_limit, 18)
         self.assertEqual(config.rules.max_crops_per_image, 1)
-        self.assertEqual(config.rules.o1_min_delta_ap40, 3.0)
+        self.assertEqual(config.rules.o1_min_delta_ap40, 2.0)
+        self.assertEqual(config.rules.o2_min_delta_ap40, 2.0)
 
     def test_oracle_identity_mismatch_fails_closed_and_o1_failure_does_not_create_o2_pool(self) -> None:
         class EmptyAdapter:
@@ -345,7 +346,7 @@ class ResolutionOracleTest(unittest.TestCase):
             evaluations = []
             def fake_eval(**_: object) -> dict[str, object]:
                 evaluations.append(True)
-                score = 2.0 if len(evaluations) == 2 else 0.0
+                score = 0.5 if len(evaluations) == 2 else 0.0
                 return {"classes": {name: {"moderate": {"ap40": score}} for name in ("Car", "Pedestrian", "Cyclist")}}
             services = ResolutionOracleServices(adapter=EmptyAdapter(), evaluate=fake_eval)
             with patch("scripts.run_resolution_oracle.REGISTERED_DEVELOPMENT_COUNT", 2), patch(

@@ -23,7 +23,7 @@ oracle:
   max_crops_per_image: 1
   nms_iou: 0.70
   max_det: 300
-  o1_min_delta_ap40: 3.0
-  o2_min_delta_ap40: 5.0
+  o1_min_delta_ap40: 2.0
+  o2_min_delta_ap40: 2.0
   no_harm_near_large: 0.5
   no_harm_class: 1.0
