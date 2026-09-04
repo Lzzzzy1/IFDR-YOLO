@@ -1,0 +1,4797 @@
+{
+  "metric": "KITTI_LAECE0_LRP_DISJOINT_CALIBRATION",
+  "protocol": {
+    "base_difficulty": "hard",
+    "bins": 25,
+    "calibration_count": 186,
+    "calibration_ids_sha256": "b9d635f0fa55610bdb0941efeecde0bab441f31fa8db6ca59da61409fb683897",
+    "matching_iou_threshold": 0.0,
+    "source_count": 371,
+    "source_split_sha256": "b1b6b6ee7e5398e93868fab407a2e8a86a53c753667002ef9b8381734ef2cda8",
+    "split_seed": 20260803,
+    "test_count": 185,
+    "test_ids_sha256": "f27d5c550969b36e97e1d8252b5a3910b6e791d4d4d643af027e98021b8059af",
+    "threshold_selection": "LRP-optimal on calibration split"
+  },
+  "runs": {
+    "ANCHORED": {
+      "classes": {
+        "Car": {
+          "confidence_threshold": 0.292861,
+          "targets": {
+            "far_gt_40m": {
+              "bins": [
+                {
+                  "absolute_gap": 0.3099595714285714,
+                  "count": 7,
+                  "lower": 0.28,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.3099595714285714,
+                  "upper": 0.32
+                },
+                {
+                  "absolute_gap": 0.33892485714285714,
+                  "count": 7,
+                  "lower": 0.32,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.33892485714285714,
+                  "upper": 0.36
+                },
+                {
+                  "absolute_gap": 0.21051410219466707,
+                  "count": 5,
+                  "lower": 0.36,
+                  "mean_iou": 0.1710750978053329,
+                  "mean_score": 0.38158919999999996,
+                  "upper": 0.4
+                },
+                {
+                  "absolute_gap": 0.4195086666666666,
+                  "count": 6,
+                  "lower": 0.4,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.4195086666666666,
+                  "upper": 0.44
+                },
+                {
+                  "absolute_gap": 0.454333,
+                  "count": 2,
+                  "lower": 0.44,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.454333,
+                  "upper": 0.48
+                },
+                {
+                  "absolute_gap": 0.51463,
+                  "count": 1,
+                  "lower": 0.48,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.51463,
+                  "upper": 0.52
+                },
+                {
+                  "absolute_gap": 0.5442201829857655,
+                  "count": 3,
+                  "lower": 0.52,
+                  "mean_iou": 0.0007708170142344964,
+                  "mean_score": 0.544991,
+                  "upper": 0.56
+                },
+                {
+                  "absolute_gap": 0.2702628530313,
+                  "count": 1,
+                  "lower": 0.56,
+                  "mean_iou": 0.2981821469687,
+                  "mean_score": 0.568445,
+                  "upper": 0.6
+                },
+                {
+                  "absolute_gap": 0.21139469031249425,
+                  "count": 2,
+                  "lower": 0.6,
+                  "mean_iou": 0.40989930968750576,
+                  "mean_score": 0.621294,
+                  "upper": 0.64
+                },
+                {
+                  "absolute_gap": 0.393321841813656,
+                  "count": 3,
+                  "lower": 0.64,
+                  "mean_iou": 0.2709558248530107,
+                  "mean_score": 0.6642776666666667,
+                  "upper": 0.68
+                },
+                {
+                  "absolute_gap": 0.31009413669612035,
+                  "count": 2,
+                  "lower": 0.68,
+                  "mean_iou": 0.40123586330387967,
+                  "mean_score": 0.71133,
+                  "upper": 0.72
+                },
+                {
+                  "absolute_gap": 0.2736626197399973,
+                  "count": 5,
+                  "lower": 0.72,
+                  "mean_iou": 0.46043458026000283,
+                  "mean_score": 0.7340972000000001,
+                  "upper": 0.76
+                },
+                {
+                  "absolute_gap": 0.02921208705738798,
+                  "count": 7,
+                  "lower": 0.76,
+                  "mean_iou": 0.8125493727716736,
+                  "mean_score": 0.7833372857142856,
+                  "upper": 0.8
+                },
+                {
+                  "absolute_gap": 0.2505803125306104,
+                  "count": 10,
+                  "lower": 0.8,
+                  "mean_iou": 0.5673312874693897,
+                  "mean_score": 0.8179116000000001,
+                  "upper": 0.84
+                },
+                {
+                  "absolute_gap": 0.26503036082107856,
+                  "count": 15,
+                  "lower": 0.84,
+                  "mean_iou": 0.5912901725122548,
+                  "mean_score": 0.8563205333333334,
+                  "upper": 0.88
+                },
+                {
+                  "absolute_gap": 0.5051005597176323,
+                  "count": 8,
+                  "lower": 0.88,
+                  "mean_iou": 0.3951759402823677,
+                  "mean_score": 0.9002765,
+                  "upper": 0.92
+                },
+                {
+                  "absolute_gap": 0.9129981568851755,
+                  "count": 6,
+                  "lower": 0.92,
+                  "mean_iou": 0.02663417644815787,
+                  "mean_score": 0.9396323333333334,
+                  "upper": 0.96
+                }
+              ],
+              "confidence_threshold": 0.292861,
+              "evaluated_detections": 90,
+              "false_negatives": 2,
+              "false_positives": 34,
+              "laece0": 0.34704250841329143,
+              "lrp": 0.6799466906347041,
+              "lrp_fn": 0.034482758620689655,
+              "lrp_fp": 0.37777777777777777,
+              "lrp_loc": 0.4741981346141569,
+              "matching_iou_threshold": 0.0,
+              "num_valid_gt": 58,
+              "supported": true,
+              "true_positives": 56
+            },
+            "occlusion_2": {
+              "bins": [
+                {
+                  "absolute_gap": 0.30829609999999996,
+                  "count": 10,
+                  "lower": 0.28,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.30829609999999996,
+                  "upper": 0.32
+                },
+                {
+                  "absolute_gap": 0.34148322222222227,
+                  "count": 9,
+                  "lower": 0.32,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.34148322222222227,
+                  "upper": 0.36
+                },
+                {
+                  "absolute_gap": 0.3767365925423535,
+                  "count": 6,
+                  "lower": 0.36,
+                  "mean_iou": 0.002800574124313209,
+                  "mean_score": 0.3795371666666667,
+                  "upper": 0.4
+                },
+                {
+                  "absolute_gap": 0.4035525577674282,
+                  "count": 8,
+                  "lower": 0.4,
+                  "mean_iou": 0.016995567232571746,
+                  "mean_score": 0.42054812499999994,
+                  "upper": 0.44
+                },
+                {
+                  "absolute_gap": 0.09954917297574895,
+                  "count": 6,
+                  "lower": 0.44,
+                  "mean_iou": 0.3571673270242511,
+                  "mean_score": 0.4567165,
+                  "upper": 0.48
+                },
+                {
+                  "absolute_gap": 0.0733805822642013,
+                  "count": 2,
+                  "lower": 0.48,
+                  "mean_iou": 0.4429189177357987,
+                  "mean_score": 0.5162995,
+                  "upper": 0.52
+                },
+                {
+                  "absolute_gap": 0.10029098887822485,
+                  "count": 4,
+                  "lower": 0.52,
+                  "mean_iou": 0.6322672388782249,
+                  "mean_score": 0.53197625,
+                  "upper": 0.56
+                },
+                {
+                  "absolute_gap": 0.045534316597875435,
+                  "count": 4,
+                  "lower": 0.56,
+                  "mean_iou": 0.5327069334021246,
+                  "mean_score": 0.57824125,
+                  "upper": 0.6
+                },
+                {
+                  "absolute_gap": 0.09481488410893146,
+                  "count": 3,
+                  "lower": 0.6,
+                  "mean_iou": 0.7197525507755982,
+                  "mean_score": 0.6249376666666667,
+                  "upper": 0.64
+                },
+                {
+                  "absolute_gap": 0.2484509484850207,
+                  "count": 7,
+                  "lower": 0.64,
+                  "mean_iou": 0.4122539086578364,
+                  "mean_score": 0.6607048571428571,
+                  "upper": 0.68
+                },
+                {
+                  "absolute_gap": 0.4267036276390871,
+                  "count": 8,
+                  "lower": 0.68,
+                  "mean_iou": 0.27217312236091284,
+                  "mean_score": 0.6988767499999999,
+                  "upper": 0.72
+                },
+                {
+                  "absolute_gap": 0.17946753775501578,
+                  "count": 6,
+                  "lower": 0.72,
+                  "mean_iou": 0.567439628911651,
+                  "mean_score": 0.7469071666666668,
+                  "upper": 0.76
+                },
+                {
+                  "absolute_gap": 0.1757128802431147,
+                  "count": 6,
+                  "lower": 0.76,
+                  "mean_iou": 0.6058234530902187,
+                  "mean_score": 0.7815363333333334,
+                  "upper": 0.8
+                },
+                {
+                  "absolute_gap": 0.5257726544662662,
+                  "count": 16,
+                  "lower": 0.8,
+                  "mean_iou": 0.29515503303373364,
+                  "mean_score": 0.8209276874999998,
+                  "upper": 0.84
+                },
+                {
+                  "absolute_gap": 0.6087319096807249,
+                  "count": 20,
+                  "lower": 0.84,
+                  "mean_iou": 0.253858590319275,
+                  "mean_score": 0.8625904999999999,
+                  "upper": 0.88
+                },
+                {
+                  "absolute_gap": 0.6498187179411445,
+                  "count": 19,
+                  "lower": 0.88,
+                  "mean_iou": 0.2526583873220134,
+                  "mean_score": 0.9024771052631579,
+                  "upper": 0.92
+                },
+                {
+                  "absolute_gap": 0.7197249704364836,
+                  "count": 35,
+                  "lower": 0.92,
+                  "mean_iou": 0.2214019152778023,
+                  "mean_score": 0.9411268857142859,
+                  "upper": 0.96
+                },
+                {
+                  "absolute_gap": 0.7710141899520666,
+                  "count": 10,
+                  "lower": 0.96,
+                  "mean_iou": 0.20125231004793348,
+                  "mean_score": 0.9722665000000001,
+                  "upper": 1.0
+                }
+              ],
+              "confidence_threshold": 0.292861,
+              "evaluated_detections": 179,
+              "false_negatives": 6,
+              "false_positives": 39,
+              "laece0": 0.4825412985098233,
+              "lrp": 0.7488364498247514,
+              "lrp_fn": 0.0410958904109589,
+              "lrp_fp": 0.21787709497206703,
+              "lrp_loc": 0.6681053086969929,
+              "matching_iou_threshold": 0.0,
+              "num_valid_gt": 146,
+              "supported": true,
+              "true_positives": 140
+            },
+            "overall": {
+              "bins": [
+                {
+                  "absolute_gap": 0.1049049624479507,
+                  "count": 12,
+                  "lower": 0.28,
+                  "mean_iou": 0.20500045421871596,
+                  "mean_score": 0.30990541666666666,
+                  "upper": 0.32
+                },
+                {
+                  "absolute_gap": 0.00033447757336158013,
+                  "count": 18,
+                  "lower": 0.32,
+                  "mean_iou": 0.34074592201780596,
+                  "mean_score": 0.3404114444444444,
+                  "upper": 0.36
+                },
+                {
+                  "absolute_gap": 0.016965206112370235,
+                  "count": 13,
+                  "lower": 0.36,
+                  "mean_iou": 0.40081151380467794,
+                  "mean_score": 0.3838463076923077,
+                  "upper": 0.4
+                },
+                {
+                  "absolute_gap": 0.0851914543898733,
+                  "count": 12,
+                  "lower": 0.4,
+                  "mean_iou": 0.3371624622767933,
+                  "mean_score": 0.4223539166666666,
+                  "upper": 0.44
+                },
+                {
+                  "absolute_gap": 0.022912656806716225,
+                  "count": 11,
+                  "lower": 0.44,
+                  "mean_iou": 0.4830610204430798,
+                  "mean_score": 0.4601483636363636,
+                  "upper": 0.48
+                },
+                {
+                  "absolute_gap": 0.1932417680369114,
+                  "count": 7,
+                  "lower": 0.48,
+                  "mean_iou": 0.7018541966083399,
+                  "mean_score": 0.5086124285714285,
+                  "upper": 0.52
+                },
+                {
+                  "absolute_gap": 0.12528733229428268,
+                  "count": 18,
+                  "lower": 0.52,
+                  "mean_iou": 0.6619978322942829,
+                  "mean_score": 0.5367105000000002,
+                  "upper": 0.56
+                },
+                {
+                  "absolute_gap": 0.23304295678329123,
+                  "count": 10,
+                  "lower": 0.56,
+                  "mean_iou": 0.8163320567832913,
+                  "mean_score": 0.5832891000000001,
+                  "upper": 0.6
+                },
+                {
+                  "absolute_gap": 0.13510486655256082,
+                  "count": 15,
+                  "lower": 0.6,
+                  "mean_iou": 0.7556501998858942,
+                  "mean_score": 0.6205453333333334,
+                  "upper": 0.64
+                },
+                {
+                  "absolute_gap": 0.009143886988668637,
+                  "count": 17,
+                  "lower": 0.64,
+                  "mean_iou": 0.6691745928710217,
+                  "mean_score": 0.660030705882353,
+                  "upper": 0.68
+                },
+                {
+                  "absolute_gap": 0.08321606923552993,
+                  "count": 15,
+                  "lower": 0.68,
+                  "mean_iou": 0.7850796025688632,
+                  "mean_score": 0.7018635333333333,
+                  "upper": 0.72
+                },
+                {
+                  "absolute_gap": 0.024570399338737614,
+                  "count": 20,
+                  "lower": 0.72,
+                  "mean_iou": 0.7664349493387377,
+                  "mean_score": 0.7418645500000001,
+                  "upper": 0.76
+                },
+                {
+                  "absolute_gap": 0.09231918729768962,
+                  "count": 23,
+                  "lower": 0.76,
+                  "mean_iou": 0.8724481872976896,
+                  "mean_score": 0.780129,
+                  "upper": 0.8
+                },
+                {
+                  "absolute_gap": 0.008101158418184262,
+                  "count": 54,
+                  "lower": 0.8,
+                  "mean_iou": 0.8113495082484826,
+                  "mean_score": 0.8194506666666669,
+                  "upper": 0.84
+                },
+                {
+                  "absolute_gap": 6.245443216090774e-05,
+                  "count": 81,
+                  "lower": 0.84,
+                  "mean_iou": 0.8605598665554934,
+                  "mean_score": 0.8606223209876543,
+                  "upper": 0.88
+                },
+                {
+                  "absolute_gap": 0.02554252995722084,
+                  "count": 83,
+                  "lower": 0.88,
+                  "mean_iou": 0.8743688555849477,
+                  "mean_score": 0.8999113855421685,
+                  "upper": 0.92
+                },
+                {
+                  "absolute_gap": 0.03180145306062088,
+                  "count": 84,
+                  "lower": 0.92,
+                  "mean_iou": 0.9080593564631888,
+                  "mean_score": 0.9398608095238097,
+                  "upper": 0.96
+                },
+                {
+                  "absolute_gap": 0.20900474786513035,
+                  "count": 49,
+                  "lower": 0.96,
+                  "mean_iou": 0.7637328847879304,
+                  "mean_score": 0.9727376326530608,
+                  "upper": 1.0
+                }
+              ],
+              "confidence_threshold": 0.292861,
+              "evaluated_detections": 542,
+              "false_negatives": 32,
+              "false_positives": 37,
+              "laece0": 0.05575308835953443,
+              "lrp": 0.2720757477670381,
+              "lrp_fn": 0.0595903165735568,
+              "lrp_fp": 0.06826568265682657,
+              "lrp_loc": 0.17261679053124718,
+              "matching_iou_threshold": 0.0,
+              "num_valid_gt": 537,
+              "supported": true,
+              "true_positives": 505
+            },
+            "small_25_40": {
+              "bins": [
+                {
+                  "absolute_gap": 0.220954594112162,
+                  "count": 10,
+                  "lower": 0.28,
+                  "mean_iou": 0.08868320588783796,
+                  "mean_score": 0.30963779999999996,
+                  "upper": 0.32
+                },
+                {
+                  "absolute_gap": 0.17069195017639083,
+                  "count": 10,
+                  "lower": 0.32,
+                  "mean_iou": 0.1695125498236092,
+                  "mean_score": 0.3402045,
+                  "upper": 0.36
+                },
+                {
+                  "absolute_gap": 0.10762168769145147,
+                  "count": 6,
+                  "lower": 0.36,
+                  "mean_iou": 0.2748829789752152,
+                  "mean_score": 0.38250466666666666,
+                  "upper": 0.4
+                },
+                {
+                  "absolute_gap": 0.41921279999999994,
+                  "count": 5,
+                  "lower": 0.4,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.41921279999999994,
+                  "upper": 0.44
+                },
+                {
+                  "absolute_gap": 0.2282146248412916,
+                  "count": 3,
+                  "lower": 0.44,
+                  "mean_iou": 0.23188104182537508,
+                  "mean_score": 0.4600956666666667,
+                  "upper": 0.48
+                },
+                {
+                  "absolute_gap": 0.3691848354715974,
+                  "count": 1,
+                  "lower": 0.48,
+                  "mean_iou": 0.8858378354715974,
+                  "mean_score": 0.516653,
+                  "upper": 0.52
+                },
+                {
+                  "absolute_gap": 0.08934823143035614,
+                  "count": 8,
+                  "lower": 0.52,
+                  "mean_iou": 0.4515207685696438,
+                  "mean_score": 0.5408689999999999,
+                  "upper": 0.56
+                },
+                {
+                  "absolute_gap": 0.33414487858255304,
+                  "count": 1,
+                  "lower": 0.56,
+                  "mean_iou": 0.902589878582553,
+                  "mean_score": 0.568445,
+                  "upper": 0.6
+                },
+                {
+                  "absolute_gap": 0.1987356193750115,
+                  "count": 1,
+                  "lower": 0.6,
+                  "mean_iou": 0.8197986193750115,
+                  "mean_score": 0.621063,
+                  "upper": 0.64
+                },
+                {
+                  "absolute_gap": 0.08393306279111701,
+                  "count": 11,
+                  "lower": 0.64,
+                  "mean_iou": 0.5755053917543376,
+                  "mean_score": 0.6594384545454546,
+                  "upper": 0.68
+                },
+                {
+                  "absolute_gap": 0.046441246117270074,
+                  "count": 6,
+                  "lower": 0.68,
+                  "mean_iou": 0.6550079205493965,
+                  "mean_score": 0.7014491666666666,
+                  "upper": 0.72
+                },
+                {
+                  "absolute_gap": 0.1743168590515327,
+                  "count": 8,
+                  "lower": 0.72,
+                  "mean_iou": 0.5663100159484673,
+                  "mean_score": 0.740626875,
+                  "upper": 0.76
+                },
+                {
+                  "absolute_gap": 0.006742760164109796,
+                  "count": 9,
+                  "lower": 0.76,
+                  "mean_iou": 0.7758237953914457,
+                  "mean_score": 0.7825665555555555,
+                  "upper": 0.8
+                },
+                {
+                  "absolute_gap": 0.1492163811810645,
+                  "count": 31,
+                  "lower": 0.8,
+                  "mean_iou": 0.6712795543028063,
+                  "mean_score": 0.8204959354838708,
+                  "upper": 0.84
+                },
+                {
+                  "absolute_gap": 0.17460685098518347,
+                  "count": 51,
+                  "lower": 0.84,
+                  "mean_iou": 0.6846484431324638,
+                  "mean_score": 0.8592552941176472,
+                  "upper": 0.88
+                },
+                {
+                  "absolute_gap": 0.34703652241525196,
+                  "count": 25,
+                  "lower": 0.88,
+                  "mean_iou": 0.5522489175847479,
+                  "mean_score": 0.8992854399999999,
+                  "upper": 0.92
+                },
+                {
+                  "absolute_gap": 0.7863466388348054,
+                  "count": 22,
+                  "lower": 0.92,
+                  "mean_iou": 0.15308554298337637,
+                  "mean_score": 0.9394321818181818,
+                  "upper": 0.96
+                },
+                {
+                  "absolute_gap": 0.9249876766369929,
+                  "count": 4,
+                  "lower": 0.96,
+                  "mean_iou": 0.04558032336300714,
+                  "mean_score": 0.970568,
+                  "upper": 1.0
+                }
+              ],
+              "confidence_threshold": 0.292861,
+              "evaluated_detections": 212,
+              "false_negatives": 7,
+              "false_positives": 32,
+              "laece0": 0.2585992101314982,
+              "lrp": 0.515963675255796,
+              "lrp_fn": 0.0374331550802139,
+              "lrp_fp": 0.1509433962264151,
+              "lrp_loc": 0.4110891382278852,
+              "matching_iou_threshold": 0.0,
+              "num_valid_gt": 187,
+              "supported": true,
+              "true_positives": 180
+            }
+          }
+        },
+        "Cyclist": {
+          "confidence_threshold": 0.84038,
+          "targets": {
+            "far_gt_40m": {
+              "bins": [],
+              "confidence_threshold": 0.84038,
+              "evaluated_detections": 0,
+              "false_negatives": 1,
+              "false_positives": 0,
+              "laece0": null,
+              "lrp": 1.0,
+              "lrp_fn": 1.0,
+              "lrp_fp": null,
+              "lrp_loc": null,
+              "matching_iou_threshold": 0.0,
+              "num_valid_gt": 1,
+              "supported": true,
+              "true_positives": 0
+            },
+            "occlusion_2": {
+              "bins": [
+                {
+                  "absolute_gap": 0.7083168175356985,
+                  "count": 1,
+                  "lower": 0.96,
+                  "mean_iou": 0.2620441824643015,
+                  "mean_score": 0.970361,
+                  "upper": 1.0
+                }
+              ],
+              "confidence_threshold": 0.84038,
+              "evaluated_detections": 1,
+              "false_negatives": 0,
+              "false_positives": 0,
+              "laece0": 0.7083168175356985,
+              "lrp": 0.7379558175356985,
+              "lrp_fn": 0.0,
+              "lrp_fp": 0.0,
+              "lrp_loc": 0.7379558175356985,
+              "matching_iou_threshold": 0.0,
+              "num_valid_gt": 1,
+              "supported": true,
+              "true_positives": 1
+            },
+            "overall": {
+              "bins": [
+                {
+                  "absolute_gap": 0.165657956245002,
+                  "count": 1,
+                  "lower": 0.84,
+                  "mean_iou": 0.687993043754998,
+                  "mean_score": 0.853651,
+                  "upper": 0.88
+                },
+                {
+                  "absolute_gap": 0.013434908482433117,
+                  "count": 1,
+                  "lower": 0.88,
+                  "mean_iou": 0.9055309084824331,
+                  "mean_score": 0.892096,
+                  "upper": 0.92
+                },
+                {
+                  "absolute_gap": 0.07327745508905048,
+                  "count": 9,
+                  "lower": 0.92,
+                  "mean_iou": 0.8724005449109494,
+                  "mean_score": 0.9456779999999999,
+                  "upper": 0.96
+                },
+                {
+                  "absolute_gap": 0.18188378291766694,
+                  "count": 8,
+                  "lower": 0.96,
+                  "mean_iou": 0.807288467082333,
+                  "mean_score": 0.98917225,
+                  "upper": 1.0
+                }
+              ],
+              "confidence_threshold": 0.84038,
+              "evaluated_detections": 19,
+              "false_negatives": 12,
+              "false_positives": 0,
+              "laece0": 0.12071895915106448,
+              "lrp": 0.48698591635178584,
+              "lrp_fn": 0.3870967741935484,
+              "lrp_fp": 0.0,
+              "lrp_loc": 0.1629770214160716,
+              "matching_iou_threshold": 0.0,
+              "num_valid_gt": 31,
+              "supported": true,
+              "true_positives": 19
+            },
+            "small_25_40": {
+              "bins": [
+                {
+                  "absolute_gap": 0.7083168175356985,
+                  "count": 1,
+                  "lower": 0.96,
+                  "mean_iou": 0.2620441824643015,
+                  "mean_score": 0.970361,
+                  "upper": 1.0
+                }
+              ],
+              "confidence_threshold": 0.84038,
+              "evaluated_detections": 1,
+              "false_negatives": 2,
+              "false_positives": 0,
+              "laece0": 0.7083168175356985,
+              "lrp": 0.9126519391785662,
+              "lrp_fn": 0.6666666666666666,
+              "lrp_fp": 0.0,
+              "lrp_loc": 0.7379558175356985,
+              "matching_iou_threshold": 0.0,
+              "num_valid_gt": 3,
+              "supported": true,
+              "true_positives": 1
+            }
+          }
+        },
+        "Pedestrian": {
+          "confidence_threshold": 0.392272,
+          "targets": {
+            "far_gt_40m": {
+              "bins": [
+                {
+                  "absolute_gap": 0.406173,
+                  "count": 1,
+                  "lower": 0.4,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.406173,
+                  "upper": 0.44
+                },
+                {
+                  "absolute_gap": 0.49897,
+                  "count": 1,
+                  "lower": 0.48,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.49897,
+                  "upper": 0.52
+                },
+                {
+                  "absolute_gap": 0.48221009923746166,
+                  "count": 5,
+                  "lower": 0.52,
+                  "mean_iou": 0.06092990076253829,
+                  "mean_score": 0.54314,
+                  "upper": 0.56
+                },
+                {
+                  "absolute_gap": 0.24035182154755796,
+                  "count": 1,
+                  "lower": 0.84,
+                  "mean_iou": 0.6379231784524421,
+                  "mean_score": 0.878275,
+                  "upper": 0.88
+                }
+              ],
+              "confidence_threshold": 0.392272,
+              "evaluated_detections": 8,
+              "false_negatives": 1,
+              "false_positives": 6,
+              "laece0": 0.4445681647168583,
+              "lrp": 0.8952697019705407,
+              "lrp_fn": 0.3333333333333333,
+              "lrp_fp": 0.75,
+              "lrp_loc": 0.5287136588674333,
+              "matching_iou_threshold": 0.0,
+              "num_valid_gt": 3,
+              "supported": true,
+              "true_positives": 2
+            },
+            "occlusion_2": {
+              "bins": [
+                {
+                  "absolute_gap": 0.406173,
+                  "count": 1,
+                  "lower": 0.4,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.406173,
+                  "upper": 0.44
+                },
+                {
+                  "absolute_gap": 0.49897,
+                  "count": 1,
+                  "lower": 0.48,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.49897,
+                  "upper": 0.52
+                },
+                {
+                  "absolute_gap": 0.31982820707082127,
+                  "count": 4,
+                  "lower": 0.52,
+                  "mean_iou": 0.21653629292917873,
+                  "mean_score": 0.5363645,
+                  "upper": 0.56
+                },
+                {
+                  "absolute_gap": 0.49623512080348403,
+                  "count": 1,
+                  "lower": 0.56,
+                  "mean_iou": 0.09993087919651594,
+                  "mean_score": 0.596166,
+                  "upper": 0.6
+                },
+                {
+                  "absolute_gap": 0.043880132975676056,
+                  "count": 1,
+                  "lower": 0.84,
+                  "mean_iou": 0.8034898670243239,
+                  "mean_score": 0.84737,
+                  "upper": 0.88
+                },
+                {
+                  "absolute_gap": 0.487520255567542,
+                  "count": 1,
+                  "lower": 0.88,
+                  "mean_iou": 0.41696474443245796,
+                  "mean_score": 0.904485,
+                  "upper": 0.92
+                }
+              ],
+              "confidence_threshold": 0.392272,
+              "evaluated_detections": 9,
+              "false_negatives": 8,
+              "false_positives": 5,
+              "laece0": 0.3568990375144431,
+              "lrp": 0.8713805492723522,
+              "lrp_fn": 0.6666666666666666,
+              "lrp_fp": 0.5555555555555556,
+              "lrp_loc": 0.45336733440749677,
+              "matching_iou_threshold": 0.0,
+              "num_valid_gt": 12,
+              "supported": true,
+              "true_positives": 4
+            },
+            "overall": {
+              "bins": [
+                {
+                  "absolute_gap": 0.4431423095140162,
+                  "count": 2,
+                  "lower": 0.36,
+                  "mean_iou": 0.8425303095140162,
+                  "mean_score": 0.399388,
+                  "upper": 0.4
+                },
+                {
+                  "absolute_gap": 0.25147834095692867,
+                  "count": 2,
+                  "lower": 0.4,
+                  "mean_iou": 0.17016915904307134,
+                  "mean_score": 0.4216475,
+                  "upper": 0.44
+                },
+                {
+                  "absolute_gap": 0.2245101368565935,
+                  "count": 2,
+                  "lower": 0.44,
+                  "mean_iou": 0.6852196368565935,
+                  "mean_score": 0.4607095,
+                  "upper": 0.48
+                },
+                {
+                  "absolute_gap": 0.08417506226879862,
+                  "count": 2,
+                  "lower": 0.48,
+                  "mean_iou": 0.4086714377312014,
+                  "mean_score": 0.4928465,
+                  "upper": 0.52
+                },
+                {
+                  "absolute_gap": 0.19807887379958178,
+                  "count": 8,
+                  "lower": 0.52,
+                  "mean_iou": 0.34209187620041825,
+                  "mean_score": 0.54017075,
+                  "upper": 0.56
+                },
+                {
+                  "absolute_gap": 0.012499579717053289,
+                  "count": 3,
+                  "lower": 0.56,
+                  "mean_iou": 0.5772170869496135,
+                  "mean_score": 0.5897166666666668,
+                  "upper": 0.6
+                },
+                {
+                  "absolute_gap": 0.2199405975365385,
+                  "count": 4,
+                  "lower": 0.6,
+                  "mean_iou": 0.8394793475365385,
+                  "mean_score": 0.61953875,
+                  "upper": 0.64
+                },
+                {
+                  "absolute_gap": 0.24500756106633403,
+                  "count": 3,
+                  "lower": 0.64,
+                  "mean_iou": 0.9048832277330008,
+                  "mean_score": 0.6598756666666667,
+                  "upper": 0.68
+                },
+                {
+                  "absolute_gap": 0.005585611271706203,
+                  "count": 3,
+                  "lower": 0.68,
+                  "mean_iou": 0.6996990553949605,
+                  "mean_score": 0.7052846666666667,
+                  "upper": 0.72
+                },
+                {
+                  "absolute_gap": 0.04527685968844897,
+                  "count": 2,
+                  "lower": 0.72,
+                  "mean_iou": 0.797143359688449,
+                  "mean_score": 0.7518665,
+                  "upper": 0.76
+                },
+                {
+                  "absolute_gap": 0.12513324556266803,
+                  "count": 3,
+                  "lower": 0.76,
+                  "mean_iou": 0.9010175788960014,
+                  "mean_score": 0.7758843333333334,
+                  "upper": 0.8
+                },
+                {
+                  "absolute_gap": 0.03928996076635649,
+                  "count": 7,
+                  "lower": 0.8,
+                  "mean_iou": 0.8651111036234995,
+                  "mean_score": 0.825821142857143,
+                  "upper": 0.84
+                },
+                {
+                  "absolute_gap": 0.02555250738689052,
+                  "count": 11,
+                  "lower": 0.84,
+                  "mean_iou": 0.8344742198858367,
+                  "mean_score": 0.8600267272727272,
+                  "upper": 0.88
+                },
+                {
+                  "absolute_gap": 0.07912748268216507,
+                  "count": 13,
+                  "lower": 0.88,
+                  "mean_iou": 0.8195679019332197,
+                  "mean_score": 0.8986953846153848,
+                  "upper": 0.92
+                },
+                {
+                  "absolute_gap": 0.03620815252280696,
+                  "count": 10,
+                  "lower": 0.92,
+                  "mean_iou": 0.894267247477193,
+                  "mean_score": 0.9304754,
+                  "upper": 0.96
+                },
+                {
+                  "absolute_gap": 0.13805895880806418,
+                  "count": 2,
+                  "lower": 0.96,
+                  "mean_iou": 0.8269070411919358,
+                  "mean_score": 0.964966,
+                  "upper": 1.0
+                }
+              ],
+              "confidence_threshold": 0.392272,
+              "evaluated_detections": 77,
+              "false_negatives": 36,
+              "false_positives": 6,
+              "laece0": 0.10323637423764025,
+              "lrp": 0.4899430577103252,
+              "lrp_fn": 0.3364485981308411,
+              "lrp_fp": 0.07792207792207792,
+              "lrp_loc": 0.18821923269389787,
+              "matching_iou_threshold": 0.0,
+              "num_valid_gt": 107,
+              "supported": true,
+              "true_positives": 71
+            },
+            "small_25_40": {
+              "bins": [
+                {
+                  "absolute_gap": 0.406173,
+                  "count": 1,
+                  "lower": 0.4,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.406173,
+                  "upper": 0.44
+                },
+                {
+                  "absolute_gap": 0.49897,
+                  "count": 1,
+                  "lower": 0.48,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.49897,
+                  "upper": 0.52
+                },
+                {
+                  "absolute_gap": 0.48221009923746166,
+                  "count": 5,
+                  "lower": 0.52,
+                  "mean_iou": 0.06092990076253829,
+                  "mean_score": 0.54314,
+                  "upper": 0.56
+                },
+                {
+                  "absolute_gap": 0.028032552691640844,
+                  "count": 1,
+                  "lower": 0.8,
+                  "mean_iou": 0.8481725526916408,
+                  "mean_score": 0.82014,
+                  "upper": 0.84
+                },
+                {
+                  "absolute_gap": 0.24035182154755796,
+                  "count": 1,
+                  "lower": 0.84,
+                  "mean_iou": 0.6379231784524421,
+                  "mean_score": 0.878275,
+                  "upper": 0.88
+                }
+              ],
+              "confidence_threshold": 0.392272,
+              "evaluated_detections": 9,
+              "false_negatives": 9,
+              "false_positives": 6,
+              "laece0": 0.3982864300473897,
+              "lrp": 0.9005141536135126,
+              "lrp_fn": 0.75,
+              "lrp_fp": 0.6666666666666666,
+              "lrp_loc": 0.40308492168107524,
+              "matching_iou_threshold": 0.0,
+              "num_valid_gt": 12,
+              "supported": true,
+              "true_positives": 3
+            }
+          }
+        }
+      },
+      "prediction_dir": "E:\\myyolo\\stage11-v213-anchored-rerun-20260827e\\runs\\b2-anchored-rerun-s0-b2-e15\\predictions\\labels"
+    },
+    "B0": {
+      "classes": {
+        "Car": {
+          "confidence_threshold": 0.369785,
+          "targets": {
+            "far_gt_40m": {
+              "bins": [
+                {
+                  "absolute_gap": 0.38592266666666664,
+                  "count": 3,
+                  "lower": 0.36,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.38592266666666664,
+                  "upper": 0.4
+                },
+                {
+                  "absolute_gap": 0.4150656,
+                  "count": 5,
+                  "lower": 0.4,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.4150656,
+                  "upper": 0.44
+                },
+                {
+                  "absolute_gap": 0.4562076666666666,
+                  "count": 3,
+                  "lower": 0.44,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.4562076666666666,
+                  "upper": 0.48
+                },
+                {
+                  "absolute_gap": 0.494178,
+                  "count": 2,
+                  "lower": 0.48,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.494178,
+                  "upper": 0.52
+                },
+                {
+                  "absolute_gap": 0.3608584675324086,
+                  "count": 1,
+                  "lower": 0.52,
+                  "mean_iou": 0.8956054675324086,
+                  "mean_score": 0.534747,
+                  "upper": 0.56
+                },
+                {
+                  "absolute_gap": 0.2925090099934493,
+                  "count": 2,
+                  "lower": 0.56,
+                  "mean_iou": 0.8699890099934493,
+                  "mean_score": 0.57748,
+                  "upper": 0.6
+                },
+                {
+                  "absolute_gap": 0.44478988224945526,
+                  "count": 3,
+                  "lower": 0.6,
+                  "mean_iou": 0.17755811775054478,
+                  "mean_score": 0.622348,
+                  "upper": 0.64
+                },
+                {
+                  "absolute_gap": 0.19891650652212112,
+                  "count": 2,
+                  "lower": 0.64,
+                  "mean_iou": 0.46500499347787894,
+                  "mean_score": 0.6639215,
+                  "upper": 0.68
+                },
+                {
+                  "absolute_gap": 0.14398915746875718,
+                  "count": 3,
+                  "lower": 0.68,
+                  "mean_iou": 0.8447318241354239,
+                  "mean_score": 0.7007426666666667,
+                  "upper": 0.72
+                },
+                {
+                  "absolute_gap": 0.3711478428256491,
+                  "count": 3,
+                  "lower": 0.72,
+                  "mean_iou": 0.37409815717435074,
+                  "mean_score": 0.7452459999999999,
+                  "upper": 0.76
+                },
+                {
+                  "absolute_gap": 0.08330312259273942,
+                  "count": 5,
+                  "lower": 0.76,
+                  "mean_iou": 0.8667859225927395,
+                  "mean_score": 0.7834828,
+                  "upper": 0.8
+                },
+                {
+                  "absolute_gap": 0.0971544882297597,
+                  "count": 9,
+                  "lower": 0.8,
+                  "mean_iou": 0.7342165117702404,
+                  "mean_score": 0.8313710000000001,
+                  "upper": 0.84
+                },
+                {
+                  "absolute_gap": 0.355361272199166,
+                  "count": 15,
+                  "lower": 0.84,
+                  "mean_iou": 0.5056695944675006,
+                  "mean_score": 0.8610308666666666,
+                  "upper": 0.88
+                },
+                {
+                  "absolute_gap": 0.43402419915250046,
+                  "count": 10,
+                  "lower": 0.88,
+                  "mean_iou": 0.46443290084749966,
+                  "mean_score": 0.8984571000000001,
+                  "upper": 0.92
+                },
+                {
+                  "absolute_gap": 0.9155567550181036,
+                  "count": 8,
+                  "lower": 0.92,
+                  "mean_iou": 0.021213994981896342,
+                  "mean_score": 0.93677075,
+                  "upper": 0.96
+                }
+              ],
+              "confidence_threshold": 0.369785,
+              "evaluated_detections": 74,
+              "false_negatives": 2,
+              "false_positives": 18,
+              "laece0": 0.37972413878221606,
+              "lrp": 0.5908457779487556,
+              "lrp_fn": 0.034482758620689655,
+              "lrp_fp": 0.24324324324324326,
+              "lrp_loc": 0.4447192700733113,
+              "matching_iou_threshold": 0.0,
+              "num_valid_gt": 58,
+              "supported": true,
+              "true_positives": 56
+            },
+            "occlusion_2": {
+              "bins": [
+                {
+                  "absolute_gap": 0.3803724,
+                  "count": 5,
+                  "lower": 0.36,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.3803724,
+                  "upper": 0.4
+                },
+                {
+                  "absolute_gap": 0.2177920613228855,
+                  "count": 6,
+                  "lower": 0.4,
+                  "mean_iou": 0.2023879386771145,
+                  "mean_score": 0.42018,
+                  "upper": 0.44
+                },
+                {
+                  "absolute_gap": 0.11177267696746968,
+                  "count": 5,
+                  "lower": 0.44,
+                  "mean_iou": 0.34825312303253037,
+                  "mean_score": 0.46002580000000004,
+                  "upper": 0.48
+                },
+                {
+                  "absolute_gap": 0.27895798524048654,
+                  "count": 3,
+                  "lower": 0.48,
+                  "mean_iou": 0.22527634809284677,
+                  "mean_score": 0.5042343333333333,
+                  "upper": 0.52
+                },
+                {
+                  "absolute_gap": 0.07237091860423167,
+                  "count": 2,
+                  "lower": 0.52,
+                  "mean_iou": 0.46726458139576826,
+                  "mean_score": 0.5396354999999999,
+                  "upper": 0.56
+                },
+                {
+                  "absolute_gap": 0.2357061277698963,
+                  "count": 3,
+                  "lower": 0.56,
+                  "mean_iou": 0.33904720556343704,
+                  "mean_score": 0.5747533333333333,
+                  "upper": 0.6
+                },
+                {
+                  "absolute_gap": 0.19842420124207943,
+                  "count": 3,
+                  "lower": 0.6,
+                  "mean_iou": 0.41607113209125396,
+                  "mean_score": 0.6144953333333334,
+                  "upper": 0.64
+                },
+                {
+                  "absolute_gap": 0.06398073643866065,
+                  "count": 5,
+                  "lower": 0.64,
+                  "mean_iou": 0.5890910635613393,
+                  "mean_score": 0.6530718,
+                  "upper": 0.68
+                },
+                {
+                  "absolute_gap": 0.21226416476361926,
+                  "count": 5,
+                  "lower": 0.68,
+                  "mean_iou": 0.48627503523638066,
+                  "mean_score": 0.6985391999999999,
+                  "upper": 0.72
+                },
+                {
+                  "absolute_gap": 0.32559014460753993,
+                  "count": 4,
+                  "lower": 0.72,
+                  "mean_iou": 0.41550735539246014,
+                  "mean_score": 0.7410975000000001,
+                  "upper": 0.76
+                },
+                {
+                  "absolute_gap": 0.21059175028841615,
+                  "count": 8,
+                  "lower": 0.76,
+                  "mean_iou": 0.5690264997115839,
+                  "mean_score": 0.7796182500000001,
+                  "upper": 0.8
+                },
+                {
+                  "absolute_gap": 0.33904426458561715,
+                  "count": 18,
+                  "lower": 0.8,
+                  "mean_iou": 0.4853040131921607,
+                  "mean_score": 0.8243482777777779,
+                  "upper": 0.84
+                },
+                {
+                  "absolute_gap": 0.594838588040216,
+                  "count": 21,
+                  "lower": 0.84,
+                  "mean_iou": 0.26733112624549815,
+                  "mean_score": 0.8621697142857142,
+                  "upper": 0.88
+                },
+                {
+                  "absolute_gap": 0.6877534969295589,
+                  "count": 23,
+                  "lower": 0.88,
+                  "mean_iou": 0.2185125900269632,
+                  "mean_score": 0.9062660869565221,
+                  "upper": 0.92
+                },
+                {
+                  "absolute_gap": 0.7079013457655069,
+                  "count": 34,
+                  "lower": 0.92,
+                  "mean_iou": 0.23184906599919897,
+                  "mean_score": 0.9397504117647059,
+                  "upper": 0.96
+                },
+                {
+                  "absolute_gap": 0.8221366802191438,
+                  "count": 12,
+                  "lower": 0.96,
+                  "mean_iou": 0.15029173644752306,
+                  "mean_score": 0.9724284166666668,
+                  "upper": 1.0
+                }
+              ],
+              "confidence_threshold": 0.369785,
+              "evaluated_detections": 157,
+              "false_negatives": 7,
+              "false_positives": 18,
+              "laece0": 0.5016995355344706,
+              "lrp": 0.7104636407250723,
+              "lrp_fn": 0.04794520547945205,
+              "lrp_fp": 0.11464968152866242,
+              "lrp_loc": 0.6583887559633946,
+              "matching_iou_threshold": 0.0,
+              "num_valid_gt": 146,
+              "supported": true,
+              "true_positives": 139
+            },
+            "overall": {
+              "bins": [
+                {
+                  "absolute_gap": 0.14012909325026857,
+                  "count": 10,
+                  "lower": 0.36,
+                  "mean_iou": 0.5207609932502686,
+                  "mean_score": 0.3806319,
+                  "upper": 0.4
+                },
+                {
+                  "absolute_gap": 0.07243915760028019,
+                  "count": 11,
+                  "lower": 0.4,
+                  "mean_iou": 0.3446957514906289,
+                  "mean_score": 0.4171349090909091,
+                  "upper": 0.44
+                },
+                {
+                  "absolute_gap": 0.01491638895758346,
+                  "count": 11,
+                  "lower": 0.44,
+                  "mean_iou": 0.4496077928605983,
+                  "mean_score": 0.4645241818181818,
+                  "upper": 0.48
+                },
+                {
+                  "absolute_gap": 0.03441500290914895,
+                  "count": 10,
+                  "lower": 0.48,
+                  "mean_iou": 0.460832897090851,
+                  "mean_score": 0.49524789999999996,
+                  "upper": 0.52
+                },
+                {
+                  "absolute_gap": 0.2176365351273919,
+                  "count": 10,
+                  "lower": 0.52,
+                  "mean_iou": 0.7553861351273918,
+                  "mean_score": 0.5377495999999999,
+                  "upper": 0.56
+                },
+                {
+                  "absolute_gap": 0.037296332895108586,
+                  "count": 10,
+                  "lower": 0.56,
+                  "mean_iou": 0.6161550328951086,
+                  "mean_score": 0.5788587000000001,
+                  "upper": 0.6
+                },
+                {
+                  "absolute_gap": 0.032778525124946944,
+                  "count": 15,
+                  "lower": 0.6,
+                  "mean_iou": 0.655472125124947,
+                  "mean_score": 0.6226936000000001,
+                  "upper": 0.64
+                },
+                {
+                  "absolute_gap": 0.12675645182724504,
+                  "count": 12,
+                  "lower": 0.64,
+                  "mean_iou": 0.7817311184939116,
+                  "mean_score": 0.6549746666666666,
+                  "upper": 0.68
+                },
+                {
+                  "absolute_gap": 0.09363415434054945,
+                  "count": 21,
+                  "lower": 0.68,
+                  "mean_iou": 0.7910659638643589,
+                  "mean_score": 0.6974318095238095,
+                  "upper": 0.72
+                },
+                {
+                  "absolute_gap": 0.1336488260507822,
+                  "count": 15,
+                  "lower": 0.72,
+                  "mean_iou": 0.8706342260507823,
+                  "mean_score": 0.7369854000000001,
+                  "upper": 0.76
+                },
+                {
+                  "absolute_gap": 0.0679046981601874,
+                  "count": 26,
+                  "lower": 0.76,
+                  "mean_iou": 0.8484655058524951,
+                  "mean_score": 0.7805608076923077,
+                  "upper": 0.8
+                },
+                {
+                  "absolute_gap": 0.035538742569677484,
+                  "count": 59,
+                  "lower": 0.8,
+                  "mean_iou": 0.8606876069764571,
+                  "mean_score": 0.8251488644067796,
+                  "upper": 0.84
+                },
+                {
+                  "absolute_gap": 0.02016308474294004,
+                  "count": 71,
+                  "lower": 0.84,
+                  "mean_iou": 0.840162844834525,
+                  "mean_score": 0.860325929577465,
+                  "upper": 0.88
+                },
+                {
+                  "absolute_gap": 0.016349814156566334,
+                  "count": 101,
+                  "lower": 0.88,
+                  "mean_iou": 0.8867557204968985,
+                  "mean_score": 0.9031055346534649,
+                  "upper": 0.92
+                },
+                {
+                  "absolute_gap": 0.032930743041160726,
+                  "count": 84,
+                  "lower": 0.92,
+                  "mean_iou": 0.9057915069588391,
+                  "mean_score": 0.9387222499999999,
+                  "upper": 0.96
+                },
+                {
+                  "absolute_gap": 0.18206214266899923,
+                  "count": 45,
+                  "lower": 0.96,
+                  "mean_iou": 0.7903183017754447,
+                  "mean_score": 0.9723804444444439,
+                  "upper": 1.0
+                }
+              ],
+              "confidence_threshold": 0.369785,
+              "evaluated_detections": 511,
+              "false_negatives": 44,
+              "false_positives": 18,
+              "laece0": 0.05703264702655645,
+              "lrp": 0.25250663894799,
+              "lrp_fn": 0.08193668528864059,
+              "lrp_fp": 0.03522504892367906,
+              "lrp_loc": 0.15850138867370078,
+              "matching_iou_threshold": 0.0,
+              "num_valid_gt": 537,
+              "supported": true,
+              "true_positives": 493
+            },
+            "small_25_40": {
+              "bins": [
+                {
+                  "absolute_gap": 0.2516578061161385,
+                  "count": 4,
+                  "lower": 0.36,
+                  "mean_iou": 0.13297169388386146,
+                  "mean_score": 0.38462949999999996,
+                  "upper": 0.4
+                },
+                {
+                  "absolute_gap": 0.1784749112190525,
+                  "count": 7,
+                  "lower": 0.4,
+                  "mean_iou": 0.23930994592380467,
+                  "mean_score": 0.4177848571428572,
+                  "upper": 0.44
+                },
+                {
+                  "absolute_gap": 0.14411097719186483,
+                  "count": 5,
+                  "lower": 0.44,
+                  "mean_iou": 0.31628202280813517,
+                  "mean_score": 0.460393,
+                  "upper": 0.48
+                },
+                {
+                  "absolute_gap": 0.16969726133686341,
+                  "count": 3,
+                  "lower": 0.48,
+                  "mean_iou": 0.33032207199646996,
+                  "mean_score": 0.5000193333333334,
+                  "upper": 0.52
+                },
+                {
+                  "absolute_gap": 0.3705417874015777,
+                  "count": 2,
+                  "lower": 0.52,
+                  "mean_iou": 0.8980162874015778,
+                  "mean_score": 0.5274745000000001,
+                  "upper": 0.56
+                },
+                {
+                  "absolute_gap": 0.2925090099934493,
+                  "count": 2,
+                  "lower": 0.56,
+                  "mean_iou": 0.8699890099934493,
+                  "mean_score": 0.57748,
+                  "upper": 0.6
+                },
+                {
+                  "absolute_gap": 0.33266600483567355,
+                  "count": 5,
+                  "lower": 0.6,
+                  "mean_iou": 0.29454579516432655,
+                  "mean_score": 0.6272118000000001,
+                  "upper": 0.64
+                },
+                {
+                  "absolute_gap": 0.0444099498758278,
+                  "count": 5,
+                  "lower": 0.64,
+                  "mean_iou": 0.6170092501241722,
+                  "mean_score": 0.6614192,
+                  "upper": 0.68
+                },
+                {
+                  "absolute_gap": 0.03799184650531062,
+                  "count": 10,
+                  "lower": 0.68,
+                  "mean_iou": 0.6572498534946893,
+                  "mean_score": 0.6952417,
+                  "upper": 0.72
+                },
+                {
+                  "absolute_gap": 0.036890614404136324,
+                  "count": 5,
+                  "lower": 0.72,
+                  "mean_iou": 0.7018457855958635,
+                  "mean_score": 0.7387363999999998,
+                  "upper": 0.76
+                },
+                {
+                  "absolute_gap": 0.10772756193835842,
+                  "count": 13,
+                  "lower": 0.76,
+                  "mean_iou": 0.6717134380616414,
+                  "mean_score": 0.7794409999999998,
+                  "upper": 0.8
+                },
+                {
+                  "absolute_gap": 0.09677258959218571,
+                  "count": 32,
+                  "lower": 0.8,
+                  "mean_iou": 0.7315217229078141,
+                  "mean_score": 0.8282943124999999,
+                  "upper": 0.84
+                },
+                {
+                  "absolute_gap": 0.17552159215438645,
+                  "count": 43,
+                  "lower": 0.84,
+                  "mean_iou": 0.684604198543288,
+                  "mean_score": 0.8601257906976745,
+                  "upper": 0.88
+                },
+                {
+                  "absolute_gap": 0.33045340367231935,
+                  "count": 36,
+                  "lower": 0.88,
+                  "mean_iou": 0.5703953185499033,
+                  "mean_score": 0.9008487222222227,
+                  "upper": 0.92
+                },
+                {
+                  "absolute_gap": 0.8389106250577105,
+                  "count": 19,
+                  "lower": 0.92,
+                  "mean_iou": 0.0977119538896579,
+                  "mean_score": 0.9366225789473684,
+                  "upper": 0.96
+                },
+                {
+                  "absolute_gap": 0.9363419054481079,
+                  "count": 5,
+                  "lower": 0.96,
+                  "mean_iou": 0.0371728945518921,
+                  "mean_score": 0.9735148,
+                  "upper": 1.0
+                }
+              ],
+              "confidence_threshold": 0.369785,
+              "evaluated_detections": 196,
+              "false_negatives": 9,
+              "false_positives": 18,
+              "laece0": 0.2644050956567191,
+              "lrp": 0.4775096612640819,
+              "lrp_fn": 0.0481283422459893,
+              "lrp_fp": 0.09183673469387756,
+              "lrp_loc": 0.3982555087591954,
+              "matching_iou_threshold": 0.0,
+              "num_valid_gt": 187,
+              "supported": true,
+              "true_positives": 178
+            }
+          }
+        },
+        "Cyclist": {
+          "confidence_threshold": 0.421303,
+          "targets": {
+            "far_gt_40m": {
+              "bins": [
+                {
+                  "absolute_gap": 0.600917,
+                  "count": 1,
+                  "lower": 0.6,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.600917,
+                  "upper": 0.64
+                }
+              ],
+              "confidence_threshold": 0.421303,
+              "evaluated_detections": 1,
+              "false_negatives": 1,
+              "false_positives": 1,
+              "laece0": 0.600917,
+              "lrp": 1.0,
+              "lrp_fn": 1.0,
+              "lrp_fp": 1.0,
+              "lrp_loc": null,
+              "matching_iou_threshold": 0.0,
+              "num_valid_gt": 1,
+              "supported": true,
+              "true_positives": 0
+            },
+            "occlusion_2": {
+              "bins": [
+                {
+                  "absolute_gap": 0.600917,
+                  "count": 1,
+                  "lower": 0.6,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.600917,
+                  "upper": 0.64
+                },
+                {
+                  "absolute_gap": 0.6745481801111067,
+                  "count": 1,
+                  "lower": 0.92,
+                  "mean_iou": 0.2767898198888933,
+                  "mean_score": 0.951338,
+                  "upper": 0.96
+                }
+              ],
+              "confidence_threshold": 0.421303,
+              "evaluated_detections": 2,
+              "false_negatives": 0,
+              "false_positives": 1,
+              "laece0": 0.6377325900555534,
+              "lrp": 0.8616050900555534,
+              "lrp_fn": 0.0,
+              "lrp_fp": 0.5,
+              "lrp_loc": 0.7232101801111067,
+              "matching_iou_threshold": 0.0,
+              "num_valid_gt": 1,
+              "supported": true,
+              "true_positives": 1
+            },
+            "overall": {
+              "bins": [
+                {
+                  "absolute_gap": 0.22791360930920013,
+                  "count": 2,
+                  "lower": 0.6,
+                  "mean_iou": 0.3812828906907999,
+                  "mean_score": 0.6091965,
+                  "upper": 0.64
+                },
+                {
+                  "absolute_gap": 0.043566408141470725,
+                  "count": 1,
+                  "lower": 0.64,
+                  "mean_iou": 0.6878794081414707,
+                  "mean_score": 0.644313,
+                  "upper": 0.68
+                },
+                {
+                  "absolute_gap": 0.2420776269044952,
+                  "count": 1,
+                  "lower": 0.68,
+                  "mean_iou": 0.9399556269044952,
+                  "mean_score": 0.697878,
+                  "upper": 0.72
+                },
+                {
+                  "absolute_gap": 0.10237034582638316,
+                  "count": 3,
+                  "lower": 0.72,
+                  "mean_iou": 0.8379100124930497,
+                  "mean_score": 0.7355396666666666,
+                  "upper": 0.76
+                },
+                {
+                  "absolute_gap": 0.08489113628962885,
+                  "count": 1,
+                  "lower": 0.76,
+                  "mean_iou": 0.8821031362896289,
+                  "mean_score": 0.797212,
+                  "upper": 0.8
+                },
+                {
+                  "absolute_gap": 0.006235798226563616,
+                  "count": 2,
+                  "lower": 0.8,
+                  "mean_iou": 0.8374252982265636,
+                  "mean_score": 0.8311895,
+                  "upper": 0.84
+                },
+                {
+                  "absolute_gap": 0.021174046111944733,
+                  "count": 3,
+                  "lower": 0.84,
+                  "mean_iou": 0.8371256205547221,
+                  "mean_score": 0.8582996666666668,
+                  "upper": 0.88
+                },
+                {
+                  "absolute_gap": 0.002243854058656236,
+                  "count": 1,
+                  "lower": 0.88,
+                  "mean_iou": 0.9098861459413438,
+                  "mean_score": 0.91213,
+                  "upper": 0.92
+                },
+                {
+                  "absolute_gap": 0.1605140636521556,
+                  "count": 7,
+                  "lower": 0.92,
+                  "mean_iou": 0.7841476506335586,
+                  "mean_score": 0.9446617142857142,
+                  "upper": 0.96
+                },
+                {
+                  "absolute_gap": 0.08861532241880232,
+                  "count": 8,
+                  "lower": 0.96,
+                  "mean_iou": 0.8937414275811977,
+                  "mean_score": 0.98235675,
+                  "upper": 1.0
+                }
+              ],
+              "confidence_threshold": 0.421303,
+              "evaluated_detections": 29,
+              "false_negatives": 3,
+              "false_positives": 1,
+              "laece0": 0.10497351866194032,
+              "lrp": 0.26495898220814146,
+              "lrp_fn": 0.0967741935483871,
+              "lrp_fp": 0.034482758620689655,
+              "lrp_loc": 0.15995312252359023,
+              "matching_iou_threshold": 0.0,
+              "num_valid_gt": 31,
+              "supported": true,
+              "true_positives": 28
+            },
+            "small_25_40": {
+              "bins": [
+                {
+                  "absolute_gap": 0.600917,
+                  "count": 1,
+                  "lower": 0.6,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.600917,
+                  "upper": 0.64
+                },
+                {
+                  "absolute_gap": 0.1968068006280188,
+                  "count": 1,
+                  "lower": 0.72,
+                  "mean_iou": 0.9217778006280188,
+                  "mean_score": 0.724971,
+                  "upper": 0.76
+                },
+                {
+                  "absolute_gap": 0.6745481801111067,
+                  "count": 1,
+                  "lower": 0.92,
+                  "mean_iou": 0.2767898198888933,
+                  "mean_score": 0.951338,
+                  "upper": 0.96
+                }
+              ],
+              "confidence_threshold": 0.421303,
+              "evaluated_detections": 3,
+              "false_negatives": 1,
+              "false_positives": 1,
+              "laece0": 0.49075732691304186,
+              "lrp": 0.7003580948707719,
+              "lrp_fn": 0.3333333333333333,
+              "lrp_fp": 0.3333333333333333,
+              "lrp_loc": 0.40071618974154394,
+              "matching_iou_threshold": 0.0,
+              "num_valid_gt": 3,
+              "supported": true,
+              "true_positives": 2
+            }
+          }
+        },
+        "Pedestrian": {
+          "confidence_threshold": 0.353848,
+          "targets": {
+            "far_gt_40m": {
+              "bins": [
+                {
+                  "absolute_gap": 0.358115,
+                  "count": 1,
+                  "lower": 0.32,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.358115,
+                  "upper": 0.36
+                },
+                {
+                  "absolute_gap": 0.37366866666666665,
+                  "count": 3,
+                  "lower": 0.36,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.37366866666666665,
+                  "upper": 0.4
+                },
+                {
+                  "absolute_gap": 0.42062775,
+                  "count": 4,
+                  "lower": 0.4,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.42062775,
+                  "upper": 0.44
+                },
+                {
+                  "absolute_gap": 0.35068448622963755,
+                  "count": 1,
+                  "lower": 0.44,
+                  "mean_iou": 0.8112534862296376,
+                  "mean_score": 0.460569,
+                  "upper": 0.48
+                },
+                {
+                  "absolute_gap": 0.481661,
+                  "count": 1,
+                  "lower": 0.48,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.481661,
+                  "upper": 0.52
+                },
+                {
+                  "absolute_gap": 0.43669773045416466,
+                  "count": 3,
+                  "lower": 0.52,
+                  "mean_iou": 0.10266960287916867,
+                  "mean_score": 0.5393673333333333,
+                  "upper": 0.56
+                },
+                {
+                  "absolute_gap": 0.575581,
+                  "count": 2,
+                  "lower": 0.56,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.575581,
+                  "upper": 0.6
+                },
+                {
+                  "absolute_gap": 0.19799900803063164,
+                  "count": 1,
+                  "lower": 0.84,
+                  "mean_iou": 0.6643409919693684,
+                  "mean_score": 0.86234,
+                  "upper": 0.88
+                }
+              ],
+              "confidence_threshold": 0.353848,
+              "evaluated_detections": 16,
+              "false_negatives": 0,
+              "false_positives": 13,
+              "laece0": 0.4158269803514227,
+              "lrp": 0.8885247945727179,
+              "lrp_fn": 0.0,
+              "lrp_fp": 0.8125,
+              "lrp_loc": 0.40546557105449593,
+              "matching_iou_threshold": 0.0,
+              "num_valid_gt": 3,
+              "supported": true,
+              "true_positives": 3
+            },
+            "occlusion_2": {
+              "bins": [
+                {
+                  "absolute_gap": 0.358115,
+                  "count": 1,
+                  "lower": 0.32,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.358115,
+                  "upper": 0.36
+                },
+                {
+                  "absolute_gap": 0.37366866666666665,
+                  "count": 3,
+                  "lower": 0.36,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.37366866666666665,
+                  "upper": 0.4
+                },
+                {
+                  "absolute_gap": 0.4047383509434874,
+                  "count": 4,
+                  "lower": 0.4,
+                  "mean_iou": 0.02388464905651256,
+                  "mean_score": 0.428623,
+                  "upper": 0.44
+                },
+                {
+                  "absolute_gap": 0.481661,
+                  "count": 1,
+                  "lower": 0.48,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.481661,
+                  "upper": 0.52
+                },
+                {
+                  "absolute_gap": 0.534239,
+                  "count": 2,
+                  "lower": 0.52,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.534239,
+                  "upper": 0.56
+                },
+                {
+                  "absolute_gap": 0.575581,
+                  "count": 2,
+                  "lower": 0.56,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.575581,
+                  "upper": 0.6
+                },
+                {
+                  "absolute_gap": 0.08189770545123864,
+                  "count": 1,
+                  "lower": 0.64,
+                  "mean_iou": 0.7230387054512386,
+                  "mean_score": 0.641141,
+                  "upper": 0.68
+                },
+                {
+                  "absolute_gap": 0.07768554757561708,
+                  "count": 1,
+                  "lower": 0.8,
+                  "mean_iou": 0.7462964524243829,
+                  "mean_score": 0.823982,
+                  "upper": 0.84
+                },
+                {
+                  "absolute_gap": 0.4563068788373524,
+                  "count": 1,
+                  "lower": 0.84,
+                  "mean_iou": 0.40877612116264767,
+                  "mean_score": 0.865083,
+                  "upper": 0.88
+                }
+              ],
+              "confidence_threshold": 0.353848,
+              "evaluated_detections": 16,
+              "false_negatives": 8,
+              "false_positives": 12,
+              "laece0": 0.40095409597738485,
+              "lrp": 0.9177645885306532,
+              "lrp_fn": 0.6666666666666666,
+              "lrp_fp": 0.75,
+              "lrp_loc": 0.5065875311839201,
+              "matching_iou_threshold": 0.0,
+              "num_valid_gt": 12,
+              "supported": true,
+              "true_positives": 4
+            },
+            "overall": {
+              "bins": [
+                {
+                  "absolute_gap": 0.358115,
+                  "count": 1,
+                  "lower": 0.32,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.358115,
+                  "upper": 0.36
+                },
+                {
+                  "absolute_gap": 0.22028126198471973,
+                  "count": 4,
+                  "lower": 0.36,
+                  "mean_iou": 0.15385698801528028,
+                  "mean_score": 0.37413825,
+                  "upper": 0.4
+                },
+                {
+                  "absolute_gap": 0.10263142322176538,
+                  "count": 9,
+                  "lower": 0.4,
+                  "mean_iou": 0.3174620212226791,
+                  "mean_score": 0.42009344444444446,
+                  "upper": 0.44
+                },
+                {
+                  "absolute_gap": 0.22892477056251131,
+                  "count": 3,
+                  "lower": 0.44,
+                  "mean_iou": 0.6923757705625113,
+                  "mean_score": 0.463451,
+                  "upper": 0.48
+                },
+                {
+                  "absolute_gap": 0.07322471810943826,
+                  "count": 3,
+                  "lower": 0.48,
+                  "mean_iou": 0.5657927181094383,
+                  "mean_score": 0.49256800000000006,
+                  "upper": 0.52
+                },
+                {
+                  "absolute_gap": 0.2352608330270034,
+                  "count": 4,
+                  "lower": 0.52,
+                  "mean_iou": 0.3004784169729966,
+                  "mean_score": 0.53573925,
+                  "upper": 0.56
+                },
+                {
+                  "absolute_gap": 0.575581,
+                  "count": 2,
+                  "lower": 0.56,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.575581,
+                  "upper": 0.6
+                },
+                {
+                  "absolute_gap": 0.13249276118821995,
+                  "count": 4,
+                  "lower": 0.6,
+                  "mean_iou": 0.74803626118822,
+                  "mean_score": 0.6155435,
+                  "upper": 0.64
+                },
+                {
+                  "absolute_gap": 0.013185868588597383,
+                  "count": 3,
+                  "lower": 0.64,
+                  "mean_iou": 0.6412237980780693,
+                  "mean_score": 0.6544096666666667,
+                  "upper": 0.68
+                },
+                {
+                  "absolute_gap": 0.06529387542729981,
+                  "count": 5,
+                  "lower": 0.68,
+                  "mean_iou": 0.7735658754272998,
+                  "mean_score": 0.708272,
+                  "upper": 0.72
+                },
+                {
+                  "absolute_gap": 0.035102329732164206,
+                  "count": 4,
+                  "lower": 0.72,
+                  "mean_iou": 0.7723810797321642,
+                  "mean_score": 0.73727875,
+                  "upper": 0.76
+                },
+                {
+                  "absolute_gap": 0.11733101764775855,
+                  "count": 8,
+                  "lower": 0.76,
+                  "mean_iou": 0.8901576426477587,
+                  "mean_score": 0.7728266250000001,
+                  "upper": 0.8
+                },
+                {
+                  "absolute_gap": 0.015882426537603078,
+                  "count": 5,
+                  "lower": 0.8,
+                  "mean_iou": 0.8353402265376031,
+                  "mean_score": 0.8194578,
+                  "upper": 0.84
+                },
+                {
+                  "absolute_gap": 0.034607210859365134,
+                  "count": 6,
+                  "lower": 0.84,
+                  "mean_iou": 0.8222344558073015,
+                  "mean_score": 0.8568416666666666,
+                  "upper": 0.88
+                },
+                {
+                  "absolute_gap": 0.04137105750804937,
+                  "count": 18,
+                  "lower": 0.88,
+                  "mean_iou": 0.8593322758252839,
+                  "mean_score": 0.9007033333333333,
+                  "upper": 0.92
+                },
+                {
+                  "absolute_gap": 0.048363335493127546,
+                  "count": 8,
+                  "lower": 0.92,
+                  "mean_iou": 0.8896172895068725,
+                  "mean_score": 0.937980625,
+                  "upper": 0.96
+                },
+                {
+                  "absolute_gap": 0.11709623657656809,
+                  "count": 2,
+                  "lower": 0.96,
+                  "mean_iou": 0.8547967634234319,
+                  "mean_score": 0.971893,
+                  "upper": 1.0
+                }
+              ],
+              "confidence_threshold": 0.353848,
+              "evaluated_detections": 89,
+              "false_negatives": 31,
+              "false_positives": 13,
+              "laece0": 0.09875804194282897,
+              "lrp": 0.49293285642919865,
+              "lrp_fn": 0.2897196261682243,
+              "lrp_fp": 0.14606741573033707,
+              "lrp_loc": 0.1993676680461032,
+              "matching_iou_threshold": 0.0,
+              "num_valid_gt": 107,
+              "supported": true,
+              "true_positives": 76
+            },
+            "small_25_40": {
+              "bins": [
+                {
+                  "absolute_gap": 0.358115,
+                  "count": 1,
+                  "lower": 0.32,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.358115,
+                  "upper": 0.36
+                },
+                {
+                  "absolute_gap": 0.37366866666666665,
+                  "count": 3,
+                  "lower": 0.36,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.37366866666666665,
+                  "upper": 0.4
+                },
+                {
+                  "absolute_gap": 0.42062775,
+                  "count": 4,
+                  "lower": 0.4,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.42062775,
+                  "upper": 0.44
+                },
+                {
+                  "absolute_gap": 0.17107130172027113,
+                  "count": 2,
+                  "lower": 0.44,
+                  "mean_iou": 0.6398288017202711,
+                  "mean_score": 0.4687575,
+                  "upper": 0.48
+                },
+                {
+                  "absolute_gap": 0.481661,
+                  "count": 1,
+                  "lower": 0.48,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.481661,
+                  "upper": 0.52
+                },
+                {
+                  "absolute_gap": 0.43669773045416466,
+                  "count": 3,
+                  "lower": 0.52,
+                  "mean_iou": 0.10266960287916867,
+                  "mean_score": 0.5393673333333333,
+                  "upper": 0.56
+                },
+                {
+                  "absolute_gap": 0.575581,
+                  "count": 2,
+                  "lower": 0.56,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.575581,
+                  "upper": 0.6
+                },
+                {
+                  "absolute_gap": 0.0016718711169200207,
+                  "count": 1,
+                  "lower": 0.6,
+                  "mean_iou": 0.64146687111692,
+                  "mean_score": 0.639795,
+                  "upper": 0.64
+                },
+                {
+                  "absolute_gap": 0.025194794431228074,
+                  "count": 2,
+                  "lower": 0.68,
+                  "mean_iou": 0.732713294431228,
+                  "mean_score": 0.7075184999999999,
+                  "upper": 0.72
+                },
+                {
+                  "absolute_gap": 0.05865456178867534,
+                  "count": 1,
+                  "lower": 0.8,
+                  "mean_iou": 0.8945215617886754,
+                  "mean_score": 0.835867,
+                  "upper": 0.84
+                },
+                {
+                  "absolute_gap": 0.19799900803063164,
+                  "count": 1,
+                  "lower": 0.84,
+                  "mean_iou": 0.6643409919693684,
+                  "mean_score": 0.86234,
+                  "upper": 0.88
+                }
+              ],
+              "confidence_threshold": 0.353848,
+              "evaluated_detections": 21,
+              "false_negatives": 4,
+              "false_positives": 13,
+              "laece0": 0.32168599164770095,
+              "lrp": 0.7898631029673813,
+              "lrp_fn": 0.3333333333333333,
+              "lrp_fp": 0.6190476190476191,
+              "lrp_loc": 0.3433221967730665,
+              "matching_iou_threshold": 0.0,
+              "num_valid_gt": 12,
+              "supported": true,
+              "true_positives": 8
+            }
+          }
+        }
+      },
+      "prediction_dir": "E:\\myyolo\\stage11-v206-local-runtime-b0-20260826d\\runs\\b0-s0-b2-e15\\predictions\\labels"
+    },
+    "B1": {
+      "classes": {
+        "Car": {
+          "confidence_threshold": 0.31809,
+          "targets": {
+            "far_gt_40m": {
+              "bins": [
+                {
+                  "absolute_gap": 0.339547125,
+                  "count": 8,
+                  "lower": 0.32,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.339547125,
+                  "upper": 0.36
+                },
+                {
+                  "absolute_gap": 0.360527,
+                  "count": 1,
+                  "lower": 0.36,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.360527,
+                  "upper": 0.4
+                },
+                {
+                  "absolute_gap": 0.18554166151979584,
+                  "count": 3,
+                  "lower": 0.44,
+                  "mean_iou": 0.26061433848020416,
+                  "mean_score": 0.446156,
+                  "upper": 0.48
+                },
+                {
+                  "absolute_gap": 0.4874,
+                  "count": 1,
+                  "lower": 0.48,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.4874,
+                  "upper": 0.52
+                },
+                {
+                  "absolute_gap": 0.31387886399359144,
+                  "count": 4,
+                  "lower": 0.52,
+                  "mean_iou": 0.2151136360064085,
+                  "mean_score": 0.5289925,
+                  "upper": 0.56
+                },
+                {
+                  "absolute_gap": 0.4938560470013884,
+                  "count": 3,
+                  "lower": 0.56,
+                  "mean_iou": 0.08893295299861159,
+                  "mean_score": 0.582789,
+                  "upper": 0.6
+                },
+                {
+                  "absolute_gap": 0.09549662767212685,
+                  "count": 3,
+                  "lower": 0.6,
+                  "mean_iou": 0.7181186276721268,
+                  "mean_score": 0.6226219999999999,
+                  "upper": 0.64
+                },
+                {
+                  "absolute_gap": 0.11086581619649782,
+                  "count": 5,
+                  "lower": 0.64,
+                  "mean_iou": 0.5509737838035023,
+                  "mean_score": 0.6618396000000001,
+                  "upper": 0.68
+                },
+                {
+                  "absolute_gap": 0.4454928192092869,
+                  "count": 4,
+                  "lower": 0.68,
+                  "mean_iou": 0.2559196807907131,
+                  "mean_score": 0.7014125,
+                  "upper": 0.72
+                },
+                {
+                  "absolute_gap": 0.13080049017622464,
+                  "count": 3,
+                  "lower": 0.72,
+                  "mean_iou": 0.871970823509558,
+                  "mean_score": 0.7411703333333334,
+                  "upper": 0.76
+                },
+                {
+                  "absolute_gap": 0.2432906518573622,
+                  "count": 7,
+                  "lower": 0.76,
+                  "mean_iou": 0.5389754909997807,
+                  "mean_score": 0.7822661428571429,
+                  "upper": 0.8
+                },
+                {
+                  "absolute_gap": 0.12868817582923064,
+                  "count": 9,
+                  "lower": 0.8,
+                  "mean_iou": 0.6931397130596584,
+                  "mean_score": 0.821827888888889,
+                  "upper": 0.84
+                },
+                {
+                  "absolute_gap": 0.35526311619288453,
+                  "count": 14,
+                  "lower": 0.84,
+                  "mean_iou": 0.4996107409499725,
+                  "mean_score": 0.854873857142857,
+                  "upper": 0.88
+                },
+                {
+                  "absolute_gap": 0.6160052047948524,
+                  "count": 8,
+                  "lower": 0.88,
+                  "mean_iou": 0.28064204520514757,
+                  "mean_score": 0.89664725,
+                  "upper": 0.92
+                },
+                {
+                  "absolute_gap": 0.9067695232317886,
+                  "count": 5,
+                  "lower": 0.92,
+                  "mean_iou": 0.02208027676821126,
+                  "mean_score": 0.9288497999999998,
+                  "upper": 0.96
+                }
+              ],
+              "confidence_threshold": 0.31809,
+              "evaluated_detections": 78,
+              "false_negatives": 1,
+              "false_positives": 21,
+              "laece0": 0.34833340153314574,
+              "lrp": 0.6225432102847501,
+              "lrp_fn": 0.017241379310344827,
+              "lrp_fp": 0.2692307692307692,
+              "lrp_loc": 0.47685813355254847,
+              "matching_iou_threshold": 0.0,
+              "num_valid_gt": 58,
+              "supported": true,
+              "true_positives": 57
+            },
+            "occlusion_2": {
+              "bins": [
+                {
+                  "absolute_gap": 0.20815196471488873,
+                  "count": 10,
+                  "lower": 0.32,
+                  "mean_iou": 0.12978573528511128,
+                  "mean_score": 0.3379377,
+                  "upper": 0.36
+                },
+                {
+                  "absolute_gap": 0.0901762626350025,
+                  "count": 2,
+                  "lower": 0.36,
+                  "mean_iou": 0.2771497373649975,
+                  "mean_score": 0.367326,
+                  "upper": 0.4
+                },
+                {
+                  "absolute_gap": 0.19801032622655884,
+                  "count": 2,
+                  "lower": 0.4,
+                  "mean_iou": 0.6210168262265588,
+                  "mean_score": 0.4230065,
+                  "upper": 0.44
+                },
+                {
+                  "absolute_gap": 0.1941162104195055,
+                  "count": 4,
+                  "lower": 0.44,
+                  "mean_iou": 0.2551900395804945,
+                  "mean_score": 0.44930625,
+                  "upper": 0.48
+                },
+                {
+                  "absolute_gap": 0.3013497115300131,
+                  "count": 1,
+                  "lower": 0.48,
+                  "mean_iou": 0.19240928846998692,
+                  "mean_score": 0.493759,
+                  "upper": 0.52
+                },
+                {
+                  "absolute_gap": 0.13444615348368405,
+                  "count": 6,
+                  "lower": 0.52,
+                  "mean_iou": 0.39844584651631587,
+                  "mean_score": 0.5328919999999999,
+                  "upper": 0.56
+                },
+                {
+                  "absolute_gap": 0.5264812398871266,
+                  "count": 2,
+                  "lower": 0.56,
+                  "mean_iou": 0.06882426011287347,
+                  "mean_score": 0.5953055,
+                  "upper": 0.6
+                },
+                {
+                  "absolute_gap": 0.2716120527405833,
+                  "count": 2,
+                  "lower": 0.6,
+                  "mean_iou": 0.8867560527405833,
+                  "mean_score": 0.615144,
+                  "upper": 0.64
+                },
+                {
+                  "absolute_gap": 0.06625840705955055,
+                  "count": 5,
+                  "lower": 0.64,
+                  "mean_iou": 0.7329280070595505,
+                  "mean_score": 0.6666696,
+                  "upper": 0.68
+                },
+                {
+                  "absolute_gap": 0.2562131364734399,
+                  "count": 8,
+                  "lower": 0.68,
+                  "mean_iou": 0.4365457385265601,
+                  "mean_score": 0.692758875,
+                  "upper": 0.72
+                },
+                {
+                  "absolute_gap": 0.1702209196246659,
+                  "count": 8,
+                  "lower": 0.72,
+                  "mean_iou": 0.5693059553753341,
+                  "mean_score": 0.739526875,
+                  "upper": 0.76
+                },
+                {
+                  "absolute_gap": 0.27747005618739673,
+                  "count": 11,
+                  "lower": 0.76,
+                  "mean_iou": 0.5069090347216941,
+                  "mean_score": 0.7843790909090909,
+                  "upper": 0.8
+                },
+                {
+                  "absolute_gap": 0.370367309821488,
+                  "count": 19,
+                  "lower": 0.8,
+                  "mean_iou": 0.4500185322837751,
+                  "mean_score": 0.8203858421052631,
+                  "upper": 0.84
+                },
+                {
+                  "absolute_gap": 0.6032058274934249,
+                  "count": 16,
+                  "lower": 0.84,
+                  "mean_iou": 0.2582297350065749,
+                  "mean_score": 0.8614355624999999,
+                  "upper": 0.88
+                },
+                {
+                  "absolute_gap": 0.634538647015296,
+                  "count": 25,
+                  "lower": 0.88,
+                  "mean_iou": 0.2657529929847042,
+                  "mean_score": 0.9002916400000003,
+                  "upper": 0.92
+                },
+                {
+                  "absolute_gap": 0.7349815514860649,
+                  "count": 33,
+                  "lower": 0.92,
+                  "mean_iou": 0.2010260848775714,
+                  "mean_score": 0.9360076363636363,
+                  "upper": 0.96
+                },
+                {
+                  "absolute_gap": 0.8708204695943694,
+                  "count": 7,
+                  "lower": 0.96,
+                  "mean_iou": 0.10115138754848761,
+                  "mean_score": 0.971971857142857,
+                  "upper": 1.0
+                }
+              ],
+              "confidence_threshold": 0.31809,
+              "evaluated_detections": 161,
+              "false_negatives": 4,
+              "false_positives": 19,
+              "laece0": 0.47102719735694243,
+              "lrp": 0.6814277465939614,
+              "lrp_fn": 0.0273972602739726,
+              "lrp_fp": 0.11801242236024845,
+              "lrp_loc": 0.6298280154084763,
+              "matching_iou_threshold": 0.0,
+              "num_valid_gt": 146,
+              "supported": true,
+              "true_positives": 142
+            },
+            "overall": {
+              "bins": [
+                {
+                  "absolute_gap": 0.057017692000076,
+                  "count": 20,
+                  "lower": 0.32,
+                  "mean_iou": 0.39570189200007605,
+                  "mean_score": 0.33868420000000005,
+                  "upper": 0.36
+                },
+                {
+                  "absolute_gap": 0.2671663761003688,
+                  "count": 10,
+                  "lower": 0.36,
+                  "mean_iou": 0.6399899761003688,
+                  "mean_score": 0.3728236,
+                  "upper": 0.4
+                },
+                {
+                  "absolute_gap": 0.2423976690938247,
+                  "count": 6,
+                  "lower": 0.4,
+                  "mean_iou": 0.6602640024271581,
+                  "mean_score": 0.4178663333333334,
+                  "upper": 0.44
+                },
+                {
+                  "absolute_gap": 0.060267645158333216,
+                  "count": 8,
+                  "lower": 0.44,
+                  "mean_iou": 0.5116862701583332,
+                  "mean_score": 0.451418625,
+                  "upper": 0.48
+                },
+                {
+                  "absolute_gap": 0.04449280277596662,
+                  "count": 6,
+                  "lower": 0.48,
+                  "mean_iou": 0.45000803055736677,
+                  "mean_score": 0.4945008333333334,
+                  "upper": 0.52
+                },
+                {
+                  "absolute_gap": 0.024968355859041225,
+                  "count": 12,
+                  "lower": 0.52,
+                  "mean_iou": 0.5131430608076255,
+                  "mean_score": 0.5381114166666667,
+                  "upper": 0.56
+                },
+                {
+                  "absolute_gap": 0.09478715586268127,
+                  "count": 16,
+                  "lower": 0.56,
+                  "mean_iou": 0.6787444683626812,
+                  "mean_score": 0.5839573124999999,
+                  "upper": 0.6
+                },
+                {
+                  "absolute_gap": 0.17451778396000261,
+                  "count": 9,
+                  "lower": 0.6,
+                  "mean_iou": 0.7982283395155583,
+                  "mean_score": 0.6237105555555557,
+                  "upper": 0.64
+                },
+                {
+                  "absolute_gap": 0.10998330130614276,
+                  "count": 17,
+                  "lower": 0.64,
+                  "mean_iou": 0.7688201248355545,
+                  "mean_score": 0.6588368235294118,
+                  "upper": 0.68
+                },
+                {
+                  "absolute_gap": 0.012353549943492914,
+                  "count": 18,
+                  "lower": 0.68,
+                  "mean_iou": 0.707050549943493,
+                  "mean_score": 0.6946970000000001,
+                  "upper": 0.72
+                },
+                {
+                  "absolute_gap": 0.05908024475331597,
+                  "count": 20,
+                  "lower": 0.72,
+                  "mean_iou": 0.7983220447533159,
+                  "mean_score": 0.7392418,
+                  "upper": 0.76
+                },
+                {
+                  "absolute_gap": 0.03353480287159394,
+                  "count": 35,
+                  "lower": 0.76,
+                  "mean_iou": 0.8170376885858794,
+                  "mean_score": 0.7835028857142855,
+                  "upper": 0.8
+                },
+                {
+                  "absolute_gap": 0.0279435231061258,
+                  "count": 50,
+                  "lower": 0.8,
+                  "mean_iou": 0.8489116231061259,
+                  "mean_score": 0.8209681000000001,
+                  "upper": 0.84
+                },
+                {
+                  "absolute_gap": 0.025684104479299585,
+                  "count": 81,
+                  "lower": 0.84,
+                  "mean_iou": 0.8342060560145274,
+                  "mean_score": 0.8598901604938269,
+                  "upper": 0.88
+                },
+                {
+                  "absolute_gap": 0.016548297347693253,
+                  "count": 97,
+                  "lower": 0.88,
+                  "mean_iou": 0.9165114107497551,
+                  "mean_score": 0.8999631134020618,
+                  "upper": 0.92
+                },
+                {
+                  "absolute_gap": 0.057456925862201635,
+                  "count": 74,
+                  "lower": 0.92,
+                  "mean_iou": 0.8793031687323929,
+                  "mean_score": 0.9367600945945945,
+                  "upper": 0.96
+                },
+                {
+                  "absolute_gap": 0.2453259843730129,
+                  "count": 39,
+                  "lower": 0.96,
+                  "mean_iou": 0.7266051438321154,
+                  "mean_score": 0.9719311282051283,
+                  "upper": 1.0
+                }
+              ],
+              "confidence_threshold": 0.31809,
+              "evaluated_detections": 518,
+              "false_negatives": 41,
+              "false_positives": 22,
+              "laece0": 0.06322795134209976,
+              "lrp": 0.26305139734001476,
+              "lrp_fn": 0.07635009310986965,
+              "lrp_fp": 0.04247104247104247,
+              "lrp_loc": 0.16944703853441181,
+              "matching_iou_threshold": 0.0,
+              "num_valid_gt": 537,
+              "supported": true,
+              "true_positives": 496
+            },
+            "small_25_40": {
+              "bins": [
+                {
+                  "absolute_gap": 0.1584298706677445,
+                  "count": 12,
+                  "lower": 0.32,
+                  "mean_iou": 0.17941604599892225,
+                  "mean_score": 0.33784591666666675,
+                  "upper": 0.36
+                },
+                {
+                  "absolute_gap": 0.17819568893451837,
+                  "count": 3,
+                  "lower": 0.36,
+                  "mean_iou": 0.5450533556011851,
+                  "mean_score": 0.3668576666666667,
+                  "upper": 0.4
+                },
+                {
+                  "absolute_gap": 0.222588294607161,
+                  "count": 3,
+                  "lower": 0.4,
+                  "mean_iou": 0.638298294607161,
+                  "mean_score": 0.41571,
+                  "upper": 0.44
+                },
+                {
+                  "absolute_gap": 0.18554166151979584,
+                  "count": 3,
+                  "lower": 0.44,
+                  "mean_iou": 0.26061433848020416,
+                  "mean_score": 0.446156,
+                  "upper": 0.48
+                },
+                {
+                  "absolute_gap": 0.20167787429731454,
+                  "count": 5,
+                  "lower": 0.52,
+                  "mean_iou": 0.3264553257026853,
+                  "mean_score": 0.5281331999999999,
+                  "upper": 0.56
+                },
+                {
+                  "absolute_gap": 0.07907826855104538,
+                  "count": 6,
+                  "lower": 0.56,
+                  "mean_iou": 0.5054053981156214,
+                  "mean_score": 0.5844836666666667,
+                  "upper": 0.6
+                },
+                {
+                  "absolute_gap": 0.10728380250885106,
+                  "count": 4,
+                  "lower": 0.6,
+                  "mean_iou": 0.732218302508851,
+                  "mean_score": 0.6249345,
+                  "upper": 0.64
+                },
+                {
+                  "absolute_gap": 0.10248266086335234,
+                  "count": 7,
+                  "lower": 0.64,
+                  "mean_iou": 0.7556752322919238,
+                  "mean_score": 0.6531925714285715,
+                  "upper": 0.68
+                },
+                {
+                  "absolute_gap": 0.08479287769110555,
+                  "count": 6,
+                  "lower": 0.68,
+                  "mean_iou": 0.6121937889755611,
+                  "mean_score": 0.6969866666666666,
+                  "upper": 0.72
+                },
+                {
+                  "absolute_gap": 0.07229866430143328,
+                  "count": 10,
+                  "lower": 0.72,
+                  "mean_iou": 0.6673490356985667,
+                  "mean_score": 0.7396477,
+                  "upper": 0.76
+                },
+                {
+                  "absolute_gap": 0.1769842403840034,
+                  "count": 18,
+                  "lower": 0.76,
+                  "mean_iou": 0.6045535373937745,
+                  "mean_score": 0.7815377777777779,
+                  "upper": 0.8
+                },
+                {
+                  "absolute_gap": 0.14885698376825995,
+                  "count": 29,
+                  "lower": 0.8,
+                  "mean_iou": 0.6703098093351884,
+                  "mean_score": 0.8191667931034483,
+                  "upper": 0.84
+                },
+                {
+                  "absolute_gap": 0.1686397248758854,
+                  "count": 44,
+                  "lower": 0.84,
+                  "mean_iou": 0.6898915705786601,
+                  "mean_score": 0.8585312954545455,
+                  "upper": 0.88
+                },
+                {
+                  "absolute_gap": 0.45853335812375906,
+                  "count": 32,
+                  "lower": 0.88,
+                  "mean_iou": 0.44011161062624116,
+                  "mean_score": 0.8986449687500002,
+                  "upper": 0.92
+                },
+                {
+                  "absolute_gap": 0.8267706118391277,
+                  "count": 14,
+                  "lower": 0.92,
+                  "mean_iou": 0.10736760244658647,
+                  "mean_score": 0.9341382142857142,
+                  "upper": 0.96
+                },
+                {
+                  "absolute_gap": 0.936553178750223,
+                  "count": 3,
+                  "lower": 0.96,
+                  "mean_iou": 0.033128487916443655,
+                  "mean_score": 0.9696816666666667,
+                  "upper": 1.0
+                }
+              ],
+              "confidence_threshold": 0.31809,
+              "evaluated_detections": 199,
+              "false_negatives": 8,
+              "false_positives": 20,
+              "laece0": 0.25880142926592636,
+              "lrp": 0.4875500814034373,
+              "lrp_fn": 0.0427807486631016,
+              "lrp_fp": 0.10050251256281408,
+              "lrp_loc": 0.40739031760062305,
+              "matching_iou_threshold": 0.0,
+              "num_valid_gt": 187,
+              "supported": true,
+              "true_positives": 179
+            }
+          }
+        },
+        "Cyclist": {
+          "confidence_threshold": 0.300628,
+          "targets": {
+            "far_gt_40m": {
+              "bins": [
+                {
+                  "absolute_gap": 0.33238650000000003,
+                  "count": 2,
+                  "lower": 0.32,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.33238650000000003,
+                  "upper": 0.36
+                },
+                {
+                  "absolute_gap": 0.2130130247207816,
+                  "count": 2,
+                  "lower": 0.52,
+                  "mean_iou": 0.32485197527921844,
+                  "mean_score": 0.537865,
+                  "upper": 0.56
+                },
+                {
+                  "absolute_gap": 0.663678,
+                  "count": 1,
+                  "lower": 0.64,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.663678,
+                  "upper": 0.68
+                },
+                {
+                  "absolute_gap": 0.734689,
+                  "count": 1,
+                  "lower": 0.72,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.734689,
+                  "upper": 0.76
+                }
+              ],
+              "confidence_threshold": 0.300628,
+              "evaluated_detections": 6,
+              "false_negatives": 0,
+              "false_positives": 5,
+              "laece0": 0.41486100824026056,
+              "lrp": 0.8917160082402605,
+              "lrp_fn": 0.0,
+              "lrp_fp": 0.8333333333333334,
+              "lrp_loc": 0.3502960494415631,
+              "matching_iou_threshold": 0.0,
+              "num_valid_gt": 1,
+              "supported": true,
+              "true_positives": 1
+            },
+            "occlusion_2": {
+              "bins": [
+                {
+                  "absolute_gap": 0.33238650000000003,
+                  "count": 2,
+                  "lower": 0.32,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.33238650000000003,
+                  "upper": 0.36
+                },
+                {
+                  "absolute_gap": 0.553281,
+                  "count": 1,
+                  "lower": 0.52,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.553281,
+                  "upper": 0.56
+                },
+                {
+                  "absolute_gap": 0.663678,
+                  "count": 1,
+                  "lower": 0.64,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.663678,
+                  "upper": 0.68
+                },
+                {
+                  "absolute_gap": 0.734689,
+                  "count": 1,
+                  "lower": 0.72,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.734689,
+                  "upper": 0.76
+                },
+                {
+                  "absolute_gap": 0.7121003096425834,
+                  "count": 1,
+                  "lower": 0.96,
+                  "mean_iou": 0.27408469035741656,
+                  "mean_score": 0.986185,
+                  "upper": 1.0
+                }
+              ],
+              "confidence_threshold": 0.300628,
+              "evaluated_detections": 6,
+              "false_negatives": 0,
+              "false_positives": 5,
+              "laece0": 0.5547535516070973,
+              "lrp": 0.9543192182737639,
+              "lrp_fn": 0.0,
+              "lrp_fp": 0.8333333333333334,
+              "lrp_loc": 0.7259153096425834,
+              "matching_iou_threshold": 0.0,
+              "num_valid_gt": 1,
+              "supported": true,
+              "true_positives": 1
+            },
+            "overall": {
+              "bins": [
+                {
+                  "absolute_gap": 0.33238650000000003,
+                  "count": 2,
+                  "lower": 0.32,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.33238650000000003,
+                  "upper": 0.36
+                },
+                {
+                  "absolute_gap": 0.2130130247207816,
+                  "count": 2,
+                  "lower": 0.52,
+                  "mean_iou": 0.32485197527921844,
+                  "mean_score": 0.537865,
+                  "upper": 0.56
+                },
+                {
+                  "absolute_gap": 0.23367614662354497,
+                  "count": 1,
+                  "lower": 0.56,
+                  "mean_iou": 0.8022091466235449,
+                  "mean_score": 0.568533,
+                  "upper": 0.6
+                },
+                {
+                  "absolute_gap": 0.24666770135775007,
+                  "count": 1,
+                  "lower": 0.6,
+                  "mean_iou": 0.8696307013577501,
+                  "mean_score": 0.622963,
+                  "upper": 0.64
+                },
+                {
+                  "absolute_gap": 0.21192494872257223,
+                  "count": 2,
+                  "lower": 0.64,
+                  "mean_iou": 0.45260205127742775,
+                  "mean_score": 0.664527,
+                  "upper": 0.68
+                },
+                {
+                  "absolute_gap": 0.39820236908098366,
+                  "count": 2,
+                  "lower": 0.72,
+                  "mean_iou": 0.3476376309190164,
+                  "mean_score": 0.7458400000000001,
+                  "upper": 0.76
+                },
+                {
+                  "absolute_gap": 0.010464228224894678,
+                  "count": 2,
+                  "lower": 0.84,
+                  "mean_iou": 0.8516342717751054,
+                  "mean_score": 0.8620985000000001,
+                  "upper": 0.88
+                },
+                {
+                  "absolute_gap": 0.026252390699031625,
+                  "count": 3,
+                  "lower": 0.88,
+                  "mean_iou": 0.879067275967635,
+                  "mean_score": 0.9053196666666666,
+                  "upper": 0.92
+                },
+                {
+                  "absolute_gap": 0.1040954710728782,
+                  "count": 7,
+                  "lower": 0.92,
+                  "mean_iou": 0.8343572432128361,
+                  "mean_score": 0.9384527142857143,
+                  "upper": 0.96
+                },
+                {
+                  "absolute_gap": 0.17037555077847366,
+                  "count": 9,
+                  "lower": 0.96,
+                  "mean_iou": 0.8198383381104153,
+                  "mean_score": 0.990213888888889,
+                  "upper": 1.0
+                }
+              ],
+              "confidence_threshold": 0.300628,
+              "evaluated_detections": 31,
+              "false_negatives": 5,
+              "false_positives": 5,
+              "laece0": 0.1662300456804279,
+              "lrp": 0.40329057555918535,
+              "lrp_fn": 0.16129032258064516,
+              "lrp_fp": 0.16129032258064516,
+              "lrp_loc": 0.17378695077425668,
+              "matching_iou_threshold": 0.0,
+              "num_valid_gt": 31,
+              "supported": true,
+              "true_positives": 26
+            },
+            "small_25_40": {
+              "bins": [
+                {
+                  "absolute_gap": 0.33238650000000003,
+                  "count": 2,
+                  "lower": 0.32,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.33238650000000003,
+                  "upper": 0.36
+                },
+                {
+                  "absolute_gap": 0.2130130247207816,
+                  "count": 2,
+                  "lower": 0.52,
+                  "mean_iou": 0.32485197527921844,
+                  "mean_score": 0.537865,
+                  "upper": 0.56
+                },
+                {
+                  "absolute_gap": 0.21192494872257223,
+                  "count": 2,
+                  "lower": 0.64,
+                  "mean_iou": 0.45260205127742775,
+                  "mean_score": 0.664527,
+                  "upper": 0.68
+                },
+                {
+                  "absolute_gap": 0.734689,
+                  "count": 1,
+                  "lower": 0.72,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.734689,
+                  "upper": 0.76
+                },
+                {
+                  "absolute_gap": 0.7121003096425834,
+                  "count": 1,
+                  "lower": 0.96,
+                  "mean_iou": 0.27408469035741656,
+                  "mean_score": 0.986185,
+                  "upper": 1.0
+                }
+              ],
+              "confidence_threshold": 0.300628,
+              "evaluated_detections": 8,
+              "false_negatives": 0,
+              "false_positives": 5,
+              "laece0": 0.3701797820661614,
+              "lrp": 0.7713759070661614,
+              "lrp_fn": 0.0,
+              "lrp_fp": 0.625,
+              "lrp_loc": 0.39033575217643035,
+              "matching_iou_threshold": 0.0,
+              "num_valid_gt": 3,
+              "supported": true,
+              "true_positives": 3
+            }
+          }
+        },
+        "Pedestrian": {
+          "confidence_threshold": 0.343133,
+          "targets": {
+            "far_gt_40m": {
+              "bins": [
+                {
+                  "absolute_gap": 0.359088,
+                  "count": 1,
+                  "lower": 0.32,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.359088,
+                  "upper": 0.36
+                },
+                {
+                  "absolute_gap": 0.2796445268669342,
+                  "count": 1,
+                  "lower": 0.36,
+                  "mean_iou": 0.09963447313306581,
+                  "mean_score": 0.379279,
+                  "upper": 0.4
+                },
+                {
+                  "absolute_gap": 0.433868,
+                  "count": 1,
+                  "lower": 0.4,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.433868,
+                  "upper": 0.44
+                },
+                {
+                  "absolute_gap": 0.461477,
+                  "count": 1,
+                  "lower": 0.44,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.461477,
+                  "upper": 0.48
+                },
+                {
+                  "absolute_gap": 0.568858,
+                  "count": 1,
+                  "lower": 0.56,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.568858,
+                  "upper": 0.6
+                },
+                {
+                  "absolute_gap": 0.14716362109975345,
+                  "count": 1,
+                  "lower": 0.8,
+                  "mean_iou": 0.6769323789002466,
+                  "mean_score": 0.824096,
+                  "upper": 0.84
+                }
+              ],
+              "confidence_threshold": 0.343133,
+              "evaluated_detections": 6,
+              "false_negatives": 1,
+              "false_positives": 4,
+              "laece0": 0.37501652466111457,
+              "lrp": 0.8890618782809554,
+              "lrp_fn": 0.3333333333333333,
+              "lrp_fp": 0.6666666666666666,
+              "lrp_loc": 0.6117165739833438,
+              "matching_iou_threshold": 0.0,
+              "num_valid_gt": 3,
+              "supported": true,
+              "true_positives": 2
+            },
+            "occlusion_2": {
+              "bins": [
+                {
+                  "absolute_gap": 0.359088,
+                  "count": 1,
+                  "lower": 0.32,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.359088,
+                  "upper": 0.36
+                },
+                {
+                  "absolute_gap": 0.433868,
+                  "count": 1,
+                  "lower": 0.4,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.433868,
+                  "upper": 0.44
+                },
+                {
+                  "absolute_gap": 0.461477,
+                  "count": 1,
+                  "lower": 0.44,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.461477,
+                  "upper": 0.48
+                },
+                {
+                  "absolute_gap": 0.5267219998451542,
+                  "count": 2,
+                  "lower": 0.56,
+                  "mean_iou": 0.047213000154845745,
+                  "mean_score": 0.573935,
+                  "upper": 0.6
+                },
+                {
+                  "absolute_gap": 0.39292012910727975,
+                  "count": 1,
+                  "lower": 0.8,
+                  "mean_iou": 0.4123188708927203,
+                  "mean_score": 0.805239,
+                  "upper": 0.84
+                },
+                {
+                  "absolute_gap": 0.07198486417622596,
+                  "count": 1,
+                  "lower": 0.84,
+                  "mean_iou": 0.7682841358237741,
+                  "mean_score": 0.840269,
+                  "upper": 0.88
+                }
+              ],
+              "confidence_threshold": 0.343133,
+              "evaluated_detections": 7,
+              "false_negatives": 9,
+              "false_positives": 4,
+              "laece0": 0.3961117132819735,
+              "lrp": 0.9203106870608634,
+              "lrp_fn": 0.75,
+              "lrp_fp": 0.5714285714285714,
+              "lrp_loc": 0.5749903309912714,
+              "matching_iou_threshold": 0.0,
+              "num_valid_gt": 12,
+              "supported": true,
+              "true_positives": 3
+            },
+            "overall": {
+              "bins": [
+                {
+                  "absolute_gap": 0.359088,
+                  "count": 1,
+                  "lower": 0.32,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.359088,
+                  "upper": 0.36
+                },
+                {
+                  "absolute_gap": 0.2614206573470616,
+                  "count": 5,
+                  "lower": 0.36,
+                  "mean_iou": 0.6342156573470616,
+                  "mean_score": 0.37279500000000004,
+                  "upper": 0.4
+                },
+                {
+                  "absolute_gap": 0.16191024762136547,
+                  "count": 4,
+                  "lower": 0.4,
+                  "mean_iou": 0.5867134976213655,
+                  "mean_score": 0.42480325,
+                  "upper": 0.44
+                },
+                {
+                  "absolute_gap": 0.23412240691743505,
+                  "count": 2,
+                  "lower": 0.44,
+                  "mean_iou": 0.22333259308256495,
+                  "mean_score": 0.457455,
+                  "upper": 0.48
+                },
+                {
+                  "absolute_gap": 0.24137905344035487,
+                  "count": 2,
+                  "lower": 0.48,
+                  "mean_iou": 0.7342730534403549,
+                  "mean_score": 0.492894,
+                  "upper": 0.52
+                },
+                {
+                  "absolute_gap": 0.15007081123384058,
+                  "count": 4,
+                  "lower": 0.52,
+                  "mean_iou": 0.6859593112338406,
+                  "mean_score": 0.5358885,
+                  "upper": 0.56
+                },
+                {
+                  "absolute_gap": 0.00028915823806163754,
+                  "count": 6,
+                  "lower": 0.56,
+                  "mean_iou": 0.5748596582380616,
+                  "mean_score": 0.5745705,
+                  "upper": 0.6
+                },
+                {
+                  "absolute_gap": 0.028971347036985784,
+                  "count": 5,
+                  "lower": 0.6,
+                  "mean_iou": 0.6520135470369859,
+                  "mean_score": 0.6230422000000001,
+                  "upper": 0.64
+                },
+                {
+                  "absolute_gap": 0.2419144592218332,
+                  "count": 2,
+                  "lower": 0.64,
+                  "mean_iou": 0.9044739592218332,
+                  "mean_score": 0.6625595,
+                  "upper": 0.68
+                },
+                {
+                  "absolute_gap": 0.08469930292146222,
+                  "count": 4,
+                  "lower": 0.68,
+                  "mean_iou": 0.7867773029214622,
+                  "mean_score": 0.702078,
+                  "upper": 0.72
+                },
+                {
+                  "absolute_gap": 0.16830550823786317,
+                  "count": 3,
+                  "lower": 0.72,
+                  "mean_iou": 0.9011401749045298,
+                  "mean_score": 0.7328346666666666,
+                  "upper": 0.76
+                },
+                {
+                  "absolute_gap": 0.04287863823018645,
+                  "count": 8,
+                  "lower": 0.76,
+                  "mean_iou": 0.8235217632301864,
+                  "mean_score": 0.780643125,
+                  "upper": 0.8
+                },
+                {
+                  "absolute_gap": 0.01802458542492613,
+                  "count": 9,
+                  "lower": 0.8,
+                  "mean_iou": 0.800109636797296,
+                  "mean_score": 0.8181342222222221,
+                  "upper": 0.84
+                },
+                {
+                  "absolute_gap": 0.0061616836810926,
+                  "count": 10,
+                  "lower": 0.84,
+                  "mean_iou": 0.8719933836810926,
+                  "mean_score": 0.8658317,
+                  "upper": 0.88
+                },
+                {
+                  "absolute_gap": 0.02857593212160814,
+                  "count": 7,
+                  "lower": 0.88,
+                  "mean_iou": 0.8674620678783919,
+                  "mean_score": 0.896038,
+                  "upper": 0.92
+                },
+                {
+                  "absolute_gap": 0.06516370966825913,
+                  "count": 9,
+                  "lower": 0.92,
+                  "mean_iou": 0.8693024014428522,
+                  "mean_score": 0.9344661111111113,
+                  "upper": 0.96
+                }
+              ],
+              "confidence_threshold": 0.343133,
+              "evaluated_detections": 81,
+              "false_negatives": 30,
+              "false_positives": 4,
+              "laece0": 0.08262499883543774,
+              "lrp": 0.4508942800304426,
+              "lrp_fn": 0.2803738317757009,
+              "lrp_fp": 0.04938271604938271,
+              "lrp_loc": 0.2084320140698588,
+              "matching_iou_threshold": 0.0,
+              "num_valid_gt": 107,
+              "supported": true,
+              "true_positives": 77
+            },
+            "small_25_40": {
+              "bins": [
+                {
+                  "absolute_gap": 0.359088,
+                  "count": 1,
+                  "lower": 0.32,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.359088,
+                  "upper": 0.36
+                },
+                {
+                  "absolute_gap": 0.011151512724047463,
+                  "count": 2,
+                  "lower": 0.36,
+                  "mean_iou": 0.38382651272404744,
+                  "mean_score": 0.372675,
+                  "upper": 0.4
+                },
+                {
+                  "absolute_gap": 0.433868,
+                  "count": 1,
+                  "lower": 0.4,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.433868,
+                  "upper": 0.44
+                },
+                {
+                  "absolute_gap": 0.23412240691743505,
+                  "count": 2,
+                  "lower": 0.44,
+                  "mean_iou": 0.22333259308256495,
+                  "mean_score": 0.457455,
+                  "upper": 0.48
+                },
+                {
+                  "absolute_gap": 0.09189263751543136,
+                  "count": 1,
+                  "lower": 0.48,
+                  "mean_iou": 0.5839026375154314,
+                  "mean_score": 0.49201,
+                  "upper": 0.52
+                },
+                {
+                  "absolute_gap": 0.568858,
+                  "count": 1,
+                  "lower": 0.56,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.568858,
+                  "upper": 0.6
+                },
+                {
+                  "absolute_gap": 0.14613356049682247,
+                  "count": 1,
+                  "lower": 0.76,
+                  "mean_iou": 0.9111955604968225,
+                  "mean_score": 0.765062,
+                  "upper": 0.8
+                },
+                {
+                  "absolute_gap": 0.14716362109975345,
+                  "count": 1,
+                  "lower": 0.8,
+                  "mean_iou": 0.6769323789002466,
+                  "mean_score": 0.824096,
+                  "upper": 0.84
+                }
+              ],
+              "confidence_threshold": 0.343133,
+              "evaluated_detections": 10,
+              "false_negatives": 6,
+              "false_positives": 4,
+              "laece0": 0.22375516583949723,
+              "lrp": 0.7883532007171421,
+              "lrp_fn": 0.5,
+              "lrp_fp": 0.4,
+              "lrp_loc": 0.4356085352457124,
+              "matching_iou_threshold": 0.0,
+              "num_valid_gt": 12,
+              "supported": true,
+              "true_positives": 6
+            }
+          }
+        }
+      },
+      "prediction_dir": "E:\\myyolo\\stage11-v209-local-runtime-b1-20260826b\\runs\\b1-s0-b2-e15\\predictions\\labels"
+    },
+    "PLAIN": {
+      "classes": {
+        "Car": {
+          "confidence_threshold": 0.277888,
+          "targets": {
+            "far_gt_40m": {
+              "bins": [
+                {
+                  "absolute_gap": 0.27890800000000004,
+                  "count": 2,
+                  "lower": 0.24,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.27890800000000004,
+                  "upper": 0.28
+                },
+                {
+                  "absolute_gap": 0.16641299293739842,
+                  "count": 6,
+                  "lower": 0.28,
+                  "mean_iou": 0.13806067372926828,
+                  "mean_score": 0.3044736666666667,
+                  "upper": 0.32
+                },
+                {
+                  "absolute_gap": 0.19664002166479366,
+                  "count": 6,
+                  "lower": 0.32,
+                  "mean_iou": 0.1433203116685397,
+                  "mean_score": 0.33996033333333336,
+                  "upper": 0.36
+                },
+                {
+                  "absolute_gap": 0.38386325,
+                  "count": 4,
+                  "lower": 0.36,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.38386325,
+                  "upper": 0.4
+                },
+                {
+                  "absolute_gap": 0.41508219999999996,
+                  "count": 5,
+                  "lower": 0.4,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.41508219999999996,
+                  "upper": 0.44
+                },
+                {
+                  "absolute_gap": 0.29513248994110763,
+                  "count": 2,
+                  "lower": 0.44,
+                  "mean_iou": 0.7536984899411077,
+                  "mean_score": 0.45856600000000003,
+                  "upper": 0.48
+                },
+                {
+                  "absolute_gap": 0.497817,
+                  "count": 1,
+                  "lower": 0.48,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.497817,
+                  "upper": 0.52
+                },
+                {
+                  "absolute_gap": 0.543618,
+                  "count": 1,
+                  "lower": 0.52,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.543618,
+                  "upper": 0.56
+                },
+                {
+                  "absolute_gap": 0.2747528953820688,
+                  "count": 1,
+                  "lower": 0.56,
+                  "mean_iou": 0.32047110461793116,
+                  "mean_score": 0.595224,
+                  "upper": 0.6
+                },
+                {
+                  "absolute_gap": 0.614151,
+                  "count": 2,
+                  "lower": 0.6,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.614151,
+                  "upper": 0.64
+                },
+                {
+                  "absolute_gap": 0.17822752095454908,
+                  "count": 1,
+                  "lower": 0.64,
+                  "mean_iou": 0.8336785209545491,
+                  "mean_score": 0.655451,
+                  "upper": 0.68
+                },
+                {
+                  "absolute_gap": 0.30751559355487185,
+                  "count": 5,
+                  "lower": 0.68,
+                  "mean_iou": 0.3954996064451282,
+                  "mean_score": 0.7030152000000001,
+                  "upper": 0.72
+                },
+                {
+                  "absolute_gap": 0.11781893392273646,
+                  "count": 9,
+                  "lower": 0.72,
+                  "mean_iou": 0.6221052882994859,
+                  "mean_score": 0.7399242222222223,
+                  "upper": 0.76
+                },
+                {
+                  "absolute_gap": 0.230215038424194,
+                  "count": 5,
+                  "lower": 0.76,
+                  "mean_iou": 0.552273361575806,
+                  "mean_score": 0.7824884,
+                  "upper": 0.8
+                },
+                {
+                  "absolute_gap": 0.1029417582223654,
+                  "count": 10,
+                  "lower": 0.8,
+                  "mean_iou": 0.7158821417776348,
+                  "mean_score": 0.8188239000000002,
+                  "upper": 0.84
+                },
+                {
+                  "absolute_gap": 0.3515384032974165,
+                  "count": 11,
+                  "lower": 0.84,
+                  "mean_iou": 0.5099097785207651,
+                  "mean_score": 0.8614481818181816,
+                  "upper": 0.88
+                },
+                {
+                  "absolute_gap": 0.5443548419583542,
+                  "count": 9,
+                  "lower": 0.88,
+                  "mean_iou": 0.3552919358194236,
+                  "mean_score": 0.8996467777777778,
+                  "upper": 0.92
+                },
+                {
+                  "absolute_gap": 0.8664598642363917,
+                  "count": 4,
+                  "lower": 0.92,
+                  "mean_iou": 0.06894388576360838,
+                  "mean_score": 0.93540375,
+                  "upper": 0.96
+                },
+                {
+                  "absolute_gap": 0.9526826253731626,
+                  "count": 1,
+                  "lower": 0.96,
+                  "mean_iou": 0.009970374626837418,
+                  "mean_score": 0.962653,
+                  "upper": 1.0
+                }
+              ],
+              "confidence_threshold": 0.277888,
+              "evaluated_detections": 85,
+              "false_negatives": 2,
+              "false_positives": 29,
+              "laece0": 0.32497717326436587,
+              "lrp": 0.6443810658137652,
+              "lrp_fn": 0.034482758620689655,
+              "lrp_fp": 0.3411764705882353,
+              "lrp_loc": 0.4475205843892423,
+              "matching_iou_threshold": 0.0,
+              "num_valid_gt": 58,
+              "supported": true,
+              "true_positives": 56
+            },
+            "occlusion_2": {
+              "bins": [
+                {
+                  "absolute_gap": 0.01230371884460707,
+                  "count": 3,
+                  "lower": 0.24,
+                  "mean_iou": 0.2667429478220596,
+                  "mean_score": 0.27904666666666667,
+                  "upper": 0.28
+                },
+                {
+                  "absolute_gap": 0.1854416481844599,
+                  "count": 6,
+                  "lower": 0.28,
+                  "mean_iou": 0.11571285181554009,
+                  "mean_score": 0.3011545,
+                  "upper": 0.32
+                },
+                {
+                  "absolute_gap": 0.1083175155162022,
+                  "count": 7,
+                  "lower": 0.32,
+                  "mean_iou": 0.22954819876951213,
+                  "mean_score": 0.3378657142857143,
+                  "upper": 0.36
+                },
+                {
+                  "absolute_gap": 0.17795647283525862,
+                  "count": 4,
+                  "lower": 0.36,
+                  "mean_iou": 0.2070575271647414,
+                  "mean_score": 0.385014,
+                  "upper": 0.4
+                },
+                {
+                  "absolute_gap": 0.22545158776873356,
+                  "count": 7,
+                  "lower": 0.4,
+                  "mean_iou": 0.19149241223126648,
+                  "mean_score": 0.41694400000000004,
+                  "upper": 0.44
+                },
+                {
+                  "absolute_gap": 0.26257259027699426,
+                  "count": 2,
+                  "lower": 0.48,
+                  "mean_iou": 0.23859840972300578,
+                  "mean_score": 0.501171,
+                  "upper": 0.52
+                },
+                {
+                  "absolute_gap": 0.13399561550757977,
+                  "count": 4,
+                  "lower": 0.52,
+                  "mean_iou": 0.40447938449242027,
+                  "mean_score": 0.538475,
+                  "upper": 0.56
+                },
+                {
+                  "absolute_gap": 0.3146963237507729,
+                  "count": 3,
+                  "lower": 0.56,
+                  "mean_iou": 0.27718700958256043,
+                  "mean_score": 0.5918833333333333,
+                  "upper": 0.6
+                },
+                {
+                  "absolute_gap": 0.1241652842650307,
+                  "count": 3,
+                  "lower": 0.6,
+                  "mean_iou": 0.5033137157349693,
+                  "mean_score": 0.627479,
+                  "upper": 0.64
+                },
+                {
+                  "absolute_gap": 0.16231867849277393,
+                  "count": 4,
+                  "lower": 0.64,
+                  "mean_iou": 0.49929632150722614,
+                  "mean_score": 0.6616150000000001,
+                  "upper": 0.68
+                },
+                {
+                  "absolute_gap": 0.4085038060578549,
+                  "count": 3,
+                  "lower": 0.68,
+                  "mean_iou": 0.2854038606088118,
+                  "mean_score": 0.6939076666666667,
+                  "upper": 0.72
+                },
+                {
+                  "absolute_gap": 0.4477571875063282,
+                  "count": 7,
+                  "lower": 0.72,
+                  "mean_iou": 0.303303526779386,
+                  "mean_score": 0.7510607142857142,
+                  "upper": 0.76
+                },
+                {
+                  "absolute_gap": 0.25085259645589697,
+                  "count": 12,
+                  "lower": 0.76,
+                  "mean_iou": 0.5285152368774363,
+                  "mean_score": 0.7793678333333333,
+                  "upper": 0.8
+                },
+                {
+                  "absolute_gap": 0.4187778487940453,
+                  "count": 15,
+                  "lower": 0.8,
+                  "mean_iou": 0.4036284845392882,
+                  "mean_score": 0.8224063333333335,
+                  "upper": 0.84
+                },
+                {
+                  "absolute_gap": 0.5234270721818449,
+                  "count": 19,
+                  "lower": 0.84,
+                  "mean_iou": 0.3380592436076286,
+                  "mean_score": 0.8614863157894735,
+                  "upper": 0.88
+                },
+                {
+                  "absolute_gap": 0.6648564986721528,
+                  "count": 37,
+                  "lower": 0.88,
+                  "mean_iou": 0.23592604186838778,
+                  "mean_score": 0.9007825405405406,
+                  "upper": 0.92
+                },
+                {
+                  "absolute_gap": 0.6731294866594417,
+                  "count": 24,
+                  "lower": 0.92,
+                  "mean_iou": 0.26395422167389154,
+                  "mean_score": 0.9370837083333333,
+                  "upper": 0.96
+                },
+                {
+                  "absolute_gap": 0.8335946093425866,
+                  "count": 9,
+                  "lower": 0.96,
+                  "mean_iou": 0.13548294621296897,
+                  "mean_score": 0.9690775555555555,
+                  "upper": 1.0
+                }
+              ],
+              "confidence_threshold": 0.277888,
+              "evaluated_detections": 169,
+              "false_negatives": 5,
+              "false_positives": 28,
+              "laece0": 0.46792149376871517,
+              "lrp": 0.7138712324535222,
+              "lrp_fn": 0.03424657534246575,
+              "lrp_fp": 0.16568047337278108,
+              "lrp_loc": 0.6469049251554105,
+              "matching_iou_threshold": 0.0,
+              "num_valid_gt": 146,
+              "supported": true,
+              "true_positives": 141
+            },
+            "overall": {
+              "bins": [
+                {
+                  "absolute_gap": 0.01230371884460707,
+                  "count": 3,
+                  "lower": 0.24,
+                  "mean_iou": 0.2667429478220596,
+                  "mean_score": 0.27904666666666667,
+                  "upper": 0.28
+                },
+                {
+                  "absolute_gap": 0.07405377564760796,
+                  "count": 8,
+                  "lower": 0.28,
+                  "mean_iou": 0.375275275647608,
+                  "mean_score": 0.30122150000000003,
+                  "upper": 0.32
+                },
+                {
+                  "absolute_gap": 0.1073583215809733,
+                  "count": 12,
+                  "lower": 0.32,
+                  "mean_iou": 0.4441330715809733,
+                  "mean_score": 0.33677475,
+                  "upper": 0.36
+                },
+                {
+                  "absolute_gap": 0.008515332745365256,
+                  "count": 11,
+                  "lower": 0.36,
+                  "mean_iou": 0.37122075816372574,
+                  "mean_score": 0.379736090909091,
+                  "upper": 0.4
+                },
+                {
+                  "absolute_gap": 0.004220961985678895,
+                  "count": 14,
+                  "lower": 0.4,
+                  "mean_iou": 0.41318275230003537,
+                  "mean_score": 0.41740371428571427,
+                  "upper": 0.44
+                },
+                {
+                  "absolute_gap": 0.33623538550038823,
+                  "count": 6,
+                  "lower": 0.44,
+                  "mean_iou": 0.8019765521670549,
+                  "mean_score": 0.46574116666666665,
+                  "upper": 0.48
+                },
+                {
+                  "absolute_gap": 0.2998214470491931,
+                  "count": 8,
+                  "lower": 0.48,
+                  "mean_iou": 0.8052826970491931,
+                  "mean_score": 0.50546125,
+                  "upper": 0.52
+                },
+                {
+                  "absolute_gap": 0.13457365863198611,
+                  "count": 14,
+                  "lower": 0.52,
+                  "mean_iou": 0.6784194443462718,
+                  "mean_score": 0.5438457857142857,
+                  "upper": 0.56
+                },
+                {
+                  "absolute_gap": 0.22031150760822027,
+                  "count": 11,
+                  "lower": 0.56,
+                  "mean_iou": 0.8017186894264021,
+                  "mean_score": 0.5814071818181819,
+                  "upper": 0.6
+                },
+                {
+                  "absolute_gap": 0.06819176119812942,
+                  "count": 14,
+                  "lower": 0.6,
+                  "mean_iou": 0.6866445469124152,
+                  "mean_score": 0.6184527857142857,
+                  "upper": 0.64
+                },
+                {
+                  "absolute_gap": 0.01933826051646037,
+                  "count": 13,
+                  "lower": 0.64,
+                  "mean_iou": 0.6798021835933835,
+                  "mean_score": 0.6604639230769231,
+                  "upper": 0.68
+                },
+                {
+                  "absolute_gap": 0.03146886080501876,
+                  "count": 16,
+                  "lower": 0.68,
+                  "mean_iou": 0.7290855483050188,
+                  "mean_score": 0.6976166875,
+                  "upper": 0.72
+                },
+                {
+                  "absolute_gap": 0.06247868750108965,
+                  "count": 24,
+                  "lower": 0.72,
+                  "mean_iou": 0.8085584375010896,
+                  "mean_score": 0.7460797499999999,
+                  "upper": 0.76
+                },
+                {
+                  "absolute_gap": 0.019763904064542426,
+                  "count": 30,
+                  "lower": 0.76,
+                  "mean_iou": 0.8002986707312092,
+                  "mean_score": 0.7805347666666668,
+                  "upper": 0.8
+                },
+                {
+                  "absolute_gap": 0.014770592141284511,
+                  "count": 54,
+                  "lower": 0.8,
+                  "mean_iou": 0.8360262217709142,
+                  "mean_score": 0.8212556296296297,
+                  "upper": 0.84
+                },
+                {
+                  "absolute_gap": 0.0013378633771882198,
+                  "count": 65,
+                  "lower": 0.84,
+                  "mean_iou": 0.859454782776658,
+                  "mean_score": 0.8607926461538462,
+                  "upper": 0.88
+                },
+                {
+                  "absolute_gap": 0.0036559023786417733,
+                  "count": 108,
+                  "lower": 0.88,
+                  "mean_iou": 0.9028376523786416,
+                  "mean_score": 0.8991817499999998,
+                  "upper": 0.92
+                },
+                {
+                  "absolute_gap": 0.05802317140497759,
+                  "count": 81,
+                  "lower": 0.92,
+                  "mean_iou": 0.8802211742740345,
+                  "mean_score": 0.938244345679012,
+                  "upper": 0.96
+                },
+                {
+                  "absolute_gap": 0.3134476067778529,
+                  "count": 32,
+                  "lower": 0.96,
+                  "mean_iou": 0.6572801432221473,
+                  "mean_score": 0.9707277500000002,
+                  "upper": 1.0
+                }
+              ],
+              "confidence_threshold": 0.277888,
+              "evaluated_detections": 524,
+              "false_negatives": 41,
+              "false_positives": 28,
+              "laece0": 0.05840733842306087,
+              "lrp": 0.2691178408421315,
+              "lrp_fn": 0.07635009310986965,
+              "lrp_fp": 0.05343511450381679,
+              "lrp_loc": 0.16744270176573442,
+              "matching_iou_threshold": 0.0,
+              "num_valid_gt": 537,
+              "supported": true,
+              "true_positives": 496
+            },
+            "small_25_40": {
+              "bins": [
+                {
+                  "absolute_gap": 0.27890800000000004,
+                  "count": 2,
+                  "lower": 0.24,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.27890800000000004,
+                  "upper": 0.28
+                },
+                {
+                  "absolute_gap": 0.026090802379529543,
+                  "count": 6,
+                  "lower": 0.28,
+                  "mean_iou": 0.2713511976204705,
+                  "mean_score": 0.29744200000000004,
+                  "upper": 0.32
+                },
+                {
+                  "absolute_gap": 0.07143920149775279,
+                  "count": 10,
+                  "lower": 0.32,
+                  "mean_iou": 0.4092608014977528,
+                  "mean_score": 0.3378216,
+                  "upper": 0.36
+                },
+                {
+                  "absolute_gap": 0.2465767303472319,
+                  "count": 4,
+                  "lower": 0.36,
+                  "mean_iou": 0.1356885196527681,
+                  "mean_score": 0.38226525,
+                  "upper": 0.4
+                },
+                {
+                  "absolute_gap": 0.41508219999999996,
+                  "count": 5,
+                  "lower": 0.4,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.41508219999999996,
+                  "upper": 0.44
+                },
+                {
+                  "absolute_gap": 0.29513248994110763,
+                  "count": 2,
+                  "lower": 0.44,
+                  "mean_iou": 0.7536984899411077,
+                  "mean_score": 0.45856600000000003,
+                  "upper": 0.48
+                },
+                {
+                  "absolute_gap": 0.1438860621907948,
+                  "count": 4,
+                  "lower": 0.48,
+                  "mean_iou": 0.36531518780920513,
+                  "mean_score": 0.5092012499999999,
+                  "upper": 0.52
+                },
+                {
+                  "absolute_gap": 0.020274674281718585,
+                  "count": 3,
+                  "lower": 0.52,
+                  "mean_iou": 0.559007007615052,
+                  "mean_score": 0.5387323333333334,
+                  "upper": 0.56
+                },
+                {
+                  "absolute_gap": 0.2481101238628175,
+                  "count": 3,
+                  "lower": 0.56,
+                  "mean_iou": 0.8261444571961508,
+                  "mean_score": 0.5780343333333333,
+                  "upper": 0.6
+                },
+                {
+                  "absolute_gap": 0.30116269639748267,
+                  "count": 3,
+                  "lower": 0.6,
+                  "mean_iou": 0.3086526369358506,
+                  "mean_score": 0.6098153333333333,
+                  "upper": 0.64
+                },
+                {
+                  "absolute_gap": 0.1811316864445529,
+                  "count": 2,
+                  "lower": 0.64,
+                  "mean_iou": 0.839609186444553,
+                  "mean_score": 0.6584775,
+                  "upper": 0.68
+                },
+                {
+                  "absolute_gap": 0.17646215632905082,
+                  "count": 7,
+                  "lower": 0.68,
+                  "mean_iou": 0.5260727008138063,
+                  "mean_score": 0.7025348571428571,
+                  "upper": 0.72
+                },
+                {
+                  "absolute_gap": 0.18092515586222957,
+                  "count": 14,
+                  "lower": 0.72,
+                  "mean_iou": 0.5637492727091991,
+                  "mean_score": 0.7446744285714286,
+                  "upper": 0.76
+                },
+                {
+                  "absolute_gap": 0.2672672494261287,
+                  "count": 16,
+                  "lower": 0.76,
+                  "mean_iou": 0.5150592505738714,
+                  "mean_score": 0.7823265,
+                  "upper": 0.8
+                },
+                {
+                  "absolute_gap": 0.06713086673498547,
+                  "count": 31,
+                  "lower": 0.8,
+                  "mean_iou": 0.7516800042327562,
+                  "mean_score": 0.8188108709677416,
+                  "upper": 0.84
+                },
+                {
+                  "absolute_gap": 0.11009376247701663,
+                  "count": 33,
+                  "lower": 0.84,
+                  "mean_iou": 0.7516925708563165,
+                  "mean_score": 0.8617863333333331,
+                  "upper": 0.88
+                },
+                {
+                  "absolute_gap": 0.42236486774726006,
+                  "count": 38,
+                  "lower": 0.88,
+                  "mean_iou": 0.4739161059369505,
+                  "mean_score": 0.8962809736842106,
+                  "upper": 0.92
+                },
+                {
+                  "absolute_gap": 0.7457298474878509,
+                  "count": 18,
+                  "lower": 0.92,
+                  "mean_iou": 0.1897994858454824,
+                  "mean_score": 0.9355293333333332,
+                  "upper": 0.96
+                },
+                {
+                  "absolute_gap": 0.9417603868499919,
+                  "count": 4,
+                  "lower": 0.96,
+                  "mean_iou": 0.027322363150008095,
+                  "mean_score": 0.96908275,
+                  "upper": 1.0
+                }
+              ],
+              "confidence_threshold": 0.277888,
+              "evaluated_detections": 205,
+              "false_negatives": 10,
+              "false_positives": 28,
+              "laece0": 0.26695533614682965,
+              "lrp": 0.5095296203987684,
+              "lrp_fn": 0.053475935828877004,
+              "lrp_fp": 0.13658536585365855,
+              "lrp_loc": 0.4042308948346622,
+              "matching_iou_threshold": 0.0,
+              "num_valid_gt": 187,
+              "supported": true,
+              "true_positives": 177
+            }
+          }
+        },
+        "Cyclist": {
+          "confidence_threshold": 0.347098,
+          "targets": {
+            "far_gt_40m": {
+              "bins": [
+                {
+                  "absolute_gap": 0.0890181251018704,
+                  "count": 2,
+                  "lower": 0.36,
+                  "mean_iou": 0.28581887489812957,
+                  "mean_score": 0.374837,
+                  "upper": 0.4
+                },
+                {
+                  "absolute_gap": 0.550029,
+                  "count": 1,
+                  "lower": 0.52,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.550029,
+                  "upper": 0.56
+                }
+              ],
+              "confidence_threshold": 0.347098,
+              "evaluated_detections": 3,
+              "false_negatives": 0,
+              "false_positives": 2,
+              "laece0": 0.24268841673458028,
+              "lrp": 0.8094540834012469,
+              "lrp_fn": 0.0,
+              "lrp_fp": 0.6666666666666666,
+              "lrp_loc": 0.42836225020374086,
+              "matching_iou_threshold": 0.0,
+              "num_valid_gt": 1,
+              "supported": true,
+              "true_positives": 1
+            },
+            "occlusion_2": {
+              "bins": [
+                {
+                  "absolute_gap": 0.385601,
+                  "count": 1,
+                  "lower": 0.36,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.385601,
+                  "upper": 0.4
+                },
+                {
+                  "absolute_gap": 0.550029,
+                  "count": 1,
+                  "lower": 0.52,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.550029,
+                  "upper": 0.56
+                },
+                {
+                  "absolute_gap": 0.7003246294570935,
+                  "count": 1,
+                  "lower": 0.96,
+                  "mean_iou": 0.27458537054290655,
+                  "mean_score": 0.97491,
+                  "upper": 1.0
+                }
+              ],
+              "confidence_threshold": 0.347098,
+              "evaluated_detections": 3,
+              "false_negatives": 0,
+              "false_positives": 2,
+              "laece0": 0.5453182098190311,
+              "lrp": 0.9084715431523644,
+              "lrp_fn": 0.0,
+              "lrp_fp": 0.6666666666666666,
+              "lrp_loc": 0.7254146294570935,
+              "matching_iou_threshold": 0.0,
+              "num_valid_gt": 1,
+              "supported": true,
+              "true_positives": 1
+            },
+            "overall": {
+              "bins": [
+                {
+                  "absolute_gap": 0.06770678485390502,
+                  "count": 3,
+                  "lower": 0.36,
+                  "mean_iou": 0.4421434515205717,
+                  "mean_score": 0.3744366666666667,
+                  "upper": 0.4
+                },
+                {
+                  "absolute_gap": 0.1916876185107037,
+                  "count": 1,
+                  "lower": 0.48,
+                  "mean_iou": 0.6893206185107037,
+                  "mean_score": 0.497633,
+                  "upper": 0.52
+                },
+                {
+                  "absolute_gap": 0.550029,
+                  "count": 1,
+                  "lower": 0.52,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.550029,
+                  "upper": 0.56
+                },
+                {
+                  "absolute_gap": 0.20667253700549848,
+                  "count": 1,
+                  "lower": 0.56,
+                  "mean_iou": 0.7669635370054985,
+                  "mean_score": 0.560291,
+                  "upper": 0.6
+                },
+                {
+                  "absolute_gap": 0.12089559638884295,
+                  "count": 1,
+                  "lower": 0.64,
+                  "mean_iou": 0.792107596388843,
+                  "mean_score": 0.671212,
+                  "upper": 0.68
+                },
+                {
+                  "absolute_gap": 0.07641414751229647,
+                  "count": 3,
+                  "lower": 0.72,
+                  "mean_iou": 0.8131321475122966,
+                  "mean_score": 0.7367180000000001,
+                  "upper": 0.76
+                },
+                {
+                  "absolute_gap": 0.002914799648083055,
+                  "count": 2,
+                  "lower": 0.76,
+                  "mean_iou": 0.777817700351917,
+                  "mean_score": 0.7807325,
+                  "upper": 0.8
+                },
+                {
+                  "absolute_gap": 0.2315145984397089,
+                  "count": 1,
+                  "lower": 0.88,
+                  "mean_iou": 0.6836474015602911,
+                  "mean_score": 0.915162,
+                  "upper": 0.92
+                },
+                {
+                  "absolute_gap": 0.08899780845454053,
+                  "count": 5,
+                  "lower": 0.92,
+                  "mean_iou": 0.8552293915454594,
+                  "mean_score": 0.9442271999999999,
+                  "upper": 0.96
+                },
+                {
+                  "absolute_gap": 0.15344132821447642,
+                  "count": 12,
+                  "lower": 0.96,
+                  "mean_iou": 0.8285813384521904,
+                  "mean_score": 0.9820226666666668,
+                  "upper": 1.0
+                }
+              ],
+              "confidence_threshold": 0.347098,
+              "evaluated_detections": 30,
+              "false_negatives": 3,
+              "false_positives": 2,
+              "laece0": 0.13417589091953147,
+              "lrp": 0.31901138271450435,
+              "lrp_fn": 0.0967741935483871,
+              "lrp_fp": 0.06666666666666667,
+              "lrp_loc": 0.1974062724849516,
+              "matching_iou_threshold": 0.0,
+              "num_valid_gt": 31,
+              "supported": true,
+              "true_positives": 28
+            },
+            "small_25_40": {
+              "bins": [
+                {
+                  "absolute_gap": 0.0890181251018704,
+                  "count": 2,
+                  "lower": 0.36,
+                  "mean_iou": 0.28581887489812957,
+                  "mean_score": 0.374837,
+                  "upper": 0.4
+                },
+                {
+                  "absolute_gap": 0.550029,
+                  "count": 1,
+                  "lower": 0.52,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.550029,
+                  "upper": 0.56
+                },
+                {
+                  "absolute_gap": 0.05177779107182712,
+                  "count": 1,
+                  "lower": 0.72,
+                  "mean_iou": 0.6741152089281729,
+                  "mean_score": 0.725893,
+                  "upper": 0.76
+                },
+                {
+                  "absolute_gap": 0.7003246294570935,
+                  "count": 1,
+                  "lower": 0.96,
+                  "mean_iou": 0.27458537054290655,
+                  "mean_score": 0.97491,
+                  "upper": 1.0
+                }
+              ],
+              "confidence_threshold": 0.347098,
+              "evaluated_detections": 5,
+              "false_negatives": 0,
+              "false_positives": 2,
+              "laece0": 0.2960335341465323,
+              "lrp": 0.6959323341465323,
+              "lrp_fn": 0.0,
+              "lrp_fp": 0.4,
+              "lrp_loc": 0.4932205569108872,
+              "matching_iou_threshold": 0.0,
+              "num_valid_gt": 3,
+              "supported": true,
+              "true_positives": 3
+            }
+          }
+        },
+        "Pedestrian": {
+          "confidence_threshold": 0.372232,
+          "targets": {
+            "far_gt_40m": {
+              "bins": [
+                {
+                  "absolute_gap": 0.391583,
+                  "count": 1,
+                  "lower": 0.36,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.391583,
+                  "upper": 0.4
+                },
+                {
+                  "absolute_gap": 0.433506,
+                  "count": 1,
+                  "lower": 0.4,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.433506,
+                  "upper": 0.44
+                },
+                {
+                  "absolute_gap": 0.548617,
+                  "count": 1,
+                  "lower": 0.52,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.548617,
+                  "upper": 0.56
+                },
+                {
+                  "absolute_gap": 0.641737,
+                  "count": 1,
+                  "lower": 0.64,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.641737,
+                  "upper": 0.68
+                },
+                {
+                  "absolute_gap": 0.11333496104397611,
+                  "count": 1,
+                  "lower": 0.76,
+                  "mean_iou": 0.6624770389560238,
+                  "mean_score": 0.775812,
+                  "upper": 0.8
+                }
+              ],
+              "confidence_threshold": 0.372232,
+              "evaluated_detections": 5,
+              "false_negatives": 2,
+              "false_positives": 4,
+              "laece0": 0.42575559220879516,
+              "lrp": 0.9053604230062823,
+              "lrp_fn": 0.6666666666666666,
+              "lrp_fp": 0.8,
+              "lrp_loc": 0.33752296104397617,
+              "matching_iou_threshold": 0.0,
+              "num_valid_gt": 3,
+              "supported": true,
+              "true_positives": 1
+            },
+            "occlusion_2": {
+              "bins": [
+                {
+                  "absolute_gap": 0.13152122617095535,
+                  "count": 2,
+                  "lower": 0.36,
+                  "mean_iou": 0.2575972738290447,
+                  "mean_score": 0.38911850000000003,
+                  "upper": 0.4
+                },
+                {
+                  "absolute_gap": 0.433506,
+                  "count": 1,
+                  "lower": 0.4,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.433506,
+                  "upper": 0.44
+                },
+                {
+                  "absolute_gap": 0.3868878637492376,
+                  "count": 1,
+                  "lower": 0.44,
+                  "mean_iou": 0.07476513625076235,
+                  "mean_score": 0.461653,
+                  "upper": 0.48
+                },
+                {
+                  "absolute_gap": 0.548617,
+                  "count": 1,
+                  "lower": 0.52,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.548617,
+                  "upper": 0.56
+                },
+                {
+                  "absolute_gap": 0.641737,
+                  "count": 1,
+                  "lower": 0.64,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.641737,
+                  "upper": 0.68
+                },
+                {
+                  "absolute_gap": 0.2553834373163688,
+                  "count": 2,
+                  "lower": 0.84,
+                  "mean_iou": 0.6179435626836312,
+                  "mean_score": 0.873327,
+                  "upper": 0.88
+                }
+              ],
+              "confidence_threshold": 0.372232,
+              "evaluated_detections": 8,
+              "false_negatives": 8,
+              "false_positives": 4,
+              "laece0": 0.34806964884048575,
+              "lrp": 0.8858845744202428,
+              "lrp_fn": 0.6666666666666666,
+              "lrp_fp": 0.5,
+              "lrp_loc": 0.5435382976809715,
+              "matching_iou_threshold": 0.0,
+              "num_valid_gt": 12,
+              "supported": true,
+              "true_positives": 4
+            },
+            "overall": {
+              "bins": [
+                {
+                  "absolute_gap": 0.08698719289989465,
+                  "count": 3,
+                  "lower": 0.36,
+                  "mean_iou": 0.47563419289989467,
+                  "mean_score": 0.388647,
+                  "upper": 0.4
+                },
+                {
+                  "absolute_gap": 0.20005579921692385,
+                  "count": 4,
+                  "lower": 0.4,
+                  "mean_iou": 0.6218925492169238,
+                  "mean_score": 0.42183675,
+                  "upper": 0.44
+                },
+                {
+                  "absolute_gap": 0.015565357764905086,
+                  "count": 2,
+                  "lower": 0.44,
+                  "mean_iou": 0.48452235776490504,
+                  "mean_score": 0.46895699999999996,
+                  "upper": 0.48
+                },
+                {
+                  "absolute_gap": 0.38246455045887673,
+                  "count": 3,
+                  "lower": 0.48,
+                  "mean_iou": 0.8914222171255434,
+                  "mean_score": 0.5089576666666666,
+                  "upper": 0.52
+                },
+                {
+                  "absolute_gap": 0.09762364221375353,
+                  "count": 2,
+                  "lower": 0.52,
+                  "mean_iou": 0.45132885778624643,
+                  "mean_score": 0.5489525,
+                  "upper": 0.56
+                },
+                {
+                  "absolute_gap": 0.13778665073522833,
+                  "count": 3,
+                  "lower": 0.56,
+                  "mean_iou": 0.717133317401895,
+                  "mean_score": 0.5793466666666667,
+                  "upper": 0.6
+                },
+                {
+                  "absolute_gap": 0.1728556410935368,
+                  "count": 4,
+                  "lower": 0.6,
+                  "mean_iou": 0.7812031410935368,
+                  "mean_score": 0.6083475,
+                  "upper": 0.64
+                },
+                {
+                  "absolute_gap": 0.021863362505080475,
+                  "count": 5,
+                  "lower": 0.64,
+                  "mean_iou": 0.6785495625050805,
+                  "mean_score": 0.6566862,
+                  "upper": 0.68
+                },
+                {
+                  "absolute_gap": 0.12422289091345962,
+                  "count": 3,
+                  "lower": 0.68,
+                  "mean_iou": 0.832368224246793,
+                  "mean_score": 0.7081453333333334,
+                  "upper": 0.72
+                },
+                {
+                  "absolute_gap": 0.20370440960137615,
+                  "count": 1,
+                  "lower": 0.72,
+                  "mean_iou": 0.9283824096013762,
+                  "mean_score": 0.724678,
+                  "upper": 0.76
+                },
+                {
+                  "absolute_gap": 0.0011324249424138344,
+                  "count": 6,
+                  "lower": 0.76,
+                  "mean_iou": 0.7769695750575862,
+                  "mean_score": 0.7781020000000001,
+                  "upper": 0.8
+                },
+                {
+                  "absolute_gap": 0.017746894955345538,
+                  "count": 4,
+                  "lower": 0.8,
+                  "mean_iou": 0.8456133949553456,
+                  "mean_score": 0.8278665000000001,
+                  "upper": 0.84
+                },
+                {
+                  "absolute_gap": 0.008707017622776814,
+                  "count": 8,
+                  "lower": 0.84,
+                  "mean_iou": 0.8565376073772232,
+                  "mean_score": 0.865244625,
+                  "upper": 0.88
+                },
+                {
+                  "absolute_gap": 0.03799593646464139,
+                  "count": 14,
+                  "lower": 0.88,
+                  "mean_iou": 0.8598129206782158,
+                  "mean_score": 0.8978088571428572,
+                  "upper": 0.92
+                },
+                {
+                  "absolute_gap": 0.052906779282187344,
+                  "count": 8,
+                  "lower": 0.92,
+                  "mean_iou": 0.8831958457178127,
+                  "mean_score": 0.9361026250000001,
+                  "upper": 0.96
+                }
+              ],
+              "confidence_threshold": 0.372232,
+              "evaluated_detections": 70,
+              "false_negatives": 41,
+              "false_positives": 4,
+              "laece0": 0.07611520647955534,
+              "lrp": 0.5085188395142747,
+              "lrp_fn": 0.38317757009345793,
+              "lrp_fp": 0.05714285714285714,
+              "lrp_loc": 0.17341804827400745,
+              "matching_iou_threshold": 0.0,
+              "num_valid_gt": 107,
+              "supported": true,
+              "true_positives": 66
+            },
+            "small_25_40": {
+              "bins": [
+                {
+                  "absolute_gap": 0.391583,
+                  "count": 1,
+                  "lower": 0.36,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.391583,
+                  "upper": 0.4
+                },
+                {
+                  "absolute_gap": 0.433506,
+                  "count": 1,
+                  "lower": 0.4,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.433506,
+                  "upper": 0.44
+                },
+                {
+                  "absolute_gap": 0.548617,
+                  "count": 1,
+                  "lower": 0.52,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.548617,
+                  "upper": 0.56
+                },
+                {
+                  "absolute_gap": 0.641737,
+                  "count": 1,
+                  "lower": 0.64,
+                  "mean_iou": 0.0,
+                  "mean_score": 0.641737,
+                  "upper": 0.68
+                },
+                {
+                  "absolute_gap": 0.053668940397802456,
+                  "count": 2,
+                  "lower": 0.76,
+                  "mean_iou": 0.7338120596021975,
+                  "mean_score": 0.787481,
+                  "upper": 0.8
+                }
+              ],
+              "confidence_threshold": 0.372232,
+              "evaluated_detections": 6,
+              "false_negatives": 10,
+              "false_positives": 4,
+              "laece0": 0.35379681346593417,
+              "lrp": 0.9082734925497253,
+              "lrp_fn": 0.8333333333333334,
+              "lrp_fp": 0.6666666666666666,
+              "lrp_loc": 0.26618794039780247,
+              "matching_iou_threshold": 0.0,
+              "num_valid_gt": 12,
+              "supported": true,
+              "true_positives": 2
+            }
+          }
+        }
+      },
+      "prediction_dir": "E:\\myyolo\\stage11-v205-local-runtime-plain-20260826b\\runs\\plain-s0-b2-e15\\predictions\\labels"
+    }
+  },
+  "schema_version": 1,
+  "target_definitions": {
+    "far_gt_40m": {
+      "axis": "depth",
+      "include_lower": false,
+      "include_upper": false,
+      "lower": 40.0,
+      "name": "far_gt_40m",
+      "upper": null
+    },
+    "occlusion_2": {
+      "axis": "occlusion",
+      "include_lower": true,
+      "include_upper": true,
+      "lower": 2.0,
+      "name": "occlusion_2",
+      "upper": 2.0
+    },
+    "overall": null,
+    "small_25_40": {
+      "axis": "height",
+      "include_lower": false,
+      "include_upper": true,
+      "lower": 25.0,
+      "name": "small_25_40",
+      "upper": 40.0
+    }
+  }
+}

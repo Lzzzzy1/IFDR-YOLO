@@ -1,0 +1,252 @@
+{
+  "schema_version": 1,
+  "name": "yolo_evidence_gates_20260811",
+  "data_use_ledger": {
+    "fit": {
+      "path": "../../reports/p2_factorial_root_cause_20260811/raw/fit_ids.txt",
+      "count": 3341,
+      "role": "training"
+    },
+    "development": {
+      "path": "../../reports/p2_factorial_root_cause_20260811/raw/development_ids.txt",
+      "count": 371,
+      "role": "development_route_selection"
+    },
+    "historical_exposed": {
+      "path": "../../configs/splits/kitti_val.txt",
+      "count": 3769,
+      "role": "development_exposed"
+    },
+    "confirmation": null,
+    "test": {
+      "path": null,
+      "count": 7518,
+      "role": "official_kitti_test_hidden_labels",
+      "status": "BLOCKED"
+    }
+  },
+  "denominator_results": [
+    {
+      "name": "plain_p3p5_seed17_300_last",
+      "path": "../../reports/p3p5_vs_p2_diagnostics_20260811/formal10000/primary/diagnostics.json",
+      "side": "reference",
+      "split_path": "../../reports/p2_factorial_root_cause_20260811/raw/development_ids.txt",
+      "ground_truth_dir": "../../reports/p2_factorial_root_cause_20260811/raw/ground_truth_kitti"
+    },
+    {
+      "name": "plain_p2_seed17_300_last",
+      "path": "../../reports/p3p5_vs_p2_diagnostics_20260811/formal10000/primary/diagnostics.json",
+      "side": "candidate",
+      "split_path": "../../reports/p2_factorial_root_cause_20260811/raw/development_ids.txt",
+      "ground_truth_dir": "../../reports/p2_factorial_root_cause_20260811/raw/ground_truth_kitti"
+    },
+    {
+      "name": "C_seed17_30_last",
+      "path": "../../reports/p2_factorial_root_cause_20260811/raw/c-metrics_ap40.json",
+      "split_path": "../../reports/p2_factorial_root_cause_20260811/raw/development_ids.txt",
+      "ground_truth_dir": "../../reports/p2_factorial_root_cause_20260811/raw/ground_truth_kitti"
+    },
+    {
+      "name": "B_seed17_30_last",
+      "path": "../../reports/p2_factorial_root_cause_20260811/raw/b-metrics_ap40.json",
+      "split_path": "../../reports/p2_factorial_root_cause_20260811/raw/development_ids.txt",
+      "ground_truth_dir": "../../reports/p2_factorial_root_cause_20260811/raw/ground_truth_kitti"
+    },
+    {
+      "name": "AB_seed17_30_last",
+      "path": "../../reports/p2_factorial_root_cause_20260811/raw/ab-metrics_ap40.json",
+      "split_path": "../../reports/p2_factorial_root_cause_20260811/raw/development_ids.txt",
+      "ground_truth_dir": "../../reports/p2_factorial_root_cause_20260811/raw/ground_truth_kitti"
+    },
+    {
+      "name": "C_seed29_30_last",
+      "path": "../../reports/p2_interaction_confirmation_20260811/raw_remote/29-c/metrics_ap40.json",
+      "split_path": "../../reports/p2_factorial_root_cause_20260811/raw/development_ids.txt",
+      "ground_truth_dir": "../../reports/p2_factorial_root_cause_20260811/raw/ground_truth_kitti"
+    },
+    {
+      "name": "B_seed29_30_last",
+      "path": "../../reports/p2_interaction_confirmation_20260811/raw_remote/29-b/metrics_ap40.json",
+      "split_path": "../../reports/p2_factorial_root_cause_20260811/raw/development_ids.txt",
+      "ground_truth_dir": "../../reports/p2_factorial_root_cause_20260811/raw/ground_truth_kitti"
+    },
+    {
+      "name": "AB_seed29_30_last",
+      "path": "../../reports/p2_interaction_confirmation_20260811/raw_remote/29-ab/metrics_ap40.json",
+      "split_path": "../../reports/p2_factorial_root_cause_20260811/raw/development_ids.txt",
+      "ground_truth_dir": "../../reports/p2_factorial_root_cause_20260811/raw/ground_truth_kitti"
+    },
+    {
+      "name": "C_seed41_30_last",
+      "path": "../../reports/p2_interaction_confirmation_20260811/raw_remote/41-c/metrics_ap40.json",
+      "split_path": "../../reports/p2_factorial_root_cause_20260811/raw/development_ids.txt",
+      "ground_truth_dir": "../../reports/p2_factorial_root_cause_20260811/raw/ground_truth_kitti"
+    },
+    {
+      "name": "B_seed41_30_last",
+      "path": "../../reports/p2_interaction_confirmation_20260811/raw_remote/41-b/metrics_ap40.json",
+      "split_path": "../../reports/p2_factorial_root_cause_20260811/raw/development_ids.txt",
+      "ground_truth_dir": "../../reports/p2_factorial_root_cause_20260811/raw/ground_truth_kitti"
+    },
+    {
+      "name": "AB_seed41_30_last",
+      "path": "../../reports/p2_interaction_confirmation_20260811/raw_remote/41-ab/metrics_ap40.json",
+      "split_path": "../../reports/p2_factorial_root_cause_20260811/raw/development_ids.txt",
+      "ground_truth_dir": "../../reports/p2_factorial_root_cause_20260811/raw/ground_truth_kitti"
+    }
+  ],
+  "official_reconciliation": {
+    "official_zip": "E:/myyolo/kitti_project/downloads/devkit_object.zip",
+    "official_zip_sha256": "CE0B76B69C0C5F89690A0D65B7302BBBDB962A0C7E8ABA6EFC7050D1B04B4CF1",
+    "adapter_source": "../../scripts/check_ap40_reference.py",
+    "prediction_source": "../../reports/p3p5_vs_p2_diagnostics_20260811/formal10000/primary/diagnostics.json",
+    "internal_evaluator": "ifdr_yolo.eval.kitti_ap40.evaluate_class",
+    "official_tool": {
+      "available": false,
+      "compiler": null,
+      "executable": null,
+      "reason": "No local compiler or runnable official subset"
+    }
+  },
+  "storage_preflight": {
+    "workspace": ".",
+    "checkpoint_bytes": {
+      "last": 120000000,
+      "best": 120000000,
+      "periodic": 0
+    },
+    "log_peak_bytes": 500000000,
+    "prediction_peak_bytes": 150000000,
+    "mirror_peak_bytes": 250000000,
+    "headroom_bytes": 5368709120,
+    "retention": {
+      "save_period": -1,
+      "retain": ["last.pt", "best.pt"]
+    },
+    "resume_validation": {
+      "status": "PASS",
+      "test": "tests/test_p2_fit_reference.py (existing fake runner interruption/resume equivalence)",
+      "contract": "same output, same identity, last.pt epoch-level resume"
+    },
+    "sources": [
+      "../../scripts/run_p2_interaction_s0.py",
+      "../../ifdr_yolo/experiments/p2_fit_reference.py",
+      "../../tests/test_p2_interaction_s0.py",
+      "../../tests/test_p2_fit_reference.py"
+    ]
+  },
+  "protocol_rows": [
+    {
+      "name": "p3p5",
+      "model_role": "plain_p3p5",
+      "data_use_role": "development_diagnostic",
+      "split_sha256": "b1b6b6ee7e5398e93868fab407a2e8a86a53c753667002ef9b8381734ef2cda8",
+      "seed": 17,
+      "epochs": 300,
+      "imgsz": 640,
+      "checkpoint_role": "last.pt",
+      "evaluator": "internal_kitti_ap40",
+      "checkpoint_sha256": "b03ebcfbbde5212195e6a6e57d93637e33443c55515d9c8f8828ce77954fc150",
+      "source_paths": ["../../reports/p3p5_baseline_formal_20260811/p3p5_primary_metric.json"]
+    },
+    {
+      "name": "p2",
+      "model_role": "plain_p2",
+      "data_use_role": "development_diagnostic",
+      "split_sha256": "b1b6b6ee7e5398e93868fab407a2e8a86a53c753667002ef9b8381734ef2cda8",
+      "seed": 17,
+      "epochs": 300,
+      "imgsz": 640,
+      "checkpoint_role": "last.pt",
+      "evaluator": "internal_kitti_ap40",
+      "checkpoint_sha256": "c2f9c4c1b7be8697e64352ee2b0a99e5634d1a285b88017be44d71090e7d592c",
+      "source_paths": ["../../reports/paper_identity_20260811/oracle/base_metrics_ap40.json"]
+    },
+    {
+      "name": "c",
+      "model_role": "ifdr_c",
+      "data_use_role": "development_route_selection",
+      "split_sha256": "b1b6b6ee7e5398e93868fab407a2e8a86a53c753667002ef9b8381734ef2cda8",
+      "seed": 17,
+      "epochs": 30,
+      "imgsz": 640,
+      "checkpoint_role": "last.pt",
+      "evaluator": "internal_kitti_ap40",
+      "checkpoint_sha256": "8ce58085eb092b9cffb7d8532f77b92ba96fd2453f288cd1a0305befab1faa33",
+      "source_paths": ["../../reports/p2_factorial_root_cause_20260811/raw/c-metrics_ap40.json"]
+    },
+    {
+      "name": "b",
+      "model_role": "ifdr_b",
+      "data_use_role": "development_route_selection",
+      "split_sha256": "b1b6b6ee7e5398e93868fab407a2e8a86a53c753667002ef9b8381734ef2cda8",
+      "seed": 17,
+      "epochs": 30,
+      "imgsz": 640,
+      "checkpoint_role": "last.pt",
+      "evaluator": "internal_kitti_ap40",
+      "checkpoint_sha256": "a2808c17ed9afedc828511df25a581b04b498d4fb67ede35b5959d4d63515dc4",
+      "source_paths": ["../../reports/p2_factorial_root_cause_20260811/raw/b-metrics_ap40.json"]
+    },
+    {
+      "name": "ab",
+      "model_role": "ifdr_ab",
+      "data_use_role": "development_route_selection",
+      "split_sha256": "b1b6b6ee7e5398e93868fab407a2e8a86a53c753667002ef9b8381734ef2cda8",
+      "seed": 17,
+      "epochs": 30,
+      "imgsz": 640,
+      "checkpoint_role": "last.pt",
+      "evaluator": "internal_kitti_ap40",
+      "checkpoint_sha256": "cba2ad545b5b652b6ca3a774b606352017a96a0195d2b6443d7c24c63a420798",
+      "source_paths": ["../../reports/p2_factorial_root_cause_20260811/raw/ab-metrics_ap40.json"]
+    },
+    {
+      "name": "historical_57_vs_96",
+      "model_role": "legacy_summary",
+      "data_use_role": "development_exposed",
+      "split_sha256": "legacy",
+      "seed": 17,
+      "epochs": 300,
+      "imgsz": 640,
+      "checkpoint_role": "best.pt",
+      "evaluator": "mixed",
+      "metric": "57-vs-96 historical summary",
+      "source_paths": ["../../reports/p3p5_baseline_reuse_audit_20260811.md"]
+    }
+  ],
+  "independent_acceptance": {
+    "preregistered": {
+      "seeds": [17, 29, 41],
+      "comparisons": ["B-C", "AB-C", "AB-B"],
+      "minimum_meaningful_effect_ap": 1.0
+    },
+    "frozen_hypotheses": {
+      "H0": "no stable positive component or repair effect and no reproducible destructive interaction",
+      "H1_screen": "cause-matched repair recovers at least +1.0 AP over the strongest matched variant",
+      "H1_final": "at least +2.0 AP over clean P2, +6.0 AP over original P3-P5, three-seed direction agreement and paired CI lower > 0"
+    },
+    "stopping_gate": "stop the old-module route when no registered comparison satisfies the all-three-seed positive-delta, positive-mean, positive-CI rule; retain all negative and zero outcomes",
+    "seed_results": {
+      "17": {"B-C": 0.7091185987348467, "AB-C": 0.5478399569607291, "AB-B": -0.1612786417741177},
+      "29": {"B-C": -0.5603118284273, "AB-C": -0.64597010955353, "AB-B": -0.08565828112623},
+      "41": {"B-C": 0.8282398664234, "AB-C": 0.61125208564315, "AB-B": -0.21698778078025}
+    },
+    "no_harm": {
+      "status": "UNKNOWN",
+      "limits": {"per_class_drop_max_ap": 1.0, "near_large_drop_max_ap": 0.5},
+      "required_reports": ["small", "far", "FP", "FN", "latency"]
+    },
+    "source_paths": [
+      "../../reports/p2_factorial_screen_20260811/formal-final-10000-primary/factorial_bootstrap.json",
+      "../../reports/p2_factorial_root_cause_20260811/raw/b-metrics_ap40.json",
+      "../../reports/p2_factorial_root_cause_20260811/raw/c-metrics_ap40.json",
+      "../../reports/p2_interaction_confirmation_20260811/raw_remote/29-c",
+      "../../reports/p2_interaction_confirmation_20260811/raw_remote/29-b",
+      "../../reports/p2_interaction_confirmation_20260811/raw_remote/29-ab",
+      "../../reports/p2_interaction_confirmation_20260811/raw_remote/41-c",
+      "../../reports/p2_interaction_confirmation_20260811/raw_remote/41-b",
+      "../../reports/p2_interaction_confirmation_20260811/raw_remote/41-ab"
+    ]
+  }
+}

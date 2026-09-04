@@ -1,0 +1,35 @@
+{
+  "base_difficulty": "hard",
+  "candidate": {
+    "name": "ANCHORED",
+    "prediction_dir": "E:\\myyolo\\stage11-v213-anchored-rerun-20260827e\\runs\\b2-anchored-rerun-s0-b2-e15\\predictions\\labels"
+  },
+  "class_name": "Cyclist",
+  "comparison": {
+    "candidate_ap40": 3.3482142857142847,
+    "ci_lower": -54.96059113300489,
+    "ci_upper": -7.334795321637436,
+    "confidence": 0.95,
+    "difference_ap40": -21.651785714285715,
+    "iterations": 868,
+    "probability_improvement": 0.0,
+    "reference_ap40": 25.0,
+    "seed": 17
+  },
+  "metric": "KITTI_2D_CONDITIONAL_AP40_PAIRED_IMAGE_BOOTSTRAP",
+  "reference": {
+    "name": "B1",
+    "prediction_dir": "E:\\myyolo\\stage11-v209-local-runtime-b1-20260826b\\runs\\b1-s0-b2-e15\\predictions\\labels"
+  },
+  "schema_version": 1,
+  "split_count": 371,
+  "split_sha256": "b1b6b6ee7e5398e93868fab407a2e8a86a53c753667002ef9b8381734ef2cda8",
+  "target_slice": {
+    "axis": "depth",
+    "include_lower": false,
+    "include_upper": false,
+    "lower": 40.0,
+    "name": "far_gt_40m",
+    "upper": null
+  }
+}

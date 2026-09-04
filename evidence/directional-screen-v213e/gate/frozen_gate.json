@@ -1,0 +1,116 @@
+{
+  "baseline_overall_classes": {
+    "Cyclist": 90.27745421408665,
+    "Pedestrian": 81.55907288420515
+  },
+  "baseline_run": "PLAIN",
+  "candidate_overall_classes": {
+    "Cyclist": 88.84317633357963,
+    "Pedestrian": 83.10579163973927
+  },
+  "candidate_run": "ANCHORED",
+  "classes": [
+    "Pedestrian",
+    "Cyclist"
+  ],
+  "decision": "NO_GO",
+  "endpoint": "epoch15_last.pt_only",
+  "engineering_checks": {
+    "checkpoint_provenance": true,
+    "checkpoint_status_sha": true,
+    "gradient_schedule_and_pid": true,
+    "launcher_stderr_empty": true,
+    "launcher_stdout_terminal_marker": true,
+    "metrics_identity_split_macro": true,
+    "mirror_checkpoint_publication": true,
+    "mirror_manifest_records": true,
+    "predictions_exact_dev371": true,
+    "primary_mirror_control_files": true,
+    "primary_mirror_predictions": true,
+    "results_exact_15_epochs": true,
+    "screen_contract": true,
+    "split_contract": true,
+    "status_complete_epoch15": true
+  },
+  "engineering_pass": true,
+  "failed_engineering_checks": [],
+  "failed_gates": [
+    "overall",
+    "small",
+    "far",
+    "near"
+  ],
+  "gates": {
+    "far": {
+      "baseline": 17.71830738651242,
+      "candidate": 6.117415922415134,
+      "delta": -11.600891464097288,
+      "operator": ">",
+      "pass": false,
+      "threshold": 0.0
+    },
+    "large": {
+      "baseline": 93.67441110054963,
+      "candidate": 93.88256533519956,
+      "delta": 0.20815423464992477,
+      "operator": ">=",
+      "pass": true,
+      "threshold": 0.0
+    },
+    "near": {
+      "baseline": 91.33524407979871,
+      "candidate": 89.05374053039344,
+      "delta": -2.2815035494052722,
+      "operator": ">=",
+      "pass": false,
+      "threshold": 0.0
+    },
+    "overall": {
+      "baseline": 85.9182635491459,
+      "candidate": 85.97448398665945,
+      "delta": 0.05622043751354511,
+      "operator": ">=",
+      "pass": false,
+      "threshold": 1.1
+    },
+    "small": {
+      "baseline": 29.085361655460694,
+      "candidate": 22.757992927164032,
+      "delta": -6.327368728296662,
+      "operator": ">",
+      "pass": false,
+      "threshold": 0.0
+    }
+  },
+  "local_result_role": "directional_screen_not_formal",
+  "overall_metric": "Pedestrian/Cyclist Moderate macro AP_R40",
+  "provenance": {
+    "baseline_metrics": {
+      "path": "E:\\myyolo\\stage11-v205-local-runtime-plain-20260826b\\runs\\plain-s0-b2-e15\\metrics_ap40.json",
+      "sha256": "79482c77515580dd46f4ec45be6c089074fb74d95e565ba2fe3e50a3c0134020"
+    },
+    "candidate_metrics": {
+      "path": "E:\\myyolo\\stage11-v213-anchored-rerun-20260827e\\runs\\b2-anchored-rerun-s0-b2-e15\\metrics_ap40.json",
+      "sha256": "47b3d98eab79d0fd61e88fa5198bcaeed8575cc5e71fb47742873440f68dfbb4"
+    },
+    "engineering_evidence": {
+      "path": "E:\\myyolo\\stage11-v214-v213e-terminal-evaluation-20260827a\\engineering\\terminal_evidence.v2.json",
+      "sha256": "1a1b30328f31cb23edc2cd70c57e3b3d4945d5d653a1433cf64a077a00da4709"
+    },
+    "gate_evaluator": {
+      "path": "C:\\Users\\\u5f20\u73ae\u5029\\Documents\\Codex\\2026-08-27\\recovered-myyolo\\work\\ifdr-8h-20260827\\tools\\evaluate_frozen_gate.py",
+      "sha256": "3b08965b257689d4834a2af0f721785e907fd18aea1cf18a91b1c6a2a96a98a9"
+    },
+    "stratified_report": {
+      "path": "E:\\myyolo\\stage11-v214-v213e-terminal-evaluation-20260827a\\hard-gate\\stratified_ap40.json",
+      "sha256": "c085fb9476c3b2033d7a97f655ebbe98764eb656b9e1e0e474307fa5532c636b"
+    }
+  },
+  "schema_version": 1,
+  "scientific_pass": false,
+  "slice_base_difficulty": "hard",
+  "slice_metric": "KITTI_2D_CONDITIONAL_AP40",
+  "slice_report_role": "frozen_gate",
+  "split_count": 371,
+  "split_sha256": "b1b6b6ee7e5398e93868fab407a2e8a86a53c753667002ef9b8381734ef2cda8"
+}

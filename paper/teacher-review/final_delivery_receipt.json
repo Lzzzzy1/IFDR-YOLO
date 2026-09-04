@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "state": "PASS_READY_FOR_TEACHER_LOCAL_DEVELOPMENT_UPDATE",
+  "scope": "LOCAL_SEED0_BATCH2_15EPOCH_DIRECTION_SCREEN_ONLY",
+  "formal_server_conclusion": false,
+  "generated_at_utc": "2026-08-26T04:12:56.3797364Z",
+  "source_docx": {
+    "path": "E:\\myyolo\\teacher_report\\20260825_final_decision_v1\\IFDR-YOLO五种子确认性实验教师决策报告-2026-08-25.docx",
+    "bytes": 282559,
+    "sha256_before": "5088fa9d09bd9af1bbfcb79b64f64ad884005f8d1ac353a846d6dad24568e685",
+    "sha256_after": "5088fa9d09bd9af1bbfcb79b64f64ad884005f8d1ac353a846d6dad24568e685",
+    "unchanged": true
+  },
+  "output_docx": {
+    "path": "E:\\myyolo\\teacher_report\\20260826_development_update_v1\\IFDR-YOLO教师决策报告-development更新-2026-08-26.docx",
+    "bytes": 242801,
+    "sha256": "648c31186e26546db5152cdf34a1c6ffb2e96fc55e3f1994dfee441bd2b606bd"
+  },
+  "output_pdf": {
+    "path": "E:\\myyolo\\teacher_report\\20260826_development_update_v1\\render_word_v1\\IFDR-YOLO教师决策报告-development更新-2026-08-26.pdf",
+    "bytes": 852025,
+    "sha256": "f6c163fd6a0d92bdf5ed468500b70d167df2958ba1e14a8316544465f7486412",
+    "pages": 18,
+    "page_size": "A4"
+  },
+  "analysis": {
+    "path": "E:\\myyolo\\stage11-v210-three-cell-analysis\\final-corrected-b1-20260826-v1\\three_cell_analysis.json",
+    "bytes": 5512,
+    "sha256": "aae517c322fb027928fa62c01e6ae4036256f50cb52b42984b805c6921f0aa31",
+    "B0_gate": "FAIL_FAR_REGRESSION",
+    "B1_gate": "FAIL_SMALL_REGRESSION",
+    "candidate_authorized_for_server": false
+  },
+  "analysis_evidence_manifest": {
+    "path": "E:\\myyolo\\stage11-v210-three-cell-analysis\\final-corrected-b1-20260826-v1\\evidence_manifest.json",
+    "bytes": 4572,
+    "sha256": "741a9d209ea94d026917dd69f05fd2c24b461877ba415ec0dc9d60c25a27f657"
+  },
+  "structural_verification": {
+    "docx_zip_test": "PASS",
+    "docx_paragraphs": 136,
+    "docx_tables": 31,
+    "semantic_headings": 21,
+    "toc_field_present": true,
+    "section_17_present": true,
+    "media_count_preserved": 3,
+    "required_values_and_gate_states_present": true,
+    "replacement_characters": 0,
+    "pdf_parse": "PASS",
+    "pdf_pages": 18,
+    "pdf_page_size_points": [595.3, 841.9]
+  },
+  "visual_verification": {
+    "renderer": "Microsoft Word 12.0 export plus independent Poppler rasterization",
+    "pages_rendered": 18,
+    "pages_inspected": 18,
+    "clipping": 0,
+    "overlap": 0,
+    "missing_glyphs": 0,
+    "black_boxes": 0,
+    "p0_p1_defects": 0,
+    "page_png_manifest_sha256": "a90895ab2315b4aa455e8735a8c0f3b8aba0d3c4fda3b9201a714a2e768fb639"
+  },
+  "conversion_notes": {
+    "bundled_libreoffice_attempt": "FAIL_DEPENDENCY_NOT_INSTALLED_NO_PDF_CREATED",
+    "word_export": "PASS",
+    "word_quit_rpc_warning": true,
+    "word_process_remaining_after_export": false,
+    "poppler_parse_and_render": "PASS"
+  },
+  "claim_boundary": "The appended section is a local RTX 3060 Laptop, seed0, batch2, 15-epoch direction screen. It does not replace the existing server batch16, 30-epoch, five-seed confirmation result and does not authorize a paid server run.",
+  "server_connection_or_launch_performed": false,
+  "c_drive_project_writes": 0,
+  "d_drive_project_writes": 0
+}

@@ -1,0 +1,65 @@
+{
+  "created_at": "2026-09-02T23:10:02+08:00",
+  "status": "venue-neutral intermediate; scientific evidence frozen",
+  "training_launched": false,
+  "primary_pdf_pages": 8,
+  "docx_qa_pages": 7,
+  "visible_colored_elements": 0,
+  "files": [
+    {
+      "path": "outputs/P2-YOLOv8_Venue-Neutral_IEEE_Conference_Paper.pdf",
+      "bytes": 544278,
+      "sha256": "E2A234FE7C6B17A366128CE591DCDF2161CC9E39C556CC6C79F53EF45701A5C0"
+    },
+    {
+      "path": "outputs/P2-YOLOv8_Venue-Neutral_IEEE_Conference_Paper.docx",
+      "bytes": 290391,
+      "sha256": "4ADB95713D51C8E8EF76AA3682256BE0F76C852214B7174163008ECDF2C9D987"
+    },
+    {
+      "path": "outputs/P2-YOLOv8_EI_Candidate_Conference_Ledger.md",
+      "bytes": 6751,
+      "sha256": "5D00BF383C19D6A432FCACA083CEA669BD59271D064ABDACC307B76CE60D4B0F"
+    },
+    {
+      "path": "outputs/P2-YOLOv8_Venue-Neutral_Paper_Audit_Report.md",
+      "bytes": 9016,
+      "sha256": "00FC8656EB551F7CF2A14C227BBE7A15C9D590CE5726C85C786FE5A9E79A763E"
+    },
+    {
+      "path": "work/venue_neutral_ei/verification-report.json",
+      "bytes": 13296,
+      "sha256": "CF798616BE49CA07313E953F77B1D03BF585C12BA36B485C351C26FC0B8C86B8"
+    },
+    {
+      "path": "work/venue_neutral_ei/research-notes/task-venues.md",
+      "bytes": 8517,
+      "sha256": "420A95CB2E762A3CCEB2EAEF210DA163886DE5E55249F5654C35FF5B8BB07B58"
+    },
+    {
+      "path": "work/venue_neutral_ei/research-notes/registry.md",
+      "bytes": 3713,
+      "sha256": "7592C82EF79FE9551220BB010D0F63A0315FE027B7E411AFA1DD1DE4F9B9796B"
+    },
+    {
+      "path": "work/venue_neutral_ei/FORMAT_CONTRACT.md",
+      "bytes": 2096,
+      "sha256": "6C7AA216B1F9585A43CDD1552148E2C014042B2CAC4FDB4D39BD9B4E6442AE54"
+    },
+    {
+      "path": "work/conference_paper/latex/main.tex",
+      "bytes": 36902,
+      "sha256": "B27E4090874F2B4512ADBB8D9D849C1DB1439D9F1360FB60323B1C1C7D6E467D"
+    },
+    {
+      "path": "work/conference_paper/latex/references.bib",
+      "bytes": 6326,
+      "sha256": "2D10139BED115F4BAB4FD88B6B2BB18E8A7C0B7F083E6A80EDD21617A99B9D15"
+    },
+    {
+      "path": "work/conference_paper/PAPER_LAYOUT_LESSONS.md",
+      "bytes": 3664,
+      "sha256": "681EEB5B1C575C8857468B9B407515666518C5609CB76649DE96CFF5E0FB585B"
+    }
+  ]
+}

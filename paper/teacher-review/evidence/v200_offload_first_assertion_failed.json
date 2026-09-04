@@ -1,0 +1,12 @@
+{
+  "schema": "stage11-v200-local-offload-failed-assertion-v1",
+  "state": "FAILED_ASSERTION_PRESERVED",
+  "generation": "7bf25efa272e4ff5b94798744433b4c2",
+  "failed_assertion": "primary_file_count_equals_mirror_file_count",
+  "observed_primary_file_count": 3743,
+  "observed_mirror_file_count": 33,
+  "root_cause": "The system-disk mirror contract publishes only the 33 critical receipts and summary artifacts, while the data-disk primary also retains per-image prediction files. Equal total file counts are not a valid offload invariant.",
+  "scientific_result_affected": false,
+  "remote_mutation_performed": false,
+  "local_retransfer_performed": false
+}

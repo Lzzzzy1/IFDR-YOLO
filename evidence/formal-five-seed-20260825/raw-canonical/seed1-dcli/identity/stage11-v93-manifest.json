@@ -1,0 +1,171 @@
+{
+  "authorization": {
+    "five_seed": false,
+    "gpu": false,
+    "remote": false,
+    "required_scope": "REMOTE_GPU_STAGE11_SEEDS1_4_MATCHED_ONLY"
+  },
+  "candidate_order_within_seed": [
+    "P3P5_CONTROL",
+    "PLAIN_P2"
+  ],
+  "configs": {
+    "P3P5_CONTROL": {
+      "remaining": {
+        "1": {
+          "path": "configs/experiments/selection/stage11/kitti_p3p5_control_s1.yaml",
+          "sha256": "06c4bc6984cf8862580becbff456092cad25a0fb11765018c305abca80b4757b"
+        },
+        "2": {
+          "path": "configs/experiments/selection/stage11/kitti_p3p5_control_s2.yaml",
+          "sha256": "4621ebdb1756f291479efd681eda891920a4e70cc94991411a3568dba5a70800"
+        },
+        "3": {
+          "path": "configs/experiments/selection/stage11/kitti_p3p5_control_s3.yaml",
+          "sha256": "e95304ae0c6b90136a01dc4b11058f82f10336e615dd5b535c782c0c9bb3379d"
+        },
+        "4": {
+          "path": "configs/experiments/selection/stage11/kitti_p3p5_control_s4.yaml",
+          "sha256": "a0bb1f26c1b782686ebf6920a2fac2cc6677e59abec02cc4452cd1e87846e5e8"
+        }
+      },
+      "seed0_path": "configs/experiments/selection/kitti_p3p5_control_s0.yaml",
+      "seed0_sha256": "15f300d57b9e21976093fba0c9d128f6ac2965f8c70f2f87c81eeb589a877f80"
+    },
+    "PLAIN_P2": {
+      "remaining": {
+        "1": {
+          "path": "configs/experiments/selection/stage11/kitti_plain_p2_s1.yaml",
+          "sha256": "e6729e581b67dffac0c0ba0ed730cba8be16738bb0e8e992b7406fe6bf918ff0"
+        },
+        "2": {
+          "path": "configs/experiments/selection/stage11/kitti_plain_p2_s2.yaml",
+          "sha256": "d083081730ccd0cd2743a45c17ba13f89808aa853bf64aadc7ca81e228782e2d"
+        },
+        "3": {
+          "path": "configs/experiments/selection/stage11/kitti_plain_p2_s3.yaml",
+          "sha256": "1cace6e324629096452c13cfb23bc1329d8ababbff0d70da27bb8d868c1d1c56"
+        },
+        "4": {
+          "path": "configs/experiments/selection/stage11/kitti_plain_p2_s4.yaml",
+          "sha256": "943077cdd77604c13369d2ab11ed3177232d213ef28b1650f61c0f1bd03cea14"
+        }
+      },
+      "seed0_path": "configs/experiments/selection/kitti_plain_p2_s0.yaml",
+      "seed0_sha256": "7789e8ee69ce28bc5ddf6dbd591d9920faa0d137fe0d39e347cab8958e5a1a0a"
+    }
+  },
+  "entrypoints": {
+    "P3P5_CONTROL": {
+      "path": "scripts/run_p3p5_fit_reference.py",
+      "sha256": "c291903b136af116812c32fb06a9c756d6326bca201782db97750901585e9c97"
+    },
+    "PLAIN_P2": {
+      "path": "scripts/run_p2_fit_reference.py",
+      "sha256": "e388453b3f7965f15f2e34d93cc612ea87611e374dba6e5164afd51e15bfe2b0"
+    }
+  },
+  "matched_control": "P3P5_CONTROL",
+  "model_inputs": {
+    "P3P5_CONTROL": [
+      {
+        "path": "yolov8m.pt",
+        "sha256": "5d4a90cdc7a21786cc59cd19778e9eafff836df9e2da32524737c7ee6efe4fe5"
+      }
+    ],
+    "PLAIN_P2": [
+      {
+        "path": "models/kitti-p2-m.yaml",
+        "sha256": "0d2cbd9215dc62c4c9920127964ce0ab61b5d10581861d8e83c33fc168aa302a"
+      },
+      {
+        "path": "yolov8m.pt",
+        "sha256": "5d4a90cdc7a21786cc59cd19778e9eafff836df9e2da32524737c7ee6efe4fe5"
+      }
+    ]
+  },
+  "protocol": {
+    "batch": 16,
+    "development_count": 371,
+    "development_ids_sha256": "b1b6b6ee7e5398e93868fab407a2e8a86a53c753667002ef9b8381734ef2cda8",
+    "epochs": 30,
+    "evaluator": "ifdr_yolo.kitti_ap40",
+    "fit_count": 3341,
+    "fit_ids_sha256": "50a1f8d72b747d1e2f460a4e0a355469484d33fb1e9928b64ba6594c1873362",
+    "image_size": 640,
+    "primary_checkpoint": "last.pt",
+    "workers": 8
+  },
+  "remaining_queue": [
+    {
+      "candidate": "P3P5_CONTROL",
+      "epochs": 30,
+      "ordinal": 1,
+      "seed": 1,
+      "slug": "p3p5-control-s1"
+    },
+    {
+      "candidate": "PLAIN_P2",
+      "epochs": 30,
+      "ordinal": 2,
+      "seed": 1,
+      "slug": "plain-p2-s1"
+    },
+    {
+      "candidate": "P3P5_CONTROL",
+      "epochs": 30,
+      "ordinal": 3,
+      "seed": 2,
+      "slug": "p3p5-control-s2"
+    },
+    {
+      "candidate": "PLAIN_P2",
+      "epochs": 30,
+      "ordinal": 4,
+      "seed": 2,
+      "slug": "plain-p2-s2"
+    },
+    {
+      "candidate": "P3P5_CONTROL",
+      "epochs": 30,
+      "ordinal": 5,
+      "seed": 3,
+      "slug": "p3p5-control-s3"
+    },
+    {
+      "candidate": "PLAIN_P2",
+      "epochs": 30,
+      "ordinal": 6,
+      "seed": 3,
+      "slug": "plain-p2-s3"
+    },
+    {
+      "candidate": "P3P5_CONTROL",
+      "epochs": 30,
+      "ordinal": 7,
+      "seed": 4,
+      "slug": "p3p5-control-s4"
+    },
+    {
+      "candidate": "PLAIN_P2",
+      "epochs": 30,
+      "ordinal": 8,
+      "seed": 4,
+      "slug": "plain-p2-s4"
+    }
+  ],
+  "retained_completed_seed": 0,
+  "schema": "stage11-v93-five-seed-default-deny-manifest-v1",
+  "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ],
+  "selected_method": "PLAIN_P2",
+  "stage9_evidence_summary_sha256": "e57c0216592a64e01af807c24ef86b0e444eb5600e0f11b3dfdda3373e011833",
+  "stage9_local_verification_sha256": "6978f27213556ce5c9df76792f809afc39d93d4ce71da93a8e6da83ef7fee220",
+  "stage9_terminal_sha256": "ef029883b033b82591bc20acf179b7a37acd52fd5d6c2a4f5720d4ceb779765a",
+  "state": "PREPARED_DEFAULT_DENY_FIVE_SEED_AUTHORIZATION_REQUIRED"
+}

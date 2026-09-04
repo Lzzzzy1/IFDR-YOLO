@@ -1,0 +1,28 @@
+{
+  "schema": "stage11-v200-local-offload-subset-readback-v1",
+  "state": "PASS",
+  "generation": "7bf25efa272e4ff5b94798744433b4c2",
+  "primary": {
+    "path": "E:\\myyolo\\stage11-v200-slice-cost-offload-primary-7bf25efa272e4ff5b94798744433b4c2",
+    "file_count": 3743,
+    "file_bytes": 12871294
+  },
+  "mirror": {
+    "path": "E:\\myyolo\\stage11-v200-slice-cost-offload-mirror-7bf25efa272e4ff5b94798744433b4c2",
+    "file_count": 33,
+    "file_bytes": 7933242,
+    "all_files_are_byte_equal_subset_of_primary": true,
+    "subset_mismatch_count": 0
+  },
+  "terminal_receipt": {
+    "primary_sha256": "8547719f8c9ade21309feba5ecc98851ae1eef9ab3ad7429af2e27487aa0cf05",
+    "mirror_sha256": "8547719f8c9ade21309feba5ecc98851ae1eef9ab3ad7429af2e27487aa0cf05",
+    "byte_equal": true
+  },
+  "remote_observation": {
+    "primary_file_count": 3743,
+    "mirror_file_count": 33,
+    "primary_terminal_sha256": "8547719f8c9ade21309feba5ecc98851ae1eef9ab3ad7429af2e27487aa0cf05",
+    "mirror_terminal_sha256": "8547719f8c9ade21309feba5ecc98851ae1eef9ab3ad7429af2e27487aa0cf05"
+  }
+}

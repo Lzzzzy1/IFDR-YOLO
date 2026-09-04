@@ -1,0 +1,49 @@
+{
+  "bootstrap_seed": 17,
+  "complete": 7,
+  "failed": 1,
+  "iterations": 1000,
+  "pending": 0,
+  "schema_version": 1,
+  "started_at_unix": 1787781949.5191653,
+  "state": "failed",
+  "tasks": {
+    "PLAIN_vs_ANCHORED__s0__Cyclist__far_gt_40m": {
+      "command": "D:\\ana\\envs\\yolo\\python.exe E:\\myyolo\\stage11-v213-anchored-rerun-20260827e\\scripts\\evaluate_paired_bootstrap.py --reference-dir E:\\myyolo\\stage11-v205-local-runtime-plain-20260826b\\runs\\plain-s0-b2-e15\\predictions\\labels --candidate-dir E:\\myyolo\\stage11-v213-anchored-rerun-20260827e\\runs\\b2-anchored-rerun-s0-b2-e15\\predictions\\labels --reference-name PLAIN --candidate-name ANCHORED --class-name Cyclist --slice far_gt_40m --iterations 1000 --seed 17 --label-dir E:\\myyolo\\kitti_project\\kitti_raw\\training\\label_2\\training\\label_2 --image-dir E:\\myyolo\\kitti_project\\kitti_raw\\training\\image_2\\training\\image_2 --split E:\\myyolo\\stage11-v213-anchored-rerun-20260827e\\inputs\\development_ids.txt --output E:\\myyolo\\stage11-v214-v213e-terminal-evaluation-20260827a\\diagnostics\\paired-bootstrap\\PLAIN_vs_ANCHORED__s0__Cyclist__far_gt_40m.json",
+      "output": "E:\\myyolo\\stage11-v214-v213e-terminal-evaluation-20260827a\\diagnostics\\paired-bootstrap\\PLAIN_vs_ANCHORED__s0__Cyclist__far_gt_40m.json",
+      "return_code": 0,
+      "state": "failed"
+    },
+    "PLAIN_vs_ANCHORED__s0__Cyclist__large_gt_80": {
+      "output": "E:\\myyolo\\stage11-v214-v213e-terminal-evaluation-20260827a\\diagnostics\\paired-bootstrap\\PLAIN_vs_ANCHORED__s0__Cyclist__large_gt_80.json",
+      "state": "complete"
+    },
+    "PLAIN_vs_ANCHORED__s0__Cyclist__near_0_20m": {
+      "output": "E:\\myyolo\\stage11-v214-v213e-terminal-evaluation-20260827a\\diagnostics\\paired-bootstrap\\PLAIN_vs_ANCHORED__s0__Cyclist__near_0_20m.json",
+      "state": "complete"
+    },
+    "PLAIN_vs_ANCHORED__s0__Cyclist__small_25_40": {
+      "output": "E:\\myyolo\\stage11-v214-v213e-terminal-evaluation-20260827a\\diagnostics\\paired-bootstrap\\PLAIN_vs_ANCHORED__s0__Cyclist__small_25_40.json",
+      "state": "complete"
+    },
+    "PLAIN_vs_ANCHORED__s0__Pedestrian__far_gt_40m": {
+      "output": "E:\\myyolo\\stage11-v214-v213e-terminal-evaluation-20260827a\\diagnostics\\paired-bootstrap\\PLAIN_vs_ANCHORED__s0__Pedestrian__far_gt_40m.json",
+      "state": "complete"
+    },
+    "PLAIN_vs_ANCHORED__s0__Pedestrian__large_gt_80": {
+      "output": "E:\\myyolo\\stage11-v214-v213e-terminal-evaluation-20260827a\\diagnostics\\paired-bootstrap\\PLAIN_vs_ANCHORED__s0__Pedestrian__large_gt_80.json",
+      "state": "complete"
+    },
+    "PLAIN_vs_ANCHORED__s0__Pedestrian__near_0_20m": {
+      "output": "E:\\myyolo\\stage11-v214-v213e-terminal-evaluation-20260827a\\diagnostics\\paired-bootstrap\\PLAIN_vs_ANCHORED__s0__Pedestrian__near_0_20m.json",
+      "state": "complete"
+    },
+    "PLAIN_vs_ANCHORED__s0__Pedestrian__small_25_40": {
+      "output": "E:\\myyolo\\stage11-v214-v213e-terminal-evaluation-20260827a\\diagnostics\\paired-bootstrap\\PLAIN_vs_ANCHORED__s0__Pedestrian__small_25_40.json",
+      "state": "complete"
+    }
+  },
+  "total": 8,
+  "updated_at_unix": 1787782183.100582,
+  "workers": 4
+}

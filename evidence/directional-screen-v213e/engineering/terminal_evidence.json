@@ -1,0 +1,185 @@
+{
+  "checks": {
+    "checkpoint_provenance": true,
+    "checkpoint_status_sha": true,
+    "gradient_schedule_and_pid": true,
+    "launcher_stderr_empty": true,
+    "launcher_stdout_terminal_marker": true,
+    "metrics_identity_split_macro": true,
+    "mirror_checkpoint_publication": true,
+    "mirror_manifest_records": false,
+    "predictions_exact_dev371": true,
+    "primary_mirror_control_files": false,
+    "primary_mirror_predictions": true,
+    "results_exact_15_epochs": true,
+    "screen_contract": true,
+    "split_contract": true,
+    "status_complete_epoch15": true
+  },
+  "collector_sha256": "85993623548ac6ad01b299dcda906caa99e4bc9e6a29feaf1748f4e249259671",
+  "details": {
+    "checkpoint_provenance": {
+      "best_checkpoint_sha256": "7aa557c82cdd7e3cf504679afe09a85a553f8eb6eed2905a86568904d3c81705",
+      "checkpoint_role": "last.pt",
+      "checkpoint_sha256": "c6157a321dd539af1694a8a3cb8e36688e3e8004354d7edcb0446ad8cb85333d",
+      "identity_sha256": "b5047a2d097b1bb4679f58136aaf557484059bc131cf878cc47c4334d3ef78c3"
+    },
+    "checkpoint_status_sha": {
+      "sha256": "c6157a321dd539af1694a8a3cb8e36688e3e8004354d7edcb0446ad8cb85333d",
+      "size": 50758033
+    },
+    "gradient_schedule_and_pid": {
+      "active_valid_counts": {
+        "6": 32,
+        "7": 31,
+        "8": 32,
+        "9": 32,
+        "10": 34,
+        "11": 31,
+        "12": 34,
+        "13": 33,
+        "14": 33,
+        "15": 31
+      },
+      "epochs": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ],
+      "frozen_positive_counterfactual_records": 0,
+      "process_ids": [
+        29860
+      ],
+      "record_count": 501
+    },
+    "launcher_stderr_empty": {
+      "size": 0
+    },
+    "launcher_stdout_terminal_marker": {
+      "size": 4507811
+    },
+    "metrics_identity_split_macro": {
+      "calculated_macro_ap_r40": 85.97448398665945,
+      "cyclist_moderate_ap_r40": 88.84317633357963,
+      "evaluator": "ifdr_yolo.kitti_ap40",
+      "explicit_macro_ap_r40": 85.97448398665945,
+      "identity_sha256": "b5047a2d097b1bb4679f58136aaf557484059bc131cf878cc47c4334d3ef78c3",
+      "pedestrian_moderate_ap_r40": 83.10579163973927,
+      "split_count": 371,
+      "split_sha256": "b1b6b6ee7e5398e93868fab407a2e8a86a53c753667002ef9b8381734ef2cda8"
+    },
+    "mirror_checkpoint_publication": {
+      "actual_sha256": "c6157a321dd539af1694a8a3cb8e36688e3e8004354d7edcb0446ad8cb85333d",
+      "manifest_records": [
+        {
+          "name": "weights/last.pt",
+          "path": "weights/last.pt",
+          "sha256": "c6157a321dd539af1694a8a3cb8e36688e3e8004354d7edcb0446ad8cb85333d",
+          "size": 50758033
+        }
+      ],
+      "sidecar": [
+        "c6157a321dd539af1694a8a3cb8e36688e3e8004354d7edcb0446ad8cb85333d",
+        "last.pt"
+      ]
+    },
+    "mirror_manifest_records": {
+      "expected_count": 380,
+      "mismatches": [],
+      "record_count": 379
+    },
+    "predictions_exact_dev371": {
+      "actual_count": 371,
+      "expected_count": 371,
+      "extra": [],
+      "missing": [],
+      "non_txt": []
+    },
+    "primary_mirror_control_files": {
+      "mismatches": [
+        "assignment_diagnostics.jsonl"
+      ],
+      "sha256": {
+        "checkpoint_provenance.json": "a480e8efea41bc6f039db3417790a94453fe6ccca5886b781fc9edcb1aff179f",
+        "gradient_diagnostics.jsonl": "dda9895b5c1bcd4bf4d1b808323ca946ca82636966d0cc2a9183d5d03d6c576f",
+        "metrics_ap40.json": "47b3d98eab79d0fd61e88fa5198bcaeed8575cc5e71fb47742873440f68dfbb4",
+        "post_training_leakage_audit.json": "c66e8a7699cfe44f83da8c3fcba6e9d1bc07d5b1af67e059f39507c4c77a998f",
+        "results.csv": "9b7cbbeb26bab7259b19fc431c1109b915c92c9223b391406c729f1aa13d28f6",
+        "screen_manifest.json": "d30ec6fbf454b3224b4acd4d294b0d26fa77d5d54aa48bf4135e4acc836b5c5b",
+        "status.json": "8fffb97592d37c92a6dc94ab0b0694b7a3a24a89cd52205d8c5eaf0e8507a8f9"
+      }
+    },
+    "primary_mirror_predictions": {
+      "mirror_count": 371,
+      "mismatches": [],
+      "primary_count": 371
+    },
+    "results_exact_15_epochs": {
+      "epochs": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ],
+      "row_count": 15
+    },
+    "screen_contract": {
+      "development_count": 371,
+      "epochs": 15,
+      "execution_purpose": "local_low_memory_seed0_diagnostic",
+      "fit_count": 3341,
+      "identity_sha256": "b5047a2d097b1bb4679f58136aaf557484059bc131cf878cc47c4334d3ef78c3",
+      "primary_checkpoint_role": "last.pt",
+      "seed": 0
+    },
+    "split_contract": {
+      "development_count": 371,
+      "development_sha256": "b1b6b6ee7e5398e93868fab407a2e8a86a53c753667002ef9b8381734ef2cda8",
+      "development_unique": 371,
+      "fit_count": 3341,
+      "fit_sha256": "50a1f8d72b747d1e2f460a4e0a355469484d33dbf1e9928b64ba6594c1873362",
+      "fit_unique": 3341,
+      "overlap_count": 0
+    },
+    "status_complete_epoch15": {
+      "checkpoint_role": "last.pt",
+      "epoch": 15,
+      "identity_sha256": "b5047a2d097b1bb4679f58136aaf557484059bc131cf878cc47c4334d3ef78c3",
+      "pid": 29860,
+      "state": "complete"
+    }
+  },
+  "engineering_pass": false,
+  "expected_identity_sha256": "b5047a2d097b1bb4679f58136aaf557484059bc131cf878cc47c4334d3ef78c3",
+  "expected_split_sha256": "b1b6b6ee7e5398e93868fab407a2e8a86a53c753667002ef9b8381734ef2cda8",
+  "failed_checks": [
+    "primary_mirror_control_files",
+    "mirror_manifest_records"
+  ],
+  "mirror_root": "E:\\myyolo\\stage11-v213-anchored-rerun-20260827e\\mirror\\b2-anchored-rerun-s0-b2-e15",
+  "run_root": "E:\\myyolo\\stage11-v213-anchored-rerun-20260827e\\runs\\b2-anchored-rerun-s0-b2-e15",
+  "schema_version": 1
+}

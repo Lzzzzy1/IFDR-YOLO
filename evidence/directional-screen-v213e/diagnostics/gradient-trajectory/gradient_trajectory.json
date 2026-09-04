@@ -1,0 +1,349 @@
+{
+  "metric": "IFDR_FACTOR_COUNTERFACTUAL_GRADIENT_TRAJECTORY",
+  "runs": {
+    "ANCHORED": {
+      "coverage_complete": true,
+      "epoch_end": 15,
+      "epoch_start": 6,
+      "epochs": {
+        "10": {
+          "conflicts": 2,
+          "mean_cosine": 0.8559004708248026,
+          "mean_counterfactual_norm": 0.005995677927892436,
+          "mean_factor_norm": 0.02129598631633117,
+          "norm_ratio": 0.2815402789442325,
+          "skipped_null_cosine": 0,
+          "total_records": 34,
+          "valid_records": 34
+        },
+        "11": {
+          "conflicts": 3,
+          "mean_cosine": 0.7182669750144405,
+          "mean_counterfactual_norm": 0.006362544981041743,
+          "mean_factor_norm": 0.017148745711892843,
+          "norm_ratio": 0.3710210115617522,
+          "skipped_null_cosine": 2,
+          "total_records": 33,
+          "valid_records": 31
+        },
+        "12": {
+          "conflicts": 3,
+          "mean_cosine": 0.785534572951934,
+          "mean_counterfactual_norm": 0.007206337553832461,
+          "mean_factor_norm": 0.01785624773679849,
+          "norm_ratio": 0.40357513292008745,
+          "skipped_null_cosine": 0,
+          "total_records": 34,
+          "valid_records": 34
+        },
+        "13": {
+          "conflicts": 2,
+          "mean_cosine": 0.8518986304601034,
+          "mean_counterfactual_norm": 0.007828974221466166,
+          "mean_factor_norm": 0.01782134631084222,
+          "norm_ratio": 0.4393031864659487,
+          "skipped_null_cosine": 0,
+          "total_records": 33,
+          "valid_records": 33
+        },
+        "14": {
+          "conflicts": 2,
+          "mean_cosine": 0.8370067996509147,
+          "mean_counterfactual_norm": 0.009540237662749309,
+          "mean_factor_norm": 0.019591275927130922,
+          "norm_ratio": 0.48696356981719285,
+          "skipped_null_cosine": 0,
+          "total_records": 33,
+          "valid_records": 33
+        },
+        "15": {
+          "conflicts": 2,
+          "mean_cosine": 0.8266930445548026,
+          "mean_counterfactual_norm": 0.009932487549620771,
+          "mean_factor_norm": 0.01739657305241112,
+          "norm_ratio": 0.5709450660021891,
+          "skipped_null_cosine": 3,
+          "total_records": 34,
+          "valid_records": 31
+        },
+        "6": {
+          "conflicts": 2,
+          "mean_cosine": 0.7819751626811922,
+          "mean_counterfactual_norm": 0.0013193105623940937,
+          "mean_factor_norm": 0.02361183860921301,
+          "norm_ratio": 0.055874961040912635,
+          "skipped_null_cosine": 1,
+          "total_records": 33,
+          "valid_records": 32
+        },
+        "7": {
+          "conflicts": 2,
+          "mean_cosine": 0.8262473446947913,
+          "mean_counterfactual_norm": 0.0024329588913749303,
+          "mean_factor_norm": 0.02133901875406023,
+          "norm_ratio": 0.11401456268517525,
+          "skipped_null_cosine": 2,
+          "total_records": 33,
+          "valid_records": 31
+        },
+        "8": {
+          "conflicts": 2,
+          "mean_cosine": 0.7659538208972663,
+          "mean_counterfactual_norm": 0.0032668140411260538,
+          "mean_factor_norm": 0.01857595713227056,
+          "norm_ratio": 0.1758624881541567,
+          "skipped_null_cosine": 2,
+          "total_records": 34,
+          "valid_records": 32
+        },
+        "9": {
+          "conflicts": 3,
+          "mean_cosine": 0.8048399535473436,
+          "mean_counterfactual_norm": 0.004604246456437977,
+          "mean_factor_norm": 0.01953609415795654,
+          "norm_ratio": 0.23567896526352416,
+          "skipped_null_cosine": 1,
+          "total_records": 33,
+          "valid_records": 32
+        }
+      },
+      "missing_epochs": [],
+      "name": "ANCHORED",
+      "process_ids": [
+        29860
+      ],
+      "source": "E:\\myyolo\\stage11-v213-anchored-rerun-20260827e\\runs\\b2-anchored-rerun-s0-b2-e15\\gradient_diagnostics.jsonl",
+      "source_line_count": 501,
+      "source_sha256": "dda9895b5c1bcd4bf4d1b808323ca946ca82636966d0cc2a9183d5d03d6c576f"
+    },
+    "B1": {
+      "coverage_complete": true,
+      "epoch_end": 15,
+      "epoch_start": 6,
+      "epochs": {
+        "10": {
+          "conflicts": 10,
+          "mean_cosine": 0.33186949373168106,
+          "mean_counterfactual_norm": 0.011857939329381813,
+          "mean_factor_norm": 0.020496623700155932,
+          "norm_ratio": 0.5785313475453814,
+          "skipped_null_cosine": 0,
+          "total_records": 34,
+          "valid_records": 34
+        },
+        "11": {
+          "conflicts": 19,
+          "mean_cosine": -0.00785638464073981,
+          "mean_counterfactual_norm": 0.013685883300739431,
+          "mean_factor_norm": 0.01972877624775133,
+          "norm_ratio": 0.6937015823421555,
+          "skipped_null_cosine": 2,
+          "total_records": 33,
+          "valid_records": 31
+        },
+        "12": {
+          "conflicts": 17,
+          "mean_cosine": 0.027628283920314384,
+          "mean_counterfactual_norm": 0.01774287797674975,
+          "mean_factor_norm": 0.021308933028622586,
+          "norm_ratio": 0.832649760216392,
+          "skipped_null_cosine": 0,
+          "total_records": 34,
+          "valid_records": 34
+        },
+        "13": {
+          "conflicts": 20,
+          "mean_cosine": -0.021117341620000927,
+          "mean_counterfactual_norm": 0.019819800509139895,
+          "mean_factor_norm": 0.02089768938833114,
+          "norm_ratio": 0.9484206670334991,
+          "skipped_null_cosine": 0,
+          "total_records": 33,
+          "valid_records": 33
+        },
+        "14": {
+          "conflicts": 20,
+          "mean_cosine": -0.10429481473384482,
+          "mean_counterfactual_norm": 0.018444928950912348,
+          "mean_factor_norm": 0.02258973125594132,
+          "norm_ratio": 0.8165182994844683,
+          "skipped_null_cosine": 0,
+          "total_records": 33,
+          "valid_records": 33
+        },
+        "15": {
+          "conflicts": 19,
+          "mean_cosine": -0.14388152132291468,
+          "mean_counterfactual_norm": 0.022866070691135623,
+          "mean_factor_norm": 0.020479971603039774,
+          "norm_ratio": 1.1165089060837217,
+          "skipped_null_cosine": 3,
+          "total_records": 34,
+          "valid_records": 31
+        },
+        "6": {
+          "conflicts": 9,
+          "mean_cosine": 0.32572893117321655,
+          "mean_counterfactual_norm": 0.003161509212986857,
+          "mean_factor_norm": 0.02354072211892344,
+          "norm_ratio": 0.13429958507710546,
+          "skipped_null_cosine": 1,
+          "total_records": 33,
+          "valid_records": 32
+        },
+        "7": {
+          "conflicts": 12,
+          "mean_cosine": 0.2015859816944407,
+          "mean_counterfactual_norm": 0.005404928308581153,
+          "mean_factor_norm": 0.020740057672223738,
+          "norm_ratio": 0.260603340357136,
+          "skipped_null_cosine": 2,
+          "total_records": 33,
+          "valid_records": 31
+        },
+        "8": {
+          "conflicts": 16,
+          "mean_cosine": 0.1390320201171562,
+          "mean_counterfactual_norm": 0.0076279353015706874,
+          "mean_factor_norm": 0.019218024448491633,
+          "norm_ratio": 0.3969156830877787,
+          "skipped_null_cosine": 2,
+          "total_records": 34,
+          "valid_records": 32
+        },
+        "9": {
+          "conflicts": 17,
+          "mean_cosine": 0.0773522281087935,
+          "mean_counterfactual_norm": 0.00739973295458185,
+          "mean_factor_norm": 0.020455292920814827,
+          "norm_ratio": 0.3617515028128517,
+          "skipped_null_cosine": 1,
+          "total_records": 33,
+          "valid_records": 32
+        }
+      },
+      "missing_epochs": [],
+      "name": "B1",
+      "process_ids": [
+        17824
+      ],
+      "source": "E:\\myyolo\\stage11-v209-local-runtime-b1-20260826b\\runs\\b1-s0-b2-e15\\gradient_diagnostics.jsonl",
+      "source_line_count": 501,
+      "source_sha256": "ed6bc58fafa410fde7e191e1ba438a238fbd5699b6daf52dd18c98cc34629161"
+    },
+    "v212_partial": {
+      "coverage_complete": false,
+      "epoch_end": 15,
+      "epoch_start": 6,
+      "epochs": {
+        "10": {
+          "conflicts": 2,
+          "mean_cosine": 0.8559004708248026,
+          "mean_counterfactual_norm": 0.005995677927892436,
+          "mean_factor_norm": 0.02129598631633117,
+          "norm_ratio": 0.2815402789442325,
+          "skipped_null_cosine": 0,
+          "total_records": 34,
+          "valid_records": 34
+        },
+        "11": {
+          "conflicts": 3,
+          "mean_cosine": 0.7182669750144405,
+          "mean_counterfactual_norm": 0.006362544981041743,
+          "mean_factor_norm": 0.017148745711892843,
+          "norm_ratio": 0.3710210115617522,
+          "skipped_null_cosine": 2,
+          "total_records": 33,
+          "valid_records": 31
+        },
+        "12": {
+          "conflicts": 3,
+          "mean_cosine": 0.785534572951934,
+          "mean_counterfactual_norm": 0.007206337553832461,
+          "mean_factor_norm": 0.01785624773679849,
+          "norm_ratio": 0.40357513292008745,
+          "skipped_null_cosine": 0,
+          "total_records": 34,
+          "valid_records": 34
+        },
+        "13": {
+          "conflicts": 2,
+          "mean_cosine": 0.8518986304601034,
+          "mean_counterfactual_norm": 0.007828974221466166,
+          "mean_factor_norm": 0.01782134631084222,
+          "norm_ratio": 0.4393031864659487,
+          "skipped_null_cosine": 0,
+          "total_records": 33,
+          "valid_records": 33
+        },
+        "14": {
+          "conflicts": 1,
+          "mean_cosine": 0.8239535008158002,
+          "mean_counterfactual_norm": 0.010492169048770197,
+          "mean_factor_norm": 0.02141898128736232,
+          "norm_ratio": 0.48985378473442204,
+          "skipped_null_cosine": 0,
+          "total_records": 14,
+          "valid_records": 14
+        },
+        "6": {
+          "conflicts": 2,
+          "mean_cosine": 0.7819751626811922,
+          "mean_counterfactual_norm": 0.0013193105623940937,
+          "mean_factor_norm": 0.02361183860921301,
+          "norm_ratio": 0.055874961040912635,
+          "skipped_null_cosine": 1,
+          "total_records": 33,
+          "valid_records": 32
+        },
+        "7": {
+          "conflicts": 2,
+          "mean_cosine": 0.8262473446947913,
+          "mean_counterfactual_norm": 0.0024329588913749303,
+          "mean_factor_norm": 0.02133901875406023,
+          "norm_ratio": 0.11401456268517525,
+          "skipped_null_cosine": 2,
+          "total_records": 33,
+          "valid_records": 31
+        },
+        "8": {
+          "conflicts": 2,
+          "mean_cosine": 0.7659538208972663,
+          "mean_counterfactual_norm": 0.0032668140411260538,
+          "mean_factor_norm": 0.01857595713227056,
+          "norm_ratio": 0.1758624881541567,
+          "skipped_null_cosine": 2,
+          "total_records": 34,
+          "valid_records": 32
+        },
+        "9": {
+          "conflicts": 3,
+          "mean_cosine": 0.8048399535473436,
+          "mean_counterfactual_norm": 0.004604246456437977,
+          "mean_factor_norm": 0.01953609415795654,
+          "norm_ratio": 0.23567896526352416,
+          "skipped_null_cosine": 1,
+          "total_records": 33,
+          "valid_records": 32
+        }
+      },
+      "missing_epochs": [
+        15
+      ],
+      "name": "v212_partial",
+      "process_ids": [
+        4252
+      ],
+      "source": "E:\\myyolo\\stage11-v212-local-runtime-b2-20260826a\\runs\\b2-anchored-s0-b2-e15\\gradient_diagnostics.jsonl",
+      "source_line_count": 448,
+      "source_sha256": "751876c95257dae5fda02f7517e3e0fef396719aecc9568a5fe75b0bc3cb21f0"
+    }
+  },
+  "schema_version": 1,
+  "statistic": {
+    "conflicts": "stored conflict flag, validated as cosine < 0",
+    "mean_cosine": "arithmetic mean across retained epoch records",
+    "norm_ratio": "epoch mean counterfactual norm / epoch mean factor norm",
+    "record_filter": "finite semantic_anchor counterfactual::factor cosine"
+  }
+}

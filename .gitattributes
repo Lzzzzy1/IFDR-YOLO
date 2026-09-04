@@ -1,2 +1,17 @@
 configs/splits/*.txt text eol=lf
 models/*.yaml text eol=lf
+
+# Preserve frozen archive artifacts byte-for-byte. Their SHA-256 values are
+# part of the evidence package and must not change through EOL normalization.
+evidence/** -text
+reproducibility/formal-runtime/** -text
+paper/** -text
+docs/literature-review/** -text
+ARCHIVE_MANIFEST.json -text
+ARCHIVE_MANIFEST.sha256 -text
+
+# Office/PDF/raster deliverables are always binary.
+*.docx binary
+*.pdf binary
+*.png binary
+*.jpg binary

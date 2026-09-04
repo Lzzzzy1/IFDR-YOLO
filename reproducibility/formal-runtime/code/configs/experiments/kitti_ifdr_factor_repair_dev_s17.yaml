@@ -1,0 +1,101 @@
+schema_version: 1
+identity:
+  source_metadata_sha256: 9175690face41f0c0c9746cfe7064a734e63e7eea3e698c58ad3929c8f76abe4
+  images_metadata_sha256: 9d58b7da1e4822c0d3495444d35aae6bf4e95564a655120c4b832e9ac39a6e6f
+  raw_labels_sha256: ff45a14b5c113dc01e804074e67a1d4954a86ba433384901692abf264eb0ae50
+  split_sha256: 4fa45bbd585bfd655fd7760c935dd380278cddc19fe4e6de30a5888ce220c514
+  metadata_sha256: cf0e0267ff2094d525017362235783995de9b445b6eced13c95ba46efadf28f9
+  initialization_checkpoint_sha256: 5d4a90cdc7a21786cc59cd19778e9eafff836df9e2da32524737c7ee6efe4fe5
+  fit_ids_sha256: 50a1f8d72b747d1e2f460a4e0a355469484d33dbf1e9928b64ba6594c1873362
+  development_ids_sha256: b1b6b6ee7e5398e93868fab407a2e8a86a53c753667002ef9b8381734ef2cda8
+development:
+  seed: 20260805
+  fraction: 0.1
+conditions:
+  M1:
+    track: metadata
+    epochs: 60
+  M2:
+    track: metadata
+    epochs: 60
+  M3:
+    track: metadata
+    epochs: 60
+  F0:
+    track: factor
+    epochs: 30
+  F1:
+    track: factor
+    epochs: 30
+  F2:
+    track: factor
+    epochs: 30
+  F3:
+    track: factor
+    epochs: 30
+task_adaptation_epochs: 60
+max_selected_factor_repairs: 1
+early_stopping: false
+training:
+  imgsz: 640
+factor_loss:
+  natural_gain: 1.0
+  specificity_gain: 0.5
+  specificity_margin: 0.05
+  factor_weights:
+  - 1.0
+  - 1.0
+model:
+  nodes:
+  - 11
+  - 14
+  - 17
+  - 20
+  - 23
+  - 26
+  primary_nodes:
+  - 17
+  - 20
+  - 23
+  - 26
+paths:
+  metadata_jsonl: E:/myyolo/backups/pre-bdd-20260802/data/processed/kitti_yolo_v2/metadata/objects.jsonl
+  images_jsonl: E:/myyolo/backups/pre-bdd-20260802/data/processed/kitti_yolo_v2/metadata/images.jsonl
+  raw_label_dir: E:/myyolo/kitti_project/kitti_raw/training/label_2/training/label_2
+  initialization_checkpoint: E:/myyolo/kitti_project/.worktrees/degradation-evidence-gate/yolov8m.pt
+  output_root: runs/factor-repair
+schedule:
+  replay:
+    eta_peak: 0.3
+    ramp_epochs: 5
+    focus_end_epoch: 40
+    recovery_start_epoch: 41
+    total_epochs: 60
+    priority_clip_quantile: 0.95
+    eligible_floor: 0.05
+    replacement: true
+    draws_per_epoch: fit_count
+  factor_calibration:
+    epochs: 30
+    views_per_sample: 3
+    fusion_schedule: 0.0
+    dcli_schedule: 0.0
+  task_adaptation:
+    epochs: 60
+checkpoint_policy:
+  primary: last.pt
+  diagnostic: best.pt
+  early_stopping: false
+metadata_replay:
+  M1: original
+  M2: cyclist_uniform
+  M3: joint_score
+factor_gate:
+  seed17_min_positive_primary_directions: 3
+  formal_min_positive_seed_node_directions: 10
+  formal_total_seed_node_directions: 12
+  minimum_severity_ordering: 0.8
+  diagnostic_reverse_abs_rho: 0.1
+  selection_tie_tolerance: 1.0e-12
+  require_paired_delta_ci_lower_positive: true
+  require_zero_malformed: true

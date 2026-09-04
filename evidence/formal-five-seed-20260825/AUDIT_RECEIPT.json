@@ -1,0 +1,241 @@
+{
+  "schema": "plain-p2-dcli-teacher-complete-delivery-audit-v1",
+  "state": "PASS",
+  "package_root": "C:\\Users\\张玮倩\\Documents\\Codex\\2026-08-27\\recovered-myyolo\\outputs\\PLAIN_P2-DCLI-Teacher-Complete-20260903",
+  "file_count_before_receipt_and_manifest": 1084,
+  "byte_count_before_receipt_and_manifest": 43314269,
+  "runtime_source": {
+    "state": "PASS",
+    "base_manifest_source_files_verified": 279,
+    "formal_overlay_files_verified": 4,
+    "weight_like_files_in_delivery": 0,
+    "base_manifest_binary_files_intentionally_omitted": 1,
+    "p2_model_sha256": "0d2cbd9215dc62c4c9920127964ce0ab61b5d10581861d8e83c33fc168aa302a",
+    "v129_preparation_sha256": "25b866100084b28a847d5a763f105f33bcf74c5fe4292b642fa47dd6d310cd1f",
+    "v124_contract_sha256": "41f628fd318c182dfa3dd327d4007fdfa321f9f42a9586351771fb521caaf6c4",
+    "v128_executor_sha256": "ae123ba88ee50091781ba0a64de7dd31ca9c6c0017af81fa163be09c6278959c",
+    "analysis_raw_evidence_mirror_files_verified": 355,
+    "config_count": 10,
+    "configs": [
+      {
+        "seed": 0,
+        "candidate": "PLAIN_P2",
+        "sha256": "7789e8ee69ce28bc5ddf6dbd591d9920faa0d137fe0d39e347cab8958e5a1a0a",
+        "binding_source": "raw identity snapshot"
+      },
+      {
+        "seed": 0,
+        "candidate": "DCLI",
+        "sha256": "c7b23e0654921d9b46fae45ffa134e5c12baf518ed8a5549caa1443896cf1f29",
+        "binding_source": "raw identity snapshot"
+      },
+      {
+        "seed": 1,
+        "candidate": "PLAIN_P2",
+        "sha256": "e6729e581b67dffac0c0ba0ed730cba8be16738bb0e8e992b7406fe6bf918ff0",
+        "binding_source": "raw identity snapshot"
+      },
+      {
+        "seed": 1,
+        "candidate": "DCLI",
+        "sha256": "22d939b8958defa182082cfc528865187990afaa0e3612b4575ec99d0a049fff",
+        "binding_source": "raw identity snapshot"
+      },
+      {
+        "seed": 2,
+        "candidate": "PLAIN_P2",
+        "sha256": "d083081730ccd0cd2743a45c17ba13f89808aa853bf64aadc7ca81e228782e2d",
+        "binding_source": "formal identity binding receipt"
+      },
+      {
+        "seed": 2,
+        "candidate": "DCLI",
+        "sha256": "be4dc9d0414bb17ed7535b824eacd409541051ea2ce10893665d9924e2ebc40e",
+        "binding_source": "formal identity binding receipt"
+      },
+      {
+        "seed": 3,
+        "candidate": "PLAIN_P2",
+        "sha256": "1cace6e324629096452c13cfb23bc1329d8ababbff0d70da27bb8d868c1d1c56",
+        "binding_source": "formal identity binding receipt"
+      },
+      {
+        "seed": 3,
+        "candidate": "DCLI",
+        "sha256": "d8d3b39661f2d7654d7c7d0c49a3fa7971fc1ac1fa2329dda4e3d89fade12af8",
+        "binding_source": "formal identity binding receipt"
+      },
+      {
+        "seed": 4,
+        "candidate": "PLAIN_P2",
+        "sha256": "943077cdd77604c13369d2ab11ed3177232d213ef28b1650f61c0f1bd03cea14",
+        "binding_source": "formal identity binding receipt"
+      },
+      {
+        "seed": 4,
+        "candidate": "DCLI",
+        "sha256": "a0df9d7944240731f765f36e74fadc09b11b89aada1b257b5490035fb5596597",
+        "binding_source": "formal identity binding receipt"
+      }
+    ],
+    "formal_source_hashes": {
+      "code/scripts/run_p2_interaction_s0.py": "e6ce0009927796ca873a567c0abcaba4b01d5e40c47eb54f39c720eee0028fca",
+      "code/scripts/run_p2_fit_reference.py": "68adb165b5f5dbca7fa313f3a3979bc3ef1728019116eea3239fc51a8c85be9a",
+      "code/ifdr_yolo/experiments/p2_fit_reference.py": "4e27c873ab804f62d387c111f230bce31b00570b5a6aa33440a0681a77f13887",
+      "code/ifdr_yolo/experiments/stage11_full_recovery.py": "f7aee04708b535a3c950973227c860b4835f134e2d9121a8f5f324caa0872bfe"
+    }
+  },
+  "formal_five_seed_evidence": {
+    "state": "PASS",
+    "protocol": "KITTI_FIT3341_DEV371",
+    "split_count": 371,
+    "split_sha256": "b1b6b6ee7e5398e93868fab407a2e8a86a53c753667002ef9b8381734ef2cda8",
+    "run_count": 10,
+    "publication_receipt_count": 300,
+    "raw_identity_snapshot_run_count": 4,
+    "formal_binding_receipt_run_count": 10,
+    "raw_file_count": 355,
+    "analysis_output_file_count": 26,
+    "runs": [
+      {
+        "ordinal": 1,
+        "seed": 0,
+        "candidate": "PLAIN_P2",
+        "macro_ap_r40": 95.2505677707353,
+        "published_epochs": 30,
+        "terminal_state": "PASS",
+        "identity_snapshot_in_raw_canonical": true
+      },
+      {
+        "ordinal": 2,
+        "seed": 0,
+        "candidate": "DCLI",
+        "macro_ap_r40": 95.59284950590998,
+        "published_epochs": 30,
+        "terminal_state": "PASS",
+        "identity_snapshot_in_raw_canonical": true
+      },
+      {
+        "ordinal": 3,
+        "seed": 1,
+        "candidate": "DCLI",
+        "macro_ap_r40": 93.57902412312973,
+        "published_epochs": 30,
+        "terminal_state": "PASS",
+        "identity_snapshot_in_raw_canonical": true
+      },
+      {
+        "ordinal": 4,
+        "seed": 1,
+        "candidate": "PLAIN_P2",
+        "macro_ap_r40": 95.787155277606,
+        "published_epochs": 30,
+        "terminal_state": "PASS",
+        "identity_snapshot_in_raw_canonical": true
+      },
+      {
+        "ordinal": 5,
+        "seed": 2,
+        "candidate": "PLAIN_P2",
+        "macro_ap_r40": 95.62451829662214,
+        "published_epochs": 30,
+        "terminal_state": "PASS",
+        "identity_snapshot_in_raw_canonical": false
+      },
+      {
+        "ordinal": 6,
+        "seed": 2,
+        "candidate": "DCLI",
+        "macro_ap_r40": 93.57697163894147,
+        "published_epochs": 30,
+        "terminal_state": "PASS",
+        "identity_snapshot_in_raw_canonical": false
+      },
+      {
+        "ordinal": 7,
+        "seed": 3,
+        "candidate": "DCLI",
+        "macro_ap_r40": 94.71888057997441,
+        "published_epochs": 30,
+        "terminal_state": "PASS",
+        "identity_snapshot_in_raw_canonical": false
+      },
+      {
+        "ordinal": 8,
+        "seed": 3,
+        "candidate": "PLAIN_P2",
+        "macro_ap_r40": 95.84012663788073,
+        "published_epochs": 30,
+        "terminal_state": "PASS",
+        "identity_snapshot_in_raw_canonical": false
+      },
+      {
+        "ordinal": 9,
+        "seed": 4,
+        "candidate": "PLAIN_P2",
+        "macro_ap_r40": 94.44083163374322,
+        "published_epochs": 30,
+        "terminal_state": "PASS",
+        "identity_snapshot_in_raw_canonical": false
+      },
+      {
+        "ordinal": 10,
+        "seed": 4,
+        "candidate": "DCLI",
+        "macro_ap_r40": 94.38347414359038,
+        "published_epochs": 30,
+        "terminal_state": "PASS",
+        "identity_snapshot_in_raw_canonical": false
+      }
+    ],
+    "plain_macro_mean_ap_r40": 95.38863992331747,
+    "dcli_macro_mean_ap_r40": 94.37023999830919,
+    "plain_minus_dcli_mean_ap_r40": 1.018399925008285,
+    "paired_ci95_ap_r40": [
+      -0.4054911519938347,
+      2.4422910020104043
+    ],
+    "plain_wins": 4,
+    "dcli_wins": 1,
+    "scientific_conclusion": "DCLI stable improvement is not supported; PLAIN_P2 remains the paper main line."
+  },
+  "paper_alignment": {
+    "state": "PASS",
+    "chapter3_claim_checks": {
+      "four_scale_pyramid": true,
+      "detect_source_layers": true,
+      "dcli_beta": true,
+      "calibration_gain": true,
+      "factor_gain": true,
+      "schedule": true,
+      "fusion_gate_disabled": true,
+      "counterfactual_disabled": true,
+      "mechanism_not_endpoint": true
+    },
+    "paper_result_checks": {
+      "plain_mean": true,
+      "dcli_mean": true,
+      "paired_difference": true,
+      "ci_low": true,
+      "ci_high": true,
+      "negative_boundary": true
+    },
+    "pdf_page_counts": {
+      "P2-YOLOv8_Chapter_3_English_Draft.pdf": 5,
+      "P2-YOLOv8_Venue-Neutral_IEEE_Conference_Paper.pdf": 8,
+      "IFDR-YOLO五种子确认性实验教师决策报告-2026-08-25.pdf": 16
+    }
+  },
+  "security_boundary": {
+    "state": "PASS",
+    "forbidden_file_count": 0,
+    "credential_pattern_hit_count": 0
+  },
+  "scientific_boundary": {
+    "paper_main_line": "PLAIN_P2",
+    "dcli_role": "exploratory negative result and diagnostic contribution",
+    "dcli_stable_improvement_supported": false,
+    "local_15epoch_batch2_screen_is_formal": false,
+    "new_training_started_for_this_delivery": false
+  }
+}

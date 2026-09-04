@@ -8,6 +8,13 @@ __pycache__/
 kitti/
 kitti_raw/
 downloads/
+datasets/
+**/image_2/
+**/label_2/
+*.zip
+*.tar
+*.tar.gz
+*.tgz
 
 # Training artifacts and model weights
 runs/
@@ -15,10 +22,23 @@ runs/
 *.pth
 *.onnx
 *.engine
+*.ckpt
+*.safetensors
+optimizer*.bin
 
 # Generated temporary files
 tmp/
 *.log
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.venv/
+venv/
+env/
+*.tmp
+*.partial
+~$*
 
 # Generated datasets and evaluation caches
 data/processed/
@@ -26,3 +46,14 @@ data/cache/
 
 # Isolated development worktrees
 .worktrees/
+
+# Credentials and machine-local access material
+.env
+.env.*
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+credentials*
+secrets*
+cookies*

@@ -1,5 +1,57 @@
 # IFDR-YOLO
 
+> 2026-09-04 archive status: this private repository is the safe, reproducible
+> project archive for the PLAIN_P2/DCLI study. It contains source, frozen
+> configurations, split identities, raw metric JSON/CSV, audit receipts,
+> teacher-review documents, and manuscript deliverables. Licensed datasets,
+> model weights, checkpoints, full prediction dumps, caches, remote-access
+> material, and local environments are intentionally not distributed.
+
+## Frozen scientific result
+
+The formal experiment uses a disjoint KITTI-derived `fit3341 / development371`
+split, paired seeds `0-4`, 30 epochs, batch 16, 640-pixel input, and the final
+`last.pt` endpoint. The primary quantity is Moderate Pedestrian/Cyclist macro
+AP_R40 on the internal development subset.
+
+| Method | Five-seed mean | Standard deviation |
+|---|---:|---:|
+| PLAIN_P2 | 95.3886 | 0.5779 |
+| DCLI | 94.3702 | 0.8473 |
+
+The paired PLAIN_P2-minus-DCLI mean is `+1.0184` AP, with a 95% t interval of
+`[-0.4055, 2.4423]`; PLAIN_P2 is higher in four of five paired seeds. Therefore
+PLAIN_P2 is retained as the tested development choice, while DCLI is reported
+as an exploratory negative result rather than a stable improvement. These are
+internal development results, not official KITTI test-server scores. A causal
+P2-versus-three-scale gain is also not claimed because a matched three-scale
+control is absent.
+
+## Repository map
+
+- `ifdr_yolo/`, `scripts/`, `configs/`, `models/`, `tests/`: the versioned
+  research implementation and infrastructure.
+- `reproducibility/formal-runtime/`: the frozen formal runtime source closure,
+  exact seed configurations, and supporting measurement code used by the
+  five-seed evidence package.
+- `evidence/formal-five-seed-20260825/`: ten canonical terminal runs, raw AP40
+  metrics, epoch receipts, binding receipts, paired statistics, and explicit
+  verified/not-verified boundaries. No weights or image data are included.
+- `evidence/directional-screen-v213e/`: a separately labelled 15-epoch/batch-2
+  local directional screen. Its frozen decision is `NO_GO`; it is not formal
+  30-epoch/batch-16 evidence and cannot alter the formal conclusion.
+- `paper/AIAC2026-review/`: current seven-page, anonymous, venue-specific review
+  manuscript plus its format/evidence audit.
+- `paper/venue-neutral-ieee/`: venue-neutral IEEE-style editable DOCX/PDF and
+  audit; this is an intermediate manuscript, not a camera-ready claim.
+- `paper/chapter3/` and `paper/teacher-review/`: the English chapter and the
+  teacher-facing decision reports with compact evidence receipts.
+- `docs/literature-review/`: project-authored literature and protocol notes;
+  third-party source PDFs are not redistributed.
+
+See `ARCHIVE_SCOPE.md` for the exact inclusion/exclusion policy and
+`WEIGHTS_AND_DATA.md` for lawful data and weight reconstruction boundaries.
+
 IFDR-YOLO 是“基于干预监督与因子化退化可靠性学习的道路小目标检测”研究项目。当前主线不是简单叠加 P2、BiFPN 和 IoU 损失，而是学习具有明确退化语义的后验，并用同一后验控制 P2–P5 尺度路由与不确定性定位。
 
 ## 当前状态
@@ -26,7 +78,7 @@ configs/experiments/kitti_yolov8m_baseline_s17.yaml
 训练前全量预检数据、split、权重、环境和 Git：
 
 ```powershell
-& 'D:\ana\envs\yolo\python.exe' scripts/train_baseline.py `
+python scripts/train_baseline.py `
   --config configs/experiments/kitti_yolov8m_baseline_s17.yaml `
   --mode dry-run
 ```
@@ -34,7 +86,7 @@ configs/experiments/kitti_yolov8m_baseline_s17.yaml
 本地固定 16 train / 16 val 冒烟训练：
 
 ```powershell
-& 'D:\ana\envs\yolo\python.exe' scripts/train_baseline.py `
+python scripts/train_baseline.py `
   --config configs/experiments/kitti_yolov8m_baseline_s17.yaml `
   --mode smoke `
   --device 0
@@ -43,7 +95,7 @@ configs/experiments/kitti_yolov8m_baseline_s17.yaml
 AutoDL 正式 300 epoch 训练：
 
 ```powershell
-& 'D:\ana\envs\yolo\python.exe' scripts/train_baseline.py `
+python scripts/train_baseline.py `
   --config configs/experiments/kitti_yolov8m_baseline_s17.yaml `
   --mode full
 ```
@@ -79,17 +131,17 @@ configs/experiments/kitti_yolov8m_p2_s17.yaml
 正式 300 epoch 训练：
 
 ```powershell
-& 'D:\ana\envs\yolo\python.exe' scripts/train_baseline.py `
+python scripts/train_baseline.py `
   --config configs/experiments/kitti_yolov8m_p2_s17.yaml `
   --mode dry-run `
   --device 0
 
-& 'D:\ana\envs\yolo\python.exe' scripts/train_baseline.py `
+python scripts/train_baseline.py `
   --config configs/experiments/kitti_yolov8m_p2_s17.yaml `
   --mode smoke `
   --device 0
 
-& 'D:\ana\envs\yolo\python.exe' scripts/train_baseline.py `
+python scripts/train_baseline.py `
   --config configs/experiments/kitti_yolov8m_p2_s17.yaml `
   --mode full
 ```
@@ -112,10 +164,11 @@ Pillow 12.3.0
 PyYAML 6.0.3
 ```
 
-解释器：
+解释器：使用已激活、版本匹配的 Python 环境；下面所有命令均以
+`python` 表示该解释器。
 
 ```text
-D:\ana\envs\yolo\python.exe
+python
 ```
 
 ## 数据约定
@@ -123,14 +176,14 @@ D:\ana\envs\yolo\python.exe
 原始 KITTI 保持只读：
 
 ```text
-E:\myyolo\kitti_project\kitti_raw\training\image_2\training\image_2
-E:\myyolo\kitti_project\kitti_raw\training\label_2\training\label_2
+<KITTI_ROOT>\training\image_2\training\image_2
+<KITTI_ROOT>\training\label_2\training\label_2
 ```
 
 派生数据写入：
 
 ```text
-E:\myyolo\kitti_project\data\processed\kitti_yolo_v2
+data\processed\kitti_yolo_v2
 ```
 
 原始数据、派生数据、模型权重和训练运行目录均不提交到 Git。
@@ -138,7 +191,7 @@ E:\myyolo\kitti_project\data\processed\kitti_yolo_v2
 ## 测试
 
 ```powershell
-& 'D:\ana\envs\yolo\python.exe' -m unittest discover -s tests -v
+python -m unittest discover -s tests -v
 ```
 
 ## 固定划分
@@ -154,22 +207,22 @@ configs/splits/source.json
 重新导入下载好的上游文件：
 
 ```powershell
-& 'D:\ana\envs\yolo\python.exe' scripts/import_kitti_split.py `
+python scripts/import_kitti_split.py `
   --train-source 'tmp\kitti_splits\train.txt' `
   --val-source 'tmp\kitti_splits\val.txt' `
-  --image-dir 'E:\myyolo\kitti_project\kitti_raw\training\image_2\training\image_2' `
-  --label-dir 'E:\myyolo\kitti_project\kitti_raw\training\label_2\training\label_2'
+  --image-dir "$env:KITTI_ROOT\training\image_2\training\image_2" `
+  --label-dir "$env:KITTI_ROOT\training\label_2\training\label_2"
 ```
 
 ## 重建 KITTI YOLO 数据
 
 ```powershell
-& 'D:\ana\envs\yolo\python.exe' scripts/rebuild_kitti.py `
-  --image-dir 'E:\myyolo\kitti_project\kitti_raw\training\image_2\training\image_2' `
-  --label-dir 'E:\myyolo\kitti_project\kitti_raw\training\label_2\training\label_2' `
+python scripts/rebuild_kitti.py `
+  --image-dir "$env:KITTI_ROOT\training\image_2\training\image_2" `
+  --label-dir "$env:KITTI_ROOT\training\label_2\training\label_2" `
   --train-ids 'configs\splits\kitti_train.txt' `
   --val-ids 'configs\splits\kitti_val.txt' `
-  --output-dir 'E:\myyolo\kitti_project\data\processed\kitti_yolo_v2'
+  --output-dir 'data\processed\kitti_yolo_v2'
 ```
 
 若派生目录已经存在，只有明确确认重建时才添加：
@@ -189,10 +242,10 @@ class_id x_center y_center width height confidence
 运行：
 
 ```powershell
-& 'D:\ana\envs\yolo\python.exe' scripts/evaluate_kitti.py `
+python scripts/evaluate_kitti.py `
   --prediction-dir 'path\to\predictions' `
-  --label-dir 'E:\myyolo\kitti_project\kitti_raw\training\label_2\training\label_2' `
-  --image-dir 'E:\myyolo\kitti_project\kitti_raw\training\image_2\training\image_2' `
+  --label-dir "$env:KITTI_ROOT\training\label_2\training\label_2" `
+  --image-dir "$env:KITTI_ROOT\training\image_2\training\image_2" `
   --split 'configs\splits\kitti_val.txt' `
   --output 'runs\example\metrics_ap40.json'
 ```
@@ -204,7 +257,7 @@ class_id x_center y_center width height confidence
 下载 OpenPCDet 的 `eval.py` 和 `rotate_iou.py` 后运行：
 
 ```powershell
-& 'D:\ana\envs\yolo\python.exe' scripts/check_ap40_reference.py `
+python scripts/check_ap40_reference.py `
   --reference-dir 'tmp\reference\openpcdet_eval' `
   --output 'docs\reports\ap40-reference-check.json'
 ```
@@ -212,10 +265,10 @@ class_id x_center y_center width height confidence
 ## Phase 1 一键验收
 
 ```powershell
-& 'D:\ana\envs\yolo\python.exe' scripts/audit_phase1.py `
-  --image-dir 'E:\myyolo\kitti_project\kitti_raw\training\image_2\training\image_2' `
-  --label-dir 'E:\myyolo\kitti_project\kitti_raw\training\label_2\training\label_2' `
-  --generated-dir 'E:\myyolo\kitti_project\data\processed\kitti_yolo_v2'
+python scripts/audit_phase1.py `
+  --image-dir "$env:KITTI_ROOT\training\image_2\training\image_2" `
+  --label-dir "$env:KITTI_ROOT\training\label_2\training\label_2" `
+  --generated-dir 'data\processed\kitti_yolo_v2'
 ```
 
 验收成功必须以以下文本结束：

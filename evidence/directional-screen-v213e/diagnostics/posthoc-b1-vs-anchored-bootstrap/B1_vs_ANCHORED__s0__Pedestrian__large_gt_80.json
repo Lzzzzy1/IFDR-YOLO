@@ -1,0 +1,35 @@
+{
+  "base_difficulty": "hard",
+  "candidate": {
+    "name": "ANCHORED",
+    "prediction_dir": "E:\\myyolo\\stage11-v213-anchored-rerun-20260827e\\runs\\b2-anchored-rerun-s0-b2-e15\\predictions\\labels"
+  },
+  "class_name": "Pedestrian",
+  "comparison": {
+    "candidate_ap40": 88.50587141113984,
+    "ci_lower": -2.872633454516133,
+    "ci_upper": 2.0766515543894224,
+    "confidence": 0.95,
+    "difference_ap40": -0.259642650664361,
+    "iterations": 1000,
+    "probability_improvement": 0.405,
+    "reference_ap40": 88.7655140618042,
+    "seed": 17
+  },
+  "metric": "KITTI_2D_CONDITIONAL_AP40_PAIRED_IMAGE_BOOTSTRAP",
+  "reference": {
+    "name": "B1",
+    "prediction_dir": "E:\\myyolo\\stage11-v209-local-runtime-b1-20260826b\\runs\\b1-s0-b2-e15\\predictions\\labels"
+  },
+  "schema_version": 1,
+  "split_count": 371,
+  "split_sha256": "b1b6b6ee7e5398e93868fab407a2e8a86a53c753667002ef9b8381734ef2cda8",
+  "target_slice": {
+    "axis": "height",
+    "include_lower": false,
+    "include_upper": false,
+    "lower": 80.0,
+    "name": "large_gt_80",
+    "upper": null
+  }
+}

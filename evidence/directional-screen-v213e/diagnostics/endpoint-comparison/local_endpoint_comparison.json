@@ -1,0 +1,252 @@
+{
+  "anchored_minus_b1": {
+    "far": -10.71670497925017,
+    "large": -0.5001916957025401,
+    "near": -1.4698865454945604,
+    "overall": -1.8334445700814541,
+    "small": -4.462642044633597
+  },
+  "anchored_minus_b1_overall_classes": {
+    "Cyclist": -2.5056819119851355,
+    "Pedestrian": -1.1612072281777728
+  },
+  "anchored_vs_b1_finding": "ANCHORED_BELOW_B1_ON_ALL_FIVE_ENDPOINTS",
+  "frozen_gate_contract": {
+    "far": "> 0",
+    "large": ">= 0",
+    "near": ">= 0",
+    "overall": ">= +1.1",
+    "small": "> 0"
+  },
+  "local_result_role": "directional_screen_not_formal",
+  "metric": "Moderate Pedestrian/Cyclist macro AP_R40 plus frozen HARD conditional slices",
+  "provenance": {
+    "frozen_gate": {
+      "path": "E:\\myyolo\\stage11-v214-v213e-terminal-evaluation-20260827a\\gate\\frozen_gate.json",
+      "sha256": "524435ba9e52a594cd45fc673a553a2fa9b86259b598e0ca22f7b01159061bdb"
+    },
+    "historical_analysis": {
+      "path": "E:\\myyolo\\stage11-v210-three-cell-analysis\\final-corrected-b1-20260826-v1\\three_cell_analysis.json",
+      "sha256": "aae517c322fb027928fa62c01e6ae4036256f50cb52b42984b805c6921f0aa31"
+    }
+  },
+  "ranks": {
+    "far": [
+      {
+        "ap_r40": 17.71830738651242,
+        "run": "PLAIN"
+      },
+      {
+        "ap_r40": 16.834120901665305,
+        "run": "B1"
+      },
+      {
+        "ap_r40": 9.999773798547299,
+        "run": "B0"
+      },
+      {
+        "ap_r40": 6.117415922415134,
+        "run": "ANCHORED"
+      }
+    ],
+    "large": [
+      {
+        "ap_r40": 94.3827570309021,
+        "run": "B1"
+      },
+      {
+        "ap_r40": 94.27833481172387,
+        "run": "B0"
+      },
+      {
+        "ap_r40": 93.88256533519956,
+        "run": "ANCHORED"
+      },
+      {
+        "ap_r40": 93.67441110054963,
+        "run": "PLAIN"
+      }
+    ],
+    "near": [
+      {
+        "ap_r40": 92.17684080927233,
+        "run": "B0"
+      },
+      {
+        "ap_r40": 91.33524407979871,
+        "run": "PLAIN"
+      },
+      {
+        "ap_r40": 90.523627075888,
+        "run": "B1"
+      },
+      {
+        "ap_r40": 89.05374053039344,
+        "run": "ANCHORED"
+      }
+    ],
+    "overall": [
+      {
+        "ap_r40": 87.8079285567409,
+        "run": "B1"
+      },
+      {
+        "ap_r40": 87.77709415284292,
+        "run": "B0"
+      },
+      {
+        "ap_r40": 85.97448398665945,
+        "run": "ANCHORED"
+      },
+      {
+        "ap_r40": 85.9182635491459,
+        "run": "PLAIN"
+      }
+    ],
+    "small": [
+      {
+        "ap_r40": 33.789993072787894,
+        "run": "B0"
+      },
+      {
+        "ap_r40": 29.085361655460694,
+        "run": "PLAIN"
+      },
+      {
+        "ap_r40": 27.22063497179763,
+        "run": "B1"
+      },
+      {
+        "ap_r40": 22.757992927164032,
+        "run": "ANCHORED"
+      }
+    ]
+  },
+  "runs": {
+    "ANCHORED": {
+      "decision": "NO_GO",
+      "delta_vs_plain": {
+        "far": -11.600891464097288,
+        "large": 0.20815423464992477,
+        "near": -2.2815035494052722,
+        "overall": 0.05622043751354511,
+        "small": -6.327368728296662
+      },
+      "failed_gates": [
+        "overall",
+        "small",
+        "far",
+        "near"
+      ],
+      "gate_checks": {
+        "far": false,
+        "large": true,
+        "near": false,
+        "overall": false,
+        "small": false
+      },
+      "overall_classes": {
+        "Cyclist": 88.84317633357963,
+        "Pedestrian": 83.10579163973927
+      },
+      "values": {
+        "far": 6.117415922415134,
+        "large": 93.88256533519956,
+        "near": 89.05374053039344,
+        "overall": 85.97448398665945,
+        "small": 22.757992927164032
+      }
+    },
+    "B0": {
+      "decision": "NO_GO",
+      "delta_vs_plain": {
+        "far": -7.718533587965123,
+        "large": 0.6039237111742324,
+        "near": 0.841596729473622,
+        "overall": 1.8588306036970152,
+        "small": 4.7046314173271995
+      },
+      "failed_gates": [
+        "far"
+      ],
+      "gate_checks": {
+        "far": false,
+        "large": true,
+        "near": true,
+        "overall": true,
+        "small": true
+      },
+      "overall_classes": {
+        "Cyclist": 92.01965883549276,
+        "Pedestrian": 83.53452947019306
+      },
+      "values": {
+        "far": 9.999773798547299,
+        "large": 94.27833481172387,
+        "near": 92.17684080927233,
+        "overall": 87.77709415284292,
+        "small": 33.789993072787894
+      }
+    },
+    "B1": {
+      "decision": "NO_GO",
+      "delta_vs_plain": {
+        "far": -0.8841864848471168,
+        "large": 0.7083459303524648,
+        "near": -0.8116170039107118,
+        "overall": 1.8896650075949992,
+        "small": -1.864726683663065
+      },
+      "failed_gates": [
+        "small",
+        "far",
+        "near"
+      ],
+      "gate_checks": {
+        "far": false,
+        "large": true,
+        "near": false,
+        "overall": true,
+        "small": false
+      },
+      "overall_classes": {
+        "Cyclist": 91.34885824556477,
+        "Pedestrian": 84.26699886791704
+      },
+      "values": {
+        "far": 16.834120901665305,
+        "large": 94.3827570309021,
+        "near": 90.523627075888,
+        "overall": 87.8079285567409,
+        "small": 27.22063497179763
+      }
+    },
+    "PLAIN": {
+      "decision": "BASELINE",
+      "delta_vs_plain": {
+        "far": 0.0,
+        "large": 0.0,
+        "near": 0.0,
+        "overall": 0.0,
+        "small": 0.0
+      },
+      "failed_gates": [],
+      "gate_checks": {},
+      "overall_classes": {
+        "Cyclist": 90.27745421408665,
+        "Pedestrian": 81.55907288420515
+      },
+      "values": {
+        "far": 17.71830738651242,
+        "large": 93.67441110054963,
+        "near": 91.33524407979871,
+        "overall": 85.9182635491459,
+        "small": 29.085361655460694
+      }
+    }
+  },
+  "schema_version": 1,
+  "scope": "LOCAL_SEED0_BATCH2_15EPOCH_DIRECTION_SCREEN_ONLY",
+  "split_count": 371,
+  "split_sha256": "b1b6b6ee7e5398e93868fab407a2e8a86a53c753667002ef9b8381734ef2cda8"
+}

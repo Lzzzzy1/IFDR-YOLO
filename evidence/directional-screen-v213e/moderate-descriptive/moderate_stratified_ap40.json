@@ -1,0 +1,701 @@
+{
+  "evaluator": "independent_moderate_stratified_ap40",
+  "evaluator_sha256": "63d174fbe6b066ae6c889527e0959f645227fb338492c246c9d8bdf012662cef",
+  "interpretation": "descriptive_only_not_frozen_v213_gate",
+  "kitti_ap40_sha256": "ce7257c43bd405da93e43455ccb230db921956142ad1b18208eb5924575a7af4",
+  "runs": {
+    "ANCHORED": {
+      "base_difficulty": "moderate",
+      "classes": [
+        "Pedestrian",
+        "Cyclist"
+      ],
+      "metric": "KITTI_2D_MODERATE_CONDITIONAL_AP40",
+      "prediction_dir": "E:\\myyolo\\stage11-v213-anchored-rerun-20260827e\\runs\\b2-anchored-rerun-s0-b2-e15\\predictions\\labels",
+      "schema_version": 1,
+      "slices": {
+        "depth": {
+          "far_gt_40m": {
+            "classes": {
+              "Cyclist": {
+                "ap40": 3.3482142857142847,
+                "false_positives": 1208,
+                "ignored_detections": 288,
+                "num_valid_gt": 2,
+                "true_positives": 2
+              },
+              "Pedestrian": {
+                "ap40": 7.041770685343924,
+                "false_positives": 2054,
+                "ignored_detections": 423,
+                "num_valid_gt": 9,
+                "true_positives": 7
+              }
+            },
+            "definition": {
+              "axis": "depth",
+              "include_lower": false,
+              "include_upper": false,
+              "lower": 40.0,
+              "name": "far_gt_40m",
+              "upper": null
+            },
+            "macro_ap40": 5.194992485529104
+          },
+          "mid_20_40m": {
+            "classes": {
+              "Cyclist": {
+                "ap40": 87.95285577195807,
+                "false_positives": 1208,
+                "ignored_detections": 264,
+                "num_valid_gt": 26,
+                "true_positives": 26
+              },
+              "Pedestrian": {
+                "ap40": 57.795503814220716,
+                "false_positives": 2054,
+                "ignored_detections": 351,
+                "num_valid_gt": 84,
+                "true_positives": 79
+              }
+            },
+            "definition": {
+              "axis": "depth",
+              "include_lower": false,
+              "include_upper": true,
+              "lower": 20.0,
+              "name": "mid_20_40m",
+              "upper": 40.0
+            },
+            "macro_ap40": 72.8741797930894
+          },
+          "near_0_20m": {
+            "classes": {
+              "Cyclist": {
+                "ap40": 88.50450605392942,
+                "false_positives": 1208,
+                "ignored_detections": 263,
+                "num_valid_gt": 27,
+                "true_positives": 27
+              },
+              "Pedestrian": {
+                "ap40": 91.50310395521507,
+                "false_positives": 2054,
+                "ignored_detections": 319,
+                "num_valid_gt": 112,
+                "true_positives": 111
+              }
+            },
+            "definition": {
+              "axis": "depth",
+              "include_lower": false,
+              "include_upper": true,
+              "lower": 0.0,
+              "name": "near_0_20m",
+              "upper": 20.0
+            },
+            "macro_ap40": 90.00380500457224
+          }
+        },
+        "height": {
+          "large_gt_80": {
+            "classes": {
+              "Cyclist": {
+                "ap40": 99.20000000000002,
+                "false_positives": 1208,
+                "ignored_detections": 269,
+                "num_valid_gt": 21,
+                "true_positives": 21
+              },
+              "Pedestrian": {
+                "ap40": 90.96239607629676,
+                "false_positives": 2054,
+                "ignored_detections": 338,
+                "num_valid_gt": 93,
+                "true_positives": 92
+              }
+            },
+            "definition": {
+              "axis": "height",
+              "include_lower": false,
+              "include_upper": false,
+              "lower": 80.0,
+              "name": "large_gt_80",
+              "upper": null
+            },
+            "macro_ap40": 95.08119803814839
+          },
+          "medium_40_80": {
+            "classes": {
+              "Cyclist": {
+                "ap40": 81.70302391678241,
+                "false_positives": 1208,
+                "ignored_detections": 262,
+                "num_valid_gt": 28,
+                "true_positives": 28
+              },
+              "Pedestrian": {
+                "ap40": 71.5436539502513,
+                "false_positives": 2054,
+                "ignored_detections": 349,
+                "num_valid_gt": 83,
+                "true_positives": 81
+              }
+            },
+            "definition": {
+              "axis": "height",
+              "include_lower": false,
+              "include_upper": true,
+              "lower": 40.0,
+              "name": "medium_40_80",
+              "upper": 80.0
+            },
+            "macro_ap40": 76.62333893351686
+          },
+          "small_25_40": {
+            "classes": {
+              "Cyclist": {
+                "ap40": 35.14626818469323,
+                "false_positives": 1208,
+                "ignored_detections": 284,
+                "num_valid_gt": 6,
+                "true_positives": 6
+              },
+              "Pedestrian": {
+                "ap40": 19.89750999757358,
+                "false_positives": 2054,
+                "ignored_detections": 406,
+                "num_valid_gt": 29,
+                "true_positives": 24
+              }
+            },
+            "definition": {
+              "axis": "height",
+              "include_lower": false,
+              "include_upper": true,
+              "lower": 25.0,
+              "name": "small_25_40",
+              "upper": 40.0
+            },
+            "macro_ap40": 27.521889091133403
+          }
+        },
+        "occlusion": {
+          "occlusion_0": {
+            "classes": {
+              "Cyclist": {
+                "ap40": 90.92036198115854,
+                "false_positives": 1208,
+                "ignored_detections": 245,
+                "num_valid_gt": 45,
+                "true_positives": 45
+              },
+              "Pedestrian": {
+                "ap40": 87.03550793330935,
+                "false_positives": 2054,
+                "ignored_detections": 295,
+                "num_valid_gt": 139,
+                "true_positives": 135
+              }
+            },
+            "definition": {
+              "axis": "occlusion",
+              "include_lower": true,
+              "include_upper": true,
+              "lower": 0.0,
+              "name": "occlusion_0",
+              "upper": 0.0
+            },
+            "macro_ap40": 88.97793495723394
+          },
+          "occlusion_1": {
+            "classes": {
+              "Cyclist": {
+                "ap40": 66.25348939889531,
+                "false_positives": 1208,
+                "ignored_detections": 280,
+                "num_valid_gt": 10,
+                "true_positives": 10
+              },
+              "Pedestrian": {
+                "ap40": 62.488148599754915,
+                "false_positives": 2053,
+                "ignored_detections": 368,
+                "num_valid_gt": 66,
+                "true_positives": 63
+              }
+            },
+            "definition": {
+              "axis": "occlusion",
+              "include_lower": true,
+              "include_upper": true,
+              "lower": 1.0,
+              "name": "occlusion_1",
+              "upper": 1.0
+            },
+            "macro_ap40": 64.37081899932511
+          },
+          "occlusion_2": {
+            "classes": {
+              "Cyclist": {
+                "ap40": 0.0,
+                "false_positives": 1208,
+                "ignored_detections": 290,
+                "num_valid_gt": 0,
+                "true_positives": 0
+              },
+              "Pedestrian": {
+                "ap40": 0.0,
+                "false_positives": 2054,
+                "ignored_detections": 430,
+                "num_valid_gt": 0,
+                "true_positives": 0
+              }
+            },
+            "definition": {
+              "axis": "occlusion",
+              "include_lower": true,
+              "include_upper": true,
+              "lower": 2.0,
+              "name": "occlusion_2",
+              "upper": 2.0
+            },
+            "macro_ap40": 0.0
+          }
+        },
+        "truncation": {
+          "truncation_000_015": {
+            "classes": {
+              "Cyclist": {
+                "ap40": 88.76749713747219,
+                "false_positives": 1208,
+                "ignored_detections": 236,
+                "num_valid_gt": 54,
+                "true_positives": 54
+              },
+              "Pedestrian": {
+                "ap40": 83.10579163973927,
+                "false_positives": 2054,
+                "ignored_detections": 233,
+                "num_valid_gt": 205,
+                "true_positives": 197
+              }
+            },
+            "definition": {
+              "axis": "truncation",
+              "include_lower": true,
+              "include_upper": true,
+              "lower": 0.0,
+              "name": "truncation_000_015",
+              "upper": 0.15
+            },
+            "macro_ap40": 85.93664438860573
+          },
+          "truncation_015_030": {
+            "classes": {
+              "Cyclist": {
+                "ap40": 100.0,
+                "false_positives": 1208,
+                "ignored_detections": 289,
+                "num_valid_gt": 1,
+                "true_positives": 1
+              },
+              "Pedestrian": {
+                "ap40": 0.0,
+                "false_positives": 2054,
+                "ignored_detections": 430,
+                "num_valid_gt": 0,
+                "true_positives": 0
+              }
+            },
+            "definition": {
+              "axis": "truncation",
+              "include_lower": false,
+              "include_upper": true,
+              "lower": 0.15,
+              "name": "truncation_015_030",
+              "upper": 0.3
+            },
+            "macro_ap40": 50.0
+          },
+          "truncation_030_050": {
+            "classes": {
+              "Cyclist": {
+                "ap40": 0.0,
+                "false_positives": 1208,
+                "ignored_detections": 290,
+                "num_valid_gt": 0,
+                "true_positives": 0
+              },
+              "Pedestrian": {
+                "ap40": 0.0,
+                "false_positives": 2054,
+                "ignored_detections": 430,
+                "num_valid_gt": 0,
+                "true_positives": 0
+              }
+            },
+            "definition": {
+              "axis": "truncation",
+              "include_lower": false,
+              "include_upper": true,
+              "lower": 0.3,
+              "name": "truncation_030_050",
+              "upper": 0.5
+            },
+            "macro_ap40": 0.0
+          }
+        }
+      }
+    },
+    "PLAIN": {
+      "base_difficulty": "moderate",
+      "classes": [
+        "Pedestrian",
+        "Cyclist"
+      ],
+      "metric": "KITTI_2D_MODERATE_CONDITIONAL_AP40",
+      "prediction_dir": "E:\\myyolo\\stage11-v205-local-runtime-plain-20260826b\\runs\\plain-s0-b2-e15\\predictions\\labels",
+      "schema_version": 1,
+      "slices": {
+        "depth": {
+          "far_gt_40m": {
+            "classes": {
+              "Cyclist": {
+                "ap40": 20.000000000000007,
+                "false_positives": 1058,
+                "ignored_detections": 193,
+                "num_valid_gt": 2,
+                "true_positives": 2
+              },
+              "Pedestrian": {
+                "ap40": 16.043874526887098,
+                "false_positives": 2142,
+                "ignored_detections": 376,
+                "num_valid_gt": 9,
+                "true_positives": 7
+              }
+            },
+            "definition": {
+              "axis": "depth",
+              "include_lower": false,
+              "include_upper": false,
+              "lower": 40.0,
+              "name": "far_gt_40m",
+              "upper": null
+            },
+            "macro_ap40": 18.021937263443554
+          },
+          "mid_20_40m": {
+            "classes": {
+              "Cyclist": {
+                "ap40": 82.98972289625014,
+                "false_positives": 1058,
+                "ignored_detections": 169,
+                "num_valid_gt": 26,
+                "true_positives": 26
+              },
+              "Pedestrian": {
+                "ap40": 56.76558530814633,
+                "false_positives": 2142,
+                "ignored_detections": 306,
+                "num_valid_gt": 84,
+                "true_positives": 77
+              }
+            },
+            "definition": {
+              "axis": "depth",
+              "include_lower": false,
+              "include_upper": true,
+              "lower": 20.0,
+              "name": "mid_20_40m",
+              "upper": 40.0
+            },
+            "macro_ap40": 69.87765410219824
+          },
+          "near_0_20m": {
+            "classes": {
+              "Cyclist": {
+                "ap40": 93.76376633986929,
+                "false_positives": 1058,
+                "ignored_detections": 168,
+                "num_valid_gt": 27,
+                "true_positives": 27
+              },
+              "Pedestrian": {
+                "ap40": 90.88726440007225,
+                "false_positives": 2142,
+                "ignored_detections": 272,
+                "num_valid_gt": 112,
+                "true_positives": 111
+              }
+            },
+            "definition": {
+              "axis": "depth",
+              "include_lower": false,
+              "include_upper": true,
+              "lower": 0.0,
+              "name": "near_0_20m",
+              "upper": 20.0
+            },
+            "macro_ap40": 92.32551536997077
+          }
+        },
+        "height": {
+          "large_gt_80": {
+            "classes": {
+              "Cyclist": {
+                "ap40": 98.92045454545453,
+                "false_positives": 1058,
+                "ignored_detections": 174,
+                "num_valid_gt": 21,
+                "true_positives": 21
+              },
+              "Pedestrian": {
+                "ap40": 90.62669376701277,
+                "false_positives": 2142,
+                "ignored_detections": 291,
+                "num_valid_gt": 93,
+                "true_positives": 92
+              }
+            },
+            "definition": {
+              "axis": "height",
+              "include_lower": false,
+              "include_upper": false,
+              "lower": 80.0,
+              "name": "large_gt_80",
+              "upper": null
+            },
+            "macro_ap40": 94.77357415623365
+          },
+          "medium_40_80": {
+            "classes": {
+              "Cyclist": {
+                "ap40": 84.47564919435595,
+                "false_positives": 1058,
+                "ignored_detections": 167,
+                "num_valid_gt": 28,
+                "true_positives": 28
+              },
+              "Pedestrian": {
+                "ap40": 66.43429241039017,
+                "false_positives": 2142,
+                "ignored_detections": 303,
+                "num_valid_gt": 83,
+                "true_positives": 80
+              }
+            },
+            "definition": {
+              "axis": "height",
+              "include_lower": false,
+              "include_upper": true,
+              "lower": 40.0,
+              "name": "medium_40_80",
+              "upper": 80.0
+            },
+            "macro_ap40": 75.45497080237305
+          },
+          "small_25_40": {
+            "classes": {
+              "Cyclist": {
+                "ap40": 45.48380221653877,
+                "false_positives": 1058,
+                "ignored_detections": 189,
+                "num_valid_gt": 6,
+                "true_positives": 6
+              },
+              "Pedestrian": {
+                "ap40": 27.59982357785493,
+                "false_positives": 2142,
+                "ignored_detections": 360,
+                "num_valid_gt": 29,
+                "true_positives": 23
+              }
+            },
+            "definition": {
+              "axis": "height",
+              "include_lower": false,
+              "include_upper": true,
+              "lower": 25.0,
+              "name": "small_25_40",
+              "upper": 40.0
+            },
+            "macro_ap40": 36.54181289719685
+          }
+        },
+        "occlusion": {
+          "occlusion_0": {
+            "classes": {
+              "Cyclist": {
+                "ap40": 91.91718206600406,
+                "false_positives": 1058,
+                "ignored_detections": 150,
+                "num_valid_gt": 45,
+                "true_positives": 45
+              },
+              "Pedestrian": {
+                "ap40": 86.07913458460754,
+                "false_positives": 2141,
+                "ignored_detections": 250,
+                "num_valid_gt": 139,
+                "true_positives": 134
+              }
+            },
+            "definition": {
+              "axis": "occlusion",
+              "include_lower": true,
+              "include_upper": true,
+              "lower": 0.0,
+              "name": "occlusion_0",
+              "upper": 0.0
+            },
+            "macro_ap40": 88.99815832530581
+          },
+          "occlusion_1": {
+            "classes": {
+              "Cyclist": {
+                "ap40": 70.07332559039877,
+                "false_positives": 1058,
+                "ignored_detections": 185,
+                "num_valid_gt": 10,
+                "true_positives": 10
+              },
+              "Pedestrian": {
+                "ap40": 61.25950602333707,
+                "false_positives": 2142,
+                "ignored_detections": 321,
+                "num_valid_gt": 66,
+                "true_positives": 62
+              }
+            },
+            "definition": {
+              "axis": "occlusion",
+              "include_lower": true,
+              "include_upper": true,
+              "lower": 1.0,
+              "name": "occlusion_1",
+              "upper": 1.0
+            },
+            "macro_ap40": 65.66641580686792
+          },
+          "occlusion_2": {
+            "classes": {
+              "Cyclist": {
+                "ap40": 0.0,
+                "false_positives": 1058,
+                "ignored_detections": 195,
+                "num_valid_gt": 0,
+                "true_positives": 0
+              },
+              "Pedestrian": {
+                "ap40": 0.0,
+                "false_positives": 2142,
+                "ignored_detections": 383,
+                "num_valid_gt": 0,
+                "true_positives": 0
+              }
+            },
+            "definition": {
+              "axis": "occlusion",
+              "include_lower": true,
+              "include_upper": true,
+              "lower": 2.0,
+              "name": "occlusion_2",
+              "upper": 2.0
+            },
+            "macro_ap40": 0.0
+          }
+        },
+        "truncation": {
+          "truncation_000_015": {
+            "classes": {
+              "Cyclist": {
+                "ap40": 90.07779636916537,
+                "false_positives": 1058,
+                "ignored_detections": 141,
+                "num_valid_gt": 54,
+                "true_positives": 54
+              },
+              "Pedestrian": {
+                "ap40": 81.55907288420515,
+                "false_positives": 2142,
+                "ignored_detections": 188,
+                "num_valid_gt": 205,
+                "true_positives": 195
+              }
+            },
+            "definition": {
+              "axis": "truncation",
+              "include_lower": true,
+              "include_upper": true,
+              "lower": 0.0,
+              "name": "truncation_000_015",
+              "upper": 0.15
+            },
+            "macro_ap40": 85.81843462668526
+          },
+          "truncation_015_030": {
+            "classes": {
+              "Cyclist": {
+                "ap40": 100.0,
+                "false_positives": 1058,
+                "ignored_detections": 194,
+                "num_valid_gt": 1,
+                "true_positives": 1
+              },
+              "Pedestrian": {
+                "ap40": 0.0,
+                "false_positives": 2142,
+                "ignored_detections": 383,
+                "num_valid_gt": 0,
+                "true_positives": 0
+              }
+            },
+            "definition": {
+              "axis": "truncation",
+              "include_lower": false,
+              "include_upper": true,
+              "lower": 0.15,
+              "name": "truncation_015_030",
+              "upper": 0.3
+            },
+            "macro_ap40": 50.0
+          },
+          "truncation_030_050": {
+            "classes": {
+              "Cyclist": {
+                "ap40": 0.0,
+                "false_positives": 1058,
+                "ignored_detections": 195,
+                "num_valid_gt": 0,
+                "true_positives": 0
+              },
+              "Pedestrian": {
+                "ap40": 0.0,
+                "false_positives": 2142,
+                "ignored_detections": 383,
+                "num_valid_gt": 0,
+                "true_positives": 0
+              }
+            },
+            "definition": {
+              "axis": "truncation",
+              "include_lower": false,
+              "include_upper": true,
+              "lower": 0.3,
+              "name": "truncation_030_050",
+              "upper": 0.5
+            },
+            "macro_ap40": 0.0
+          }
+        }
+      }
+    }
+  },
+  "schema_version": 1,
+  "source_root": "E:\\myyolo\\stage11-v213-anchored-rerun-20260827e",
+  "split_count": 371,
+  "split_sha256": "b1b6b6ee7e5398e93868fab407a2e8a86a53c753667002ef9b8381734ef2cda8",
+  "stratified_selector_sha256": "6c96b4451565c2a01261a99fa7984f1299f1f8e33f45f2e50fc9322a54d4a14d"
+}
