@@ -1,6 +1,6 @@
 # IFDR-YOLO
 
-> 2026-09-04 archive status: this private repository is the safe, reproducible
+> 2026-09-04 archive status: this public repository is the safe, reproducible
 > project archive for the PLAIN_P2/DCLI study. It contains source, frozen
 > configurations, split identities, raw metric JSON/CSV, audit receipts,
 > teacher-review documents, and manuscript deliverables. Licensed datasets,

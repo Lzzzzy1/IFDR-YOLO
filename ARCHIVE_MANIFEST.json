@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
   "repository": "Lzzzzy1/IFDR-YOLO",
-  "generated_at_utc": "2026-09-04T12:32:01Z",
+  "generated_at_utc": "2026-09-04T13:15:12Z",
   "hash_basis": "Git index blob bytes (manifest files excluded)",
   "file_count": 1011,
-  "total_bytes": 28552265,
+  "total_bytes": 28552264,
   "manifest_excludes": [
     "ARCHIVE_MANIFEST.json",
     "ARCHIVE_MANIFEST.sha256",
@@ -3093,8 +3093,8 @@
     },
     {
       "path": "README.md",
-      "size": 8968,
-      "sha256": "3ea06d83fb403983c3a766f3521d9dcb9dade60d9e32008febe3c46bf7b486fa"
+      "size": 8967,
+      "sha256": "84237042d6fc1bdc4685d1e3b3ecf770290a220680c3028f013e301052a4e125"
     },
     {
       "path": "reproducibility/formal-runtime/build_stage11_v164_runtime_provenance_adapter.py",
